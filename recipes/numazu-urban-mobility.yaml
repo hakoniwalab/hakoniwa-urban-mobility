@@ -1,0 +1,174 @@
+# Integration recipe and delivery plan for the first Hakoniwa Urban Mobility demo.
+#
+# This is intentionally a composition contract, not a replacement for the
+# component-owned vehicle, city, or controller configurations it references.
+
+id: numazu-urban-mobility
+title: Numazu PLATEAU Urban Mobility Demo
+recipe_version: 0.1
+status: planning
+
+goal:
+  description: >
+    Build a repeatable PLATEAU urban-mobility simulation incrementally: first
+    one controlled Ackermann vehicle, then two independently controlled
+    vehicles, then a Drone Fleet with cross-world mirrors and contact events.
+  success_boundary: >
+    City, vehicle, and Drone physics remain owned by their component
+    repositories. This recipe owns only their scenario composition.
+
+external_inputs:
+  city_world:
+    owner: hakoniwa-business-pack / hakoniwa-envsim
+    source_of_truth: >
+      A validated Numazu City World receipt and generated artifacts under the
+      Business Pack work directory. Urban Mobility never downloads or
+      regenerates PLATEAU data implicitly.
+    path_resolution:
+      rule: >
+        The scenario invocation supplies a Business Pack work-directory receipt
+        path. Generated paths are not stable API names and must be resolved
+        from that receipt rather than guessed by this repository.
+      producer_recipe: plateau-citygml-mujoco-walls
+    required_capabilities:
+      - terrain
+      - roads
+      - road_markings
+      - building_collision
+    coordinate_contract: city_map local ENU metres; receipt origin is authoritative
+
+  vehicle_platforms:
+    owner: hakoniwa-mujoco-robots / hakoniwa-mbody-registry
+    profiles:
+      golf_cart:
+        runtime_profile: generic_ackermann_golf_cart
+        role: low-speed urban vehicle
+      hunter:
+        runtime_profile: hunter_v2
+        role: rugged urban vehicle
+
+  drone_platforms:
+    owner: hakoniwa-drone-show / hakoniwa-drone-pro
+    profiles:
+      quad:
+        fleet_type: quad-mujoco
+        role: agile low-altitude drone
+      hexa:
+        fleet_type: hexa-mujoco
+        role: stable observation drone
+
+composition:
+  city_model:
+    rule: >
+      Compose the same static City World into each independent physics world.
+      Use hakoniwa-mbody-registry composition tooling; do not merge dynamic
+      Drone and Car bodies into one MuJoCo model.
+  worlds:
+    car_world:
+      final_mjcf: build/numazu/car-fleet-city.xml
+      contains: [city_static_collider, real_car_1, real_car_2, mirrored_drone_1, mirrored_drone_2]
+    drone_world:
+      final_mjcf: build/numazu/drone-fleet-city.xml
+      contains: [city_static_collider, real_drone_1, real_drone_2, mirrored_car_1, mirrored_car_2]
+  timing:
+    rule: One explicit Hakoniwa Conductor owner advances all participating assets.
+
+delivery_stages:
+  - id: S0_city_receipt
+    title: Materialize and validate the Numazu City World
+    owner_repositories: [hakoniwa-business-pack, hakoniwa-envsim]
+    work:
+      - Build the bounded Numazu City World through the Business Pack recipe.
+      - Record receipt, city MJCF, visual GLB, capabilities, and city_map origin.
+      - Reject the scenario when required road-marking or collision capabilities are absent.
+    outputs:
+      - Business Pack work-directory City World artifacts
+      - immutable input paths or a receipt reference for this recipe
+    acceptance:
+      - City receipt reports terrain, roads, road markings, and building collision.
+      - MJCF and GLB use the same city_map origin.
+
+  - id: S1_single_car
+    title: One Ackermann vehicle in the Numazu City World
+    depends_on: [S0_city_receipt]
+    owner_repositories: [hakoniwa-mbody-registry, hakoniwa-mujoco-robots]
+    work:
+      - Compose the city static MJCF and one Golf Cart body into a car-world MJCF.
+      - Generate one named Car-1 runtime binding and one controller command path.
+      - Run a deterministic road-following or scripted low-speed route.
+    outputs:
+      - build/numazu/car-1-city.xml
+      - one-car Launcher and controller configuration
+      - state trace and visual smoke evidence
+    acceptance:
+      - Car-1 remains on the road and responds only to its own command channel.
+      - Car-1 contacts city colliders in its local MuJoCo world.
+
+  - id: S2_two_cars
+    title: Two independently controlled Ackermann vehicles
+    depends_on: [S1_single_car]
+    owner_repositories: [hakoniwa-mbody-registry, hakoniwa-mujoco-robots]
+    work:
+      - Add Car-2, initially the Hunter profile, to the car-world composition.
+      - Assign unique body names, PDU namespaces, state topics, and controller command paths.
+      - Verify whether one Ackermann asset can own both bodies or whether two plant assets
+        must join the same Conductor domain; record the selected topology.
+      - Drive non-overlapping scripted routes before enabling interaction policy.
+    outputs:
+      - build/numazu/car-fleet-city.xml
+      - Car-1 and Car-2 controller configurations
+      - launcher with exactly one Conductor owner
+    acceptance:
+      - Commands for Car-1 never actuate Car-2, and vice versa.
+      - Both vehicles advance on the same Hakoniwa time base.
+      - Each vehicle's actual pose is available for mirror publication.
+
+  - id: S3_drone_car_mirroring
+    title: One Drone and one Car across independent MuJoCo worlds
+    depends_on: [S1_single_car]
+    owner_repositories: [hakoniwa-drone-show, hakoniwa-drone-pro, hakoniwa-mujoco-robots]
+    work:
+      - Start one existing Virtual Drone Show / Drone PRO Fleet Drone in a separate Drone world.
+      - Compose the same city static world into the Drone world.
+      - Mirror the Drone in the car world and the Car in the Drone world using actual poses.
+      - Verify city_map frame conversion and lockstep ordering.
+    acceptance:
+      - Both mirrors have the correct pose in the same city location at each observed tick.
+      - No cross-world contact reaction is enabled yet.
+
+  - id: S4_mixed_fleet
+    title: Two Cars and mixed Quad/Hexa Drone Fleet
+    depends_on: [S2_two_cars, S3_drone_car_mirroring]
+    owner_repositories: [hakoniwa-drone-show, hakoniwa-drone-pro, hakoniwa-mujoco-robots]
+    work:
+      - Materialize per-Drone Fleet types rather than assuming a homogeneous Fleet.
+      - Add Quad Drone-1 and Hexa Drone-2 with unique model, propeller, PDU, and mirror names.
+      - Add mirrored Drone-1/2 to the car world and mirrored Car-1/2 to the Drone world.
+      - Run the four-entity Numazu timeline with no intentional contact.
+    acceptance:
+      - Each entity has a unique namespace and actual-pose stream.
+      - Quad and Hexa are simultaneously visible and follow their own Fleet commands.
+
+  - id: S5_contact_demo
+    title: Simplified Car-to-Drone contact demonstration
+    depends_on: [S4_mixed_fleet]
+    owner_repositories: [hakoniwa-mujoco-robots, hakoniwa-drone-pro]
+    work:
+      - Use the generalized MirrorImpulseSender with collision-enabled mirrored Drone proxy geoms.
+      - Emit one ImpulseCollision on contact enter, with threshold and cooldown.
+      - Publish a ContactEvent for the scenario runner and viewer.
+      - Apply the initial policy: Car brake/stop; Drone hold, pause, or ascent.
+    constraints:
+      - The car treats the mirrored Drone as a static local obstacle.
+      - Exact reciprocal collision physics and momentum conservation are out of scope.
+      - hakoniwa-drone-pro is consumed as-is; no Drone PRO changes are permitted.
+    acceptance:
+      - A planned contact produces one observable ContactEvent and one Drone impulse.
+      - Duplicate impulses are suppressed while the contact remains active.
+      - The scenario can reset and reproduce the event.
+
+non_goals:
+  - implicit PLATEAU download from this repository
+  - duplicated vehicle physics parameters or flight-controller implementation
+  - one monolithic MuJoCo model for all dynamic entities
+  - physically exact cross-world two-body collision response

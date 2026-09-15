@@ -129,6 +129,38 @@ time-of-impact resolution are future work.
 6. Apply the initial safety policy: car brake/stop and drone hold, pause, or
    ascent according to the scenario.
 
+The initial preset is expected to use the validated Numazu city region, a
+Golf Cart and Hunter V2, and Quad and Hexa drones. Those are demonstration
+choices, not hard-coded product requirements.
+
+## Configuration-first vehicle composition
+
+The scenario must be able to substitute cities, vehicle platforms, and entity
+counts without changing scenario-runner code. It therefore separates a
+component-provided **platform profile** from a demo-specific **scenario**.
+
+```text
+platform profile                         scenario
+----------------                         --------
+owner adapter                  +----->   entity ID and role
+source repository / artifact   |         selected platform profile
+vehicle type and visual asset  |         spawn pose and route
+collision proxy                |         safety policy
+command/state endpoints   -----+         city receipt and timeline
+```
+
+A platform profile references its component-owned source of truth rather than
+copying vehicle dynamics into this repository. For example, the initial
+catalog may select a Golf Cart or Hunter Ackermann profile, and a Quad or
+Hexa Drone Fleet type. Future scenarios can use a different vehicle model,
+drone count, city receipt, or controller adapter while retaining the same
+scenario contract.
+
+The current Drone Fleet configuration format already permits each named Drone
+to select a type. The Urban Mobility integration must materialize mixed Fleet
+types (for example `quad-mujoco` and `hexa-mujoco`) rather than assuming one
+shared Drone type for all entities.
+
 ## Planned repository layout
 
 ```text
@@ -151,6 +183,11 @@ docs/            Coordinate, timing, safety, and operational documentation
    replacing the Drone Fleet API adapter with ArduPilot SITL / MAVLink.
 5. **Higher-fidelity contact:** evaluate shared velocity state and reciprocal
    external impulses only if the demo requires them.
+
+The executable dependency plan and the car-first integration checkpoints are
+defined in [`docs/implementation-plan.md`](docs/implementation-plan.md). The
+first concrete composition contract is
+[`recipes/numazu-urban-mobility.yaml`](recipes/numazu-urban-mobility.yaml).
 
 ## Non-goals for the initial release
 
