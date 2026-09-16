@@ -1,0 +1,134 @@
+# S1 executable-composition contract.
+#
+# The source City World is already materialized by the Business Pack remote
+# operation worker. This recipe must consume its receipt; it never downloads
+# PLATEAU data itself.
+
+id: numazu-car-1-viewer
+title: Numazu City World with one PS5-controlled Golf Cart
+recipe_version: 0.1
+status: specified
+
+goal:
+  description: >
+    Compose the existing Numazu PLATEAU City World and one Generic Ackermann
+    Golf Cart into a single MuJoCo model, view it in the native MuJoCo Viewer,
+    and control Car-1 through the existing PS5 gamepad path.
+  boundary: >
+    This is the first urban-mobility integration checkpoint. It contains one
+    real vehicle only; Drone Fleet, mirrors, second vehicles, and contact
+    events are intentionally excluded.
+
+inputs:
+  business_pack_city_receipt:
+    path: >
+      ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/
+      shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
+    expected:
+      origin_wgs84: [35.0988, 138.8587]
+      half_extent_m: [100.0, 100.0]
+      mjcf_coordinate_frame: X=North,Y=-East,Z=Up
+      capabilities:
+        - terrain
+        - roads_visual_glb
+        - road_markings_visual_glb
+        - building_collision
+    resolution_rule: >
+      Read absolute City World paths and the coordinate origin from the receipt
+      at configure time. Do not copy those absolute paths into generated
+      source files.
+
+  golf_cart_model:
+    owner: hakoniwa-mbody-registry
+    mjcf: >
+      ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/
+      model.minimal_world.xml
+    body_name: vehicle
+    freejoint: base_freejoint
+    spawn_pose_mjcf:
+      status: required-before-run
+      format: [north_m, minus_east_m, up_m, roll_rad, pitch_rad, yaw_rad]
+      first_candidate: [46.05, -8.70, 6.07, 0.0, 0.0, -0.13]
+      note: >
+        This candidate is sampled from a large source-road polygon and includes
+        Golf Cart wheel clearance. Verify it in the native Viewer before using
+        it as a route start; do not assume the City World origin is safe.
+
+  ackermann_runtime:
+    owner: hakoniwa-mujoco-robots
+    source_recipe: recipes/generic_ackermann
+    profile: golf-cart
+    plant_binary: >
+      ../hakoniwa-mujoco-robots/src/cmake-build/examples/actuators/
+      generic_ackermann/generic-ackermann-hakoniwa-asset
+    source_manifest: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/asset-manifest.json
+    source_runtime_config: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/ackermann-runtime.json
+    ps5_sender: ../hakoniwa-mujoco-robots/python/ackermann_gamepad.py
+    ps5_mapping: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/ps5-controller-macos.json
+    pdu_definition: ../hakoniwa-mujoco-robots/config/ackermann-gamepad-pdudef-compact.json
+    pdu_identity:
+      asset_name: Car-1
+      command_pdu: hako_cmd_game
+
+composition:
+  owner: hakoniwa-mbody-registry
+  tool: ../hakoniwa-mbody-registry/tools/compose_mujoco_world.py
+  output:
+    directory: work/numazu-car-1-viewer
+    mjcf: work/numazu-car-1-viewer/car-1-city.xml
+    mjb: work/numazu-car-1-viewer/car-1-city.mjb
+    mujoco_materialization_receipt: work/numazu-car-1-viewer/mujoco-materialization.json
+    compose_receipt: work/numazu-car-1-viewer/compose-receipt.json
+    runtime_manifest: work/numazu-car-1-viewer/car-1-asset-manifest.json
+    runtime_config: work/numazu-car-1-viewer/car-1-runtime.json
+    launcher: work/numazu-car-1-viewer/launcher.json
+    core_config: ../hakoniwa-business-pack/work/foundation/config/cpp_core_config.json
+  rules:
+    - Remove the Golf Cart's standalone ground plane during composition.
+    - Preserve the Golf Cart as the authoritative MuJoCo runtime model.
+    - Import the City World's static worldbody and assets.
+    - Compile and reload-validate the composed XML as an MJB with the exact MuJoCo library linked by the Ackermann plant.
+    - Materialize a runtime manifest whose model points to the generated MJB.
+    - Materialize a runtime config that changes only the asset/PDU identity to Car-1.
+    - Use the shared Foundation runtime under an explicit single-Launcher exclusive-ownership contract.
+    - Clean only Foundation Hakoniwa mmap/lock files before activation and wait for Car-1 registration before hako-cmd start.
+    - Preserve all component-owned actuator and controller configuration paths.
+
+execution:
+  prerequisites:
+    - >
+      The Generic Ackermann Golf Cart has been forged and the
+      generic-ackermann-hakoniwa-asset binary has been built in
+      hakoniwa-mujoco-robots.
+    - A PS5 DualSense is visible to the existing ackermann_gamepad.py sender.
+    - The City receipt's MJCF and GLB artifacts still exist.
+  commands_to_materialize:
+    configure: >
+      Resolve the receipt, compose car-1-city.xml, compile and reload-validate
+      car-1-city.mjb, generate Car-1 runtime files, and generate a Launcher configuration.
+    view: >
+      Run generic-ackermann-hakoniwa-asset with the generated Car-1 manifest
+      and its native MuJoCo Viewer enabled.
+    start: >
+      Start the generated Launcher: the Car-1 plant starts before simulation
+      time and the existing PS5 sender starts afterwards.
+    stop: Terminate the generated Launcher session.
+
+acceptance:
+  - The composed XML compiles to a version-bound MJB and reload validation passes.
+  - The Launcher waits for Car-1 registration before hako-cmd start.
+  - Native MuJoCo Viewer shows the Golf Cart and the City World collider.
+  - The PS5 command changes Car-1 steering and rear-wheel velocity only.
+  - Car-1 collides with terrain and buildings in its local MuJoCo world.
+  - The compose receipt records the source City receipt, City hash, Golf Cart model hash,
+    generated model path, and selected spawn pose.
+
+known_limitations:
+  - >
+    The City World MJCF is the collision authority. Its separate City GLB
+    contains roads and road markings for Map Viewer / Three.js presentation;
+    native MuJoCo Viewer will not automatically display that GLB.
+  - No route follower is required in this stage; the PS5 controller is the only control source.
+  - Car-2, Drone Fleet, mirrors, and MirrorImpulseSender begin in later stages.
+
+next_stage: numazu-urban-mobility#S2_two_cars

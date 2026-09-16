@@ -188,6 +188,45 @@ The executable dependency plan and the car-first integration checkpoints are
 defined in [`docs/implementation-plan.md`](docs/implementation-plan.md). The
 first concrete composition contract is
 [`recipes/numazu-urban-mobility.yaml`](recipes/numazu-urban-mobility.yaml).
+The first viewer and PS5 checkpoint is
+[`recipes/numazu-car-1-viewer.yaml`](recipes/numazu-car-1-viewer.yaml).
+
+### Numazu Car-1 operation
+
+The recipe wrapper materializes only local generated files under `work/` and
+reuses component-owned tools and assets. Choose a driveable spawn in the
+receipt's MJCF frame (`North, -East, Up`) before configuring; the city origin
+is not assumed to be a road.
+
+```bash
+python3 tools/numazu_car_1.py doctor
+python3 tools/numazu_car_1.py configure --spawn "46.05 -8.70 6.07 0 0 -0.13"
+python3 tools/numazu_car_1.py start
+
+# Later, from another terminal:
+python3 tools/numazu_car_1.py status
+python3 tools/numazu_car_1.py stop
+```
+
+The shown spawn is a first candidate sampled from a large source-road polygon:
+`North=46.05 m`, `-East=-8.70 m`, and road height plus the Golf Cart's wheel
+clearance. It is a starting point for visual verification, not a permanent
+route definition.
+
+`start` opens the existing Generic Ackermann native MuJoCo Viewer and starts
+the existing PS5 sender after the plant. Use `view` after `configure` for a
+Viewer-only model inspection.
+
+`configure` preserves the composed XML as the canonical materialization, then
+compiles and reload-validates a version-bound MJB with the exact MuJoCo library
+linked by the Ackermann plant. Runtime loads this MJB, avoiding a full City
+World XML compilation on every start.
+
+This single-host checkpoint exclusively owns the shared Foundation runtime
+while active. Its Launcher cleans only the configured Hakoniwa mmap/lock files
+before starting the plant, waits until `Car-1` is registered, and only then
+issues `hako-cmd start`. Do not run another Foundation SHM simulation at the
+same time. `stop` uses the Launcher session's normal termination path.
 
 ## Non-goals for the initial release
 
