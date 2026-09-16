@@ -1,0 +1,145 @@
+# S1 executable-composition contract.
+#
+# The source City World is already materialized by the Business Pack remote
+# operation worker. This recipe must consume its receipt; it never downloads
+# PLATEAU data itself.
+
+id: urban-multi-car-viewer
+title: Configured Urban City World with multiple Ackermann vehicles
+recipe_version: 0.1
+status: specified
+
+goal:
+  description: >
+    Compose a configured PLATEAU City World and multiple Ackermann
+    vehicles into one MuJoCo model, view them in the native MuJoCo Viewer,
+    and control each vehicle through its selected AckermannDrive source.
+  boundary: >
+    This is the multi-Car urban-mobility integration checkpoint. Drone Fleet,
+    mirrors, and cross-simulator contact events remain excluded.
+
+inputs:
+  business_pack_city_receipt:
+    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+    resolution_rule: >
+      The path is the only city selection input. Read the MJCF, GLB, origin,
+      extent, coordinate systems, and capabilities from the receipt at
+      configure time.
+
+  ackermann_vehicles:
+    owner: hakoniwa-mbody-registry
+    types:
+      - type: golf_cart
+        mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
+        contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+    vehicles:
+      - name: Car-1
+        type: golf_cart
+        control_mode: external_python  # external_python | ps5
+        spawn_pose_enu:
+          frame: city_origin_local_enu
+          east_m: 5.21
+          north_m: -6.07
+          up_m: 4.6
+          yaw_deg: 11.5
+      - name: Car-2
+        type: golf_cart
+        control_mode: external_python
+        spawn_pose_enu:
+          frame: city_origin_local_enu
+          east_m: 1.29
+          north_m: -6.87
+          up_m: 4.6
+          yaw_deg: 11.5
+    spawn_pose_rule: >
+      Position is relative to the City World receipt origin. Yaw is positive
+      counter-clockwise from East. Roll and pitch are fixed to zero. Each
+      vehicle name is also its AckermannDrive PDU robot name. Type references
+      one entry in types; its contract supplies the model-specific Ackermann
+      interface and geometry without duplicating those values here.
+
+  ackermann_runtime:
+    owner: hakoniwa-urban-mobility
+    runtime_framework: hakoniwa-robot-runtime
+    physics_backend: hakoniwa-mujoco-robots
+    profile: golf-cart
+    plant_binary: build/bin/urban-car-hakoniwa-asset
+    runtime_config: config/car/runtime.json
+    controller_config: config/car/controller/ackermann.json
+    external_sender: apps/car/ackermann_command.py
+    scenario_executor: apps/car/scenario_executor.py
+    ps5_sender: apps/car/ps5_ackermann_sender.py
+    ps5_mapping: config/car/ps5-controller-macos.json
+    pdu_identity:
+      asset_name: UrbanCarFleet
+      state_robot: UrbanFleet
+      command_pdu: ackermann_cmd
+      joint_state_pdu: joint_states
+      vehicle_state_pdu: vehicle_states
+    realtime_sync_cycle_msec: 2
+
+composition:
+  owner: hakoniwa-mbody-registry
+  tool: ../hakoniwa-mbody-registry/tools/compose_mujoco_world.py
+  output:
+    directory: work/multi-car-viewer
+    mjcf: work/multi-car-viewer/urban-cars-city.xml
+    mjb: work/multi-car-viewer/urban-cars-city.mjb
+    mujoco_materialization_receipt: work/multi-car-viewer/mujoco-materialization.json
+    compose_receipt: work/multi-car-viewer/compose-receipt.json
+    runtime_manifest: work/multi-car-viewer/urban-car-asset-manifest.json
+    runtime_config: work/multi-car-viewer/urban-car-runtime.json
+    launcher: work/multi-car-viewer/launcher.json
+    core_config: ../hakoniwa-business-pack/work/foundation/config/cpp_core_config.json
+  rules:
+    - Remove each vehicle type's standalone ground plane during composition.
+    - Preserve each selected type MJCF as the authoritative vehicle model.
+    - Import the City World's static worldbody and assets.
+    - Compile and reload-validate the composed XML as an MJB with the exact MuJoCo library linked by the Ackermann plant.
+    - Materialize a runtime manifest whose model points to the generated MJB.
+    - Namespace every vehicle's MuJoCo bodies, joints, geoms, and actuators.
+    - Materialize one Urban-owned Robot Runtime manifest for the complete vehicle array.
+    - Bind commands to each vehicle PDU and publish combined states on UrbanFleet.
+    - Use the shared Foundation runtime under an explicit single-Launcher exclusive-ownership contract.
+    - Clean only Foundation Hakoniwa mmap/lock files before activation and wait for UrbanCarFleet registration before hako-cmd start.
+    - Preserve the Urban-owned actuator, Ackermann controller, and state-output configuration paths.
+
+execution:
+  prerequisites:
+    - >
+      Every selected Ackermann type has been forged and
+      urban-car-hakoniwa-asset has been built in this repository.
+    - A PS5 DualSense is visible when any vehicle control_mode is ps5.
+    - The City receipt's MJCF and GLB artifacts still exist.
+  commands_to_materialize:
+    configure: >
+      Resolve the receipt, compose urban-cars-city.xml, compile and reload-validate
+      urban-cars-city.mjb, generate fleet runtime files, and generate a Launcher configuration.
+    view: >
+      Run urban-car-hakoniwa-asset with the generated Car Fleet manifest
+      and its native MuJoCo Viewer enabled.
+    start: >
+      Start the generated Launcher: one fleet plant starts before simulation
+      time. A PS5 sender starts for each ps5 vehicle; external_python leaves
+      that vehicle's command publication to a separate process.
+    stop: Terminate the generated Launcher session.
+
+acceptance:
+  - The composed XML compiles to a version-bound MJB and reload validation passes.
+  - The Launcher waits for UrbanCarFleet registration before hako-cmd start.
+  - Native MuJoCo Viewer shows all configured Ackermann vehicles and the City World collider.
+  - Each selected command source changes only its target vehicle.
+  - All vehicles collide with terrain, buildings, and each other in one MuJoCo world.
+  - UrbanFleet/vehicle_states publishes one array entry per configured vehicle.
+  - The compose receipt records the source City receipt, City hash, selected type MJCF and
+    contract hashes, generated model path, and selected spawn poses.
+
+known_limitations:
+  - >
+    The City World MJCF is the collision authority. Its separate City GLB
+    contains roads and road markings for Map Viewer / Three.js presentation;
+    native MuJoCo Viewer will not automatically display that GLB.
+  - No route follower is required in this stage; control is PS5 or external Python.
+  - Drone Fleet, mirrors, and MirrorImpulseSender begin in later stages.
+
+next_stage: urban-mobility#S3_drone_car_mirroring

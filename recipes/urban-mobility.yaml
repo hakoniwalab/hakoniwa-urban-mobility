@@ -97,7 +97,7 @@ delivery_stages:
       - Generate one named Car-1 runtime binding and one controller command path.
       - Run a deterministic road-following or scripted low-speed route.
     outputs:
-      - build/urban/car-1-city.xml
+      - build/urban/single-car-city.xml
       - one-car Launcher and controller configuration
       - state trace and visual smoke evidence
     acceptance:
@@ -109,7 +109,7 @@ delivery_stages:
     depends_on: [S1_single_car]
     owner_repositories: [hakoniwa-mbody-registry, hakoniwa-mujoco-robots]
     work:
-      - Add Car-2, initially the Hunter profile, to the car-world composition.
+      - Add Car-2 as a second Golf Cart to the car-world composition.
       - Assign unique body names, PDU namespaces, state topics, and controller command paths.
       - Verify whether one Ackermann asset can own both bodies or whether two plant assets
         must join the same Conductor domain; record the selected topology.

@@ -1,14 +1,14 @@
 # Urban Mobility recipes
 
 This directory contains the configuration and composition contract for the
-PLATEAU Urban Car-1 checkpoint.
+PLATEAU Urban Car Fleet checkpoint.
 
 ## Prerequisites
 
 - The Business Pack Foundation runtime is installed under
   `../hakoniwa-business-pack/work/foundation`.
 - A City World job has produced `city-world-receipt.json`, its MJCF, and GLB.
-- The Generic Ackermann Golf Cart is generated in `hakoniwa-mbody-registry`.
+- Every selected Ackermann type is generated in `hakoniwa-mbody-registry`.
 - The Urban Car application is built in this repository and uses
   `hakoniwa-robot-runtime` with the `hakoniwa-mujoco-robots` physics backend.
 - A PS5 DualSense is available when interactive control is required.
@@ -17,7 +17,7 @@ Run all commands from the `hakoniwa-urban-mobility` repository root.
 
 ## Select a city
 
-[`urban-car-1-viewer.yaml`](urban-car-1-viewer.yaml) is both the Car-1
+[`multi-car-viewer.yaml`](multi-car-viewer.yaml) is both the Car Fleet
 composition recipe and its configure input. The City World receipt `path` is
 the only city-selection setting:
 
@@ -30,56 +30,205 @@ inputs:
 The tool reads the city origin, extent, coordinate systems, MJCF path, and GLB
 path from that receipt. Do not duplicate them in this configuration.
 
-## Set the spawn pose
+## Define vehicle types, instances, and spawn poses
 
 The spawn is relative to the City World origin in local ENU coordinates:
 
 ```yaml
 inputs:
-  golf_cart_model:
-    spawn_pose_enu:
-      frame: city_origin_local_enu
-      east_m: 5.21
-      north_m: -6.07
-      up_m: 4.12
-      yaw_deg: 11.5
+  ackermann_vehicles:
+    types:
+      - type: golf_cart
+        mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
+        contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+    vehicles:
+      - name: Car-1
+        type: golf_cart
+        control_mode: external_python
+        spawn_pose_enu:
+          frame: city_origin_local_enu
+          east_m: 5.21
+          north_m: -6.07
+          up_m: 4.6
+          yaw_deg: 11.5
+      - name: Car-2
+        type: golf_cart
+        control_mode: external_python
+        spawn_pose_enu:
+          frame: city_origin_local_enu
+          east_m: 1.29
+          north_m: -6.87
+          up_m: 4.18
+          yaw_deg: 11.5
 ```
 
 - Position uses metres.
 - Yaw uses degrees, positive counter-clockwise from East toward North.
 - Roll and pitch are fixed to zero and are not configuration inputs.
-- `up_m` is the Golf Cart body origin, so include terrain height and wheel
-  clearance.
+- `up_m` is the selected model's top-level body origin, so include terrain
+  height and that type's wheel clearance.
 
-During configuration this is converted to the City World MJCF convention
+Type names and vehicle names must be unique. Each vehicle `type` references
+one catalog entry. `mjcf` is the visual/rigid-body source; `contract` is the
+matching mbody-registry Ackermann forge contract supplying freejoint, joint,
+actuator, and geometry bindings. This keeps model-specific physics metadata
+out of Urban code.
+
+Vehicle names become their PDU robot names. During configuration each pose is
+converted to the City World MJCF convention
 `X=North, Y=-East, Z=Up`; yaw is converted to radians. Both representations
 are recorded in `compose-receipt.json`.
 
 ## Configure and run
 
 ```bash
-python3 tools/urban_car_1.py doctor \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py doctor \
+  --config recipes/multi-car-viewer.yaml
 
-python3 tools/urban_car_1.py configure \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py configure \
+  --config recipes/multi-car-viewer.yaml
 
-python3 tools/urban_car_1.py check-ps5 \
-  --config recipes/urban-car-1-viewer.yaml
-
-python3 tools/urban_car_1.py start \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py start \
+  --config recipes/multi-car-viewer.yaml
 ```
 
-`configure` composes the City World and Golf Cart MJCF, compiles and validates
-a MuJoCo-version-bound MJB, and generates the runtime and Launcher files. It
+`configure` composes the City World and all selected vehicle instances into one MJCF,
+namespaces their bodies, joints, geoms, and actuators, compiles and validates
+a MuJoCo-version-bound MJB, and generates one fleet Runtime and Launcher. It
 does not download or regenerate the city.
 
 `inputs.ackermann_runtime.realtime_sync_cycle_msec` controls wall-clock pacing.
-The default `2` ms matches the Golf Cart MuJoCo timestep, so simulation time
+The default `2` ms matches the current Ackermann MJCF timestep, so simulation time
 tracks real time. Set it to `0` only for explicit faster-than-real-time runs.
 
-The Urban-owned sender publishes `ackermann_msgs/AckermannDrive` after startup:
+### Select the command source
+
+The Recipe selects exactly one command owner per vehicle:
+
+```yaml
+inputs:
+  ackermann_vehicles:
+    vehicles:
+      - name: Car-1
+        type: golf_cart
+        control_mode: ps5
+      - name: Car-2
+        type: golf_cart
+        control_mode: external_python
+```
+
+Run `configure` again after changing a mode. `external_python` leaves that
+vehicle's `<name>/ackermann_cmd` to a separate process. `ps5` adds one
+Urban-owned PS5 sender for that vehicle to the generated Launcher. Publishing
+from two senders to the same vehicle is unsupported because the newest command
+would win.
+
+### External Python control
+
+With `control_mode: external_python`, start the runtime and publish independent
+fixed-duration commands from other terminals:
+
+```bash
+FOUNDATION_PYTHON=../hakoniwa-business-pack/work/foundation/install/python/bin/python3
+
+$FOUNDATION_PYTHON apps/car/ackermann_command.py \
+  --robot Car-1 drive \
+  --speed 1.5 \
+  --steering-deg 0 \
+  --duration 3
+
+$FOUNDATION_PYTHON apps/car/ackermann_command.py \
+  --robot Car-2 drive \
+  --speed -1.0 \
+  --steering-deg -20 \
+  --duration 4
+
+$FOUNDATION_PYTHON apps/car/ackermann_command.py --robot Car-1 stop
+```
+
+`drive` republishes at 50 Hz so the Runtime command timeout does not expire,
+then sends repeated zero commands before exiting. Positive steering turns
+left; speed is metres per second and steering input is degrees.
+
+The same client can be used by an external Python program:
+
+```python
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path("apps/car").resolve()))
+from urban_car import AckermannClient
+
+with AckermannClient(
+    pdu_def="work/multi-car-viewer/urban-car-pdudef.json",
+    robot="Car-1",
+) as car:
+    car.drive(speed_m_s=1.0, steering_rad=0.2, duration_sec=3.0)
+```
+
+The Robot Runtime retains the last valid input only until `timeout_sec`, so a
+long-running controller must call `send()` continuously. Context-manager exit
+publishes stop commands and closes the external PDU service.
+
+Vehicle state is published once per Runtime tick through the shared
+`UrbanFleet/vehicle_states` `sensor_msgs/MultiDOFJointState` channel. Its
+variable-length arrays follow Recipe vehicle order (`Car-1`, then `Car-2` in
+the checked-in configuration). `UrbanFleet/joint_states` similarly contains
+the namespaced joints for every configured vehicle.
+
+### Timed multi-vehicle scenarios
+
+[`scenarios/two-car-convoy.yaml`](scenarios/two-car-convoy.yaml) defines a
+staggered command timeline independently for each vehicle:
+
+```yaml
+vehicles:
+  - name: Car-1
+    commands:
+      - at_sec: 0.0
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0
+  - name: Car-2
+    commands:
+      - at_sec: 0.8
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0
+```
+
+Validate without connecting to Hakoniwa:
+
+```bash
+FOUNDATION_PYTHON=../hakoniwa-business-pack/work/foundation/install/python/bin/python3
+$FOUNDATION_PYTHON apps/car/scenario_executor.py \
+  recipes/scenarios/two-car-convoy.yaml --dry-run
+```
+
+After starting the Recipe, execute the convoy from another terminal:
+
+```bash
+$FOUNDATION_PYTHON apps/car/scenario_executor.py \
+  recipes/scenarios/two-car-convoy.yaml
+```
+
+The timeline uses Hakoniwa simulation time, so pausing simulation also pauses
+timeline progress. One shared PDU service continuously republishes every
+vehicle command at `rate_hz`; gaps send zero commands. Commands for the same
+vehicle must not overlap. Normal completion, validation failure, and Ctrl+C
+all end with repeated stop commands for the complete scenario fleet.
+
+### PS5 control
+
+When at least one vehicle uses `control_mode: ps5`, confirm the controller
+before startup:
+
+```bash
+python3 tools/multi_car.py check-ps5 \
+  --config recipes/multi-car-viewer.yaml
+```
+
+The Urban-owned PS5 sender publishes `ackermann_msgs/AckermannDrive`:
 
 - Left stick: steering
 - Right stick vertical: throttle and reverse
@@ -102,36 +251,37 @@ mapping and observed vehicle direction must remain stable.
 7. Stop the recipe normally; `status` reports `TERMINATED` and no controller
    sender remains active.
 
-Retain the generated Launcher logs under `work/urban-car-1-viewer/logs/` when
+Retain the generated Launcher logs under `work/multi-car-viewer/logs/` when
 investigating a regression.
 
 Inspect or stop the background session from another terminal:
 
 ```bash
-python3 tools/urban_car_1.py status \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py status \
+  --config recipes/multi-car-viewer.yaml
 
-python3 tools/urban_car_1.py stop \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py stop \
+  --config recipes/multi-car-viewer.yaml
 ```
 
 For Viewer-only model inspection after configuration:
 
 ```bash
-python3 tools/urban_car_1.py view \
-  --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py view \
+  --config recipes/multi-car-viewer.yaml
 ```
 
 ## Generated files
 
 The checked-in configuration writes generated artifacts beneath
-`work/urban-car-1-viewer/`:
+`work/multi-car-viewer/`:
 
-- `car-1-city.xml`: composed canonical MJCF
-- `car-1-city.mjb`: validated runtime model
+- `urban-cars-city.xml`: composed canonical multi-Car MJCF
+- `urban-cars-city.mjb`: validated runtime model
 - `mujoco-materialization.json`: MuJoCo version and MJB provenance
 - `compose-receipt.json`: city source, hashes, ENU spawn, and MJCF conversion
-- `car-1-asset-manifest.json`: Ackermann runtime manifest
+- `urban-car-asset-manifest.json`: multi-Car Ackermann runtime manifest
+- `urban-car-pdudef.json`: per-Car commands plus shared fleet-state PDU definitions
 - `launcher.json`: Foundation Launcher configuration
 - `runtime/launcher-session.json`: background-session state
 
@@ -140,9 +290,9 @@ These files are generated and are not committed.
 ## Changing cities
 
 1. Change only `business_pack_city_receipt.path` to select another City World.
-2. Update `spawn_pose_enu` to a driveable point in that city's local frame.
+2. Update every vehicle's `spawn_pose_enu` to a driveable point in that city's local frame.
 3. Run `doctor` and `configure` again.
 4. Use the native Viewer to verify terrain clearance before driving.
 
-The broader multi-vehicle and Drone integration stages are defined in
+The broader Drone integration stages are defined in
 [`urban-mobility.yaml`](urban-mobility.yaml).

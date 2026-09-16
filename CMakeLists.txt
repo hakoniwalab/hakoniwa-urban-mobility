@@ -171,4 +171,12 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC})
     add_test(NAME hako-mobile-base-runtime-contract
         COMMAND hako-mobile-base-runtime-test)
+    add_test(NAME urban-car-control-mode-contract
+        COMMAND
+            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_control_modes.py")
+    add_test(NAME urban-car-scenario-contract
+        COMMAND
+            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scenario_executor.py")
 endif()

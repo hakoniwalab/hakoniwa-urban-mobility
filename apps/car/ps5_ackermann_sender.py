@@ -7,23 +7,10 @@ import argparse
 import json
 import math
 from pathlib import Path
-import sys
 import time
 
-
-ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
-PDU_REGISTRY = WORKSPACE / "hakoniwa-pdu-registry"
-sys.path.insert(0, str(PDU_REGISTRY))
-
-import hakopy  # noqa: E402
 import pygame  # noqa: E402
-from hakoniwa_pdu.impl.shm_communication_service import ShmCommunicationService  # noqa: E402
-from hakoniwa_pdu.pdu_manager import PduManager  # noqa: E402
-from pdu.python.ackermann_msgs.pdu_conv_AckermannDrive import (  # noqa: E402
-    py_to_pdu_AckermannDrive,
-)
-from pdu.python.ackermann_msgs.pdu_pytype_AckermannDrive import AckermannDrive  # noqa: E402
+from urban_car import AckermannClient  # noqa: E402
 
 
 TARGET_NAMES = ("Wireless Controller", "DualSense")
@@ -124,21 +111,17 @@ def main() -> int:
 
     monitor = StickMonitor(args.rc_config)
     axes = [0.0] * AXIS_COUNT
-    manager = PduManager()
-    manager.initialize(
-        config_path=str(Path(args.pdu_def).resolve()),
-        comm_service=ShmCommunicationService(),
-    )
-    manager.start_service_nowait()
-    if hakopy.init_for_external() is False:
-        print("[ERROR] hakopy.init_for_external() failed")
-        return 1
+    client = AckermannClient(
+        pdu_def=args.pdu_def,
+        robot=args.robot,
+        pdu=args.pdu,
+        rate_hz=args.rate_hz,
+    ).connect()
 
     period = 1.0 / args.rate_hz
     print("[INFO] AckermannDrive: left stick steering; right stick throttle/reverse")
     try:
         while True:
-            manager.run_nowait()
             pygame.event.pump()
             for event in pygame.event.get():
                 if hasattr(event, "instance_id") and event.instance_id != joystick.get_instance_id():
@@ -148,18 +131,16 @@ def main() -> int:
                     if output_index is not None and output_index < len(axes):
                         axes[output_index] = monitor.value(event.axis, event.value)
 
-            command = AckermannDrive()
-            command.steering_angle = (
+            steering = (
                 -apply_deadzone(axes[0], args.deadzone) * args.max_steering_angle
             )
-            command.speed = -apply_deadzone(axes[3], args.deadzone) * args.max_speed
-            manager.flush_pdu_raw_data_nowait(
-                args.robot, args.pdu, py_to_pdu_AckermannDrive(command)
-            )
+            speed = -apply_deadzone(axes[3], args.deadzone) * args.max_speed
+            client.send(speed, steering)
             time.sleep(period)
     except KeyboardInterrupt:
         print("[INFO] AckermannDrive sender stopped.")
     finally:
+        client.close(stop=True)
         pygame.joystick.quit()
         pygame.quit()
     return 0

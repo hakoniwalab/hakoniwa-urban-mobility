@@ -1,0 +1,45 @@
+schema_version: 1
+name: Two-car staggered convoy
+rate_hz: 50
+start_delay_sec: 1.0
+tail_sec: 1.0
+
+# Commands use Hakoniwa simulation seconds from scenario start. A vehicle receives a
+# continuous zero command in gaps. Commands for the same vehicle may touch at
+# their boundaries but must not overlap.
+vehicles:
+  - name: Car-1
+    commands:
+      - label: lead-straight
+        at_sec: 0.0
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0
+      - label: lead-left
+        at_sec: 4.0
+        duration_sec: 3.0
+        speed_m_s: 0.8
+        steering_deg: 12.0
+      - label: lead-exit
+        at_sec: 7.0
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0
+
+  - name: Car-2
+    commands:
+      - label: follow-straight
+        at_sec: 0.8
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0
+      - label: follow-left
+        at_sec: 4.8
+        duration_sec: 3.0
+        speed_m_s: 0.8
+        steering_deg: 12.0
+      - label: follow-exit
+        at_sec: 7.8
+        duration_sec: 4.0
+        speed_m_s: 1.0
+        steering_deg: 0.0

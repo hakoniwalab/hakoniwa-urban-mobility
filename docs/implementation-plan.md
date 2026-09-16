@@ -13,7 +13,7 @@ S0 City World receipt
 S1 one Car -----> S3 one Drone + one Car mirroring
        |                    |
        v                    |
-S2 two Cars ----------------+
+S2 two Cars (implemented) --+
        |                    |
        +---------> S4 mixed Drone Fleet + two Cars
                               |
@@ -36,10 +36,14 @@ Before adding a Drone, prove all of the following:
 2. They have distinct PDU namespaces and controller command paths.
 3. Their actual poses can be published independently in `city_map`.
 4. Exactly one process owns Hakoniwa Conductor time advancement.
-5. The selected Ackermann topology is explicit: one multi-body plant asset or
-   two plant assets joining the same domain.
+5. One multi-body Car Fleet plant owns MuJoCo stepping for every real Car.
 
-The current Golf Cart and Hunter profiles are the first candidate pair. They
+The current Recipe satisfies this checkpoint with `Car-1` and `Car-2`, one
+`UrbanCarFleet` asset, independent AckermannDrive PDU namespaces, and combined
+`UrbanFleet` JointState / MultiDOFJointState outputs.
+
+The current pair uses two Golf Cart instances. The type-catalog contract still
+allows either instance to be replaced by another forged Ackermann model. They
 remain replaceable platform selections, not an assumption built into runtime
 code.
 
@@ -49,9 +53,9 @@ The City World is built outside this repository through the Business Pack and
 stored under its `work/` directory. `hakoniwa-mbody-registry` composes that
 static City World with a vehicle model to generate each consumer world.
 
-Do not compose all real vehicles into one global MJCF. The final topology has
-one car world and one Drone world, each with the same city collider. Dynamic
-peers from the other world are mirrors.
+Do not compose Cars and Drones into one global MJCF. The final topology has one
+multi-Car world and one Drone Fleet world, each with the same city collider.
+Dynamic peers from the other world are mirrors.
 
 ## Drone introduction
 

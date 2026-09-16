@@ -10,8 +10,8 @@ The first demonstration target is two Virtual Drone Show drones and two
 Ackermann-steered vehicles moving through the same city area, with shared
 visualization and safety-aware interaction.
 
-> **Status:** the S1 City World + one PS5-controlled Golf Cart checkpoint is
-> runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
+> **Status:** the City World + two independently controlled typed Ackermann vehicles
+> is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
 > contact handling remain under development.
 
 ## Why this repository exists
@@ -134,9 +134,8 @@ time-of-impact resolution are future work.
    ascent according to the scenario.
 
 The checked-in configuration selects the validated compact Hokkaido/Sapporo
-city region, a
-Golf Cart and Hunter V2, and Quad and Hexa drones. Those are demonstration
-choices, not hard-coded product requirements.
+city region, two Golf Cart instances, and Quad and Hexa drones. Those are
+demonstration choices, not hard-coded product requirements.
 
 ## Configuration-first vehicle composition
 
@@ -205,20 +204,20 @@ The application accepts a manifest-driven Runtime instance:
 
 ```bash
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json
+  --manifest work/multi-car-viewer/urban-car-asset-manifest.json
 
 # Model inspection without registering a Hakoniwa asset
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json \
+  --manifest work/multi-car-viewer/urban-car-asset-manifest.json \
   --view-model
 
 # Headless XML/MJB compatibility check
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json \
+  --manifest work/multi-car-viewer/urban-car-asset-manifest.json \
   --validate-model
 ```
 
-The `urban_car_1.py` recipe materializes the Urban-owned AckermannDrive,
+The `multi_car.py` recipe materializes the Urban-owned AckermannDrive,
 JointState, and MultiDOF contracts, compiles the composed city model to MJB,
 and launches the application with explicit wall-clock pacing. Application
 ownership is independent of Robot Arm Pack.
@@ -239,39 +238,56 @@ The executable dependency plan and the car-first integration checkpoints are
 defined in [`docs/implementation-plan.md`](docs/implementation-plan.md). The
 first concrete composition contract is
 [`recipes/urban-mobility.yaml`](recipes/urban-mobility.yaml).
-The first viewer and PS5 checkpoint is
-[`recipes/urban-car-1-viewer.yaml`](recipes/urban-car-1-viewer.yaml).
+The Car Fleet viewer and control checkpoint is
+[`recipes/multi-car-viewer.yaml`](recipes/multi-car-viewer.yaml).
 
-### Urban Car-1 operation
+### Urban Car Fleet operation
 
 The recipe wrapper materializes only local generated files under `work/` and
-reuses component-owned tools and assets. Choose a driveable spawn relative to
+reuses component-owned tools and assets. Choose driveable spawns relative to
 the receipt origin in local ENU before configuring; the city origin is not
 assumed to be a road. The complete operating guide is in
 [`recipes/README.md`](recipes/README.md).
 
 ```bash
-python3 tools/urban_car_1.py doctor --config recipes/urban-car-1-viewer.yaml
-python3 tools/urban_car_1.py configure --config recipes/urban-car-1-viewer.yaml
-python3 tools/urban_car_1.py start --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py doctor --config recipes/multi-car-viewer.yaml
+python3 tools/multi_car.py configure --config recipes/multi-car-viewer.yaml
+python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
+
+# Drive either externally controlled vehicle from another terminal:
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  apps/car/ackermann_command.py --robot Car-1 drive \
+  --speed 1.0 --steering-deg 15 --duration 3
+
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  apps/car/ackermann_command.py --robot Car-2 drive \
+  --speed -1.0 --steering-deg -15 --duration 3
+
+# Or run the simulation-time-based two-Car convoy:
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  apps/car/scenario_executor.py recipes/scenarios/two-car-convoy.yaml
 
 # Later, from another terminal:
-python3 tools/urban_car_1.py status --config recipes/urban-car-1-viewer.yaml
-python3 tools/urban_car_1.py stop --config recipes/urban-car-1-viewer.yaml
+python3 tools/multi_car.py status --config recipes/multi-car-viewer.yaml
+python3 tools/multi_car.py stop --config recipes/multi-car-viewer.yaml
 ```
 
 The YAML selects a city by its City World receipt `path`; changing that one
 path is sufficient to switch cities. Origin, extent, coordinate systems, and
-artifact paths are derived from the receipt. The spawn is relative to the
+artifact paths are derived from the receipt. Each spawn is relative to the
 receipt's city origin. Position uses local ENU metres (`east_m`, `north_m`,
 `up_m`); `yaw_deg` is positive counter-clockwise from East. Roll and pitch are
 fixed to zero. The tool converts this to MuJoCo's `X=North, Y=-East, Z=Up`
 frame and radians during configuration, and records both representations in
 the composition receipt.
 
-`start` opens the Urban-owned Car application with the shared native MuJoCo
-Viewer backend and starts the Urban AckermannDrive PS5 sender after the plant.
-Use `view` after `configure` for a Viewer-only model inspection.
+Each `inputs.ackermann_vehicles.vehicles[]` selects a catalogued `type`, spawn,
+and `control_mode`. The control mode selects
+`external_python` or `ps5` independently.
+`start` always opens the Urban-owned Car application with the shared native
+MuJoCo Viewer backend. In `ps5` mode the Launcher also starts the PS5 sender;
+in `external_python` mode a separate process owns command publication. Use
+`view` after `configure` for a Viewer-only model inspection.
 
 `configure` preserves the composed XML as the canonical materialization, then
 compiles and reload-validates a version-bound MJB with the exact MuJoCo library
@@ -280,13 +296,13 @@ World XML compilation on every start.
 
 This single-host checkpoint exclusively owns the shared Foundation runtime
 while active. Its Launcher cleans only the configured Hakoniwa mmap/lock files
-before starting the plant, waits until `Car-1` is registered, and only then
+before starting the plant, waits until `UrbanCarFleet` is registered, and only then
 issues `hako-cmd start`. Do not run another Foundation SHM simulation at the
 same time. `stop` uses the Launcher session's normal termination path.
 
 ## Non-goals for the initial release
 
-- A single, monolithic MuJoCo model containing every vehicle.
+- A single MuJoCo model combining the independently owned Car and Drone worlds.
 - Full-city high-density PLATEAU collision meshes.
 - A new drone flight controller or car dynamics implementation.
 - Physically exact vehicle–drone impact, friction, or momentum conservation.
