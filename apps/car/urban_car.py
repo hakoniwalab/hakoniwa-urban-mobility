@@ -10,6 +10,7 @@ from pathlib import Path
 import platform
 import sys
 import time
+from typing import NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,10 +22,22 @@ from pdu.python.ackermann_msgs.pdu_conv_AckermannDrive import (  # noqa: E402
     py_to_pdu_AckermannDrive,
 )
 from pdu.python.ackermann_msgs.pdu_pytype_AckermannDrive import AckermannDrive  # noqa: E402
+from pdu.python.sensor_msgs.pdu_conv_MultiDOFJointState import (  # noqa: E402
+    pdu_to_py_MultiDOFJointState,
+)
 
 
 class AckermannClientError(RuntimeError):
     """The external PDU client could not initialize or publish a command."""
+
+
+class VehiclePose(NamedTuple):
+    """One vehicle pose expressed in the City World local ENU frame."""
+
+    east_m: float
+    north_m: float
+    up_m: float
+    yaw_rad: float
 
 
 class HakoniwaPollingTransport:
@@ -81,6 +94,14 @@ class HakoniwaPollingTransport:
             ctypes.c_size_t,
         ]
         self._lib.hakoniwa_asset_write_pdu.restype = ctypes.c_int
+        self._lib.hakoniwa_asset_read_pdu.argtypes = [
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+        ]
+        self._lib.hakoniwa_asset_read_pdu.restype = ctypes.c_int
         self._connected = False
 
     def connect(self) -> None:
@@ -119,6 +140,22 @@ class HakoniwaPollingTransport:
             buffer,
             len(raw),
         ) == 0
+
+    def read(self, robot: str, pdu: str) -> bytearray | None:
+        channel_id = self._channels.get_pdu_channel_id(robot, pdu)
+        pdu_size = self._channels.get_pdu_size(robot, pdu)
+        if channel_id < 0 or pdu_size <= 0 or not self._connected:
+            return None
+        buffer = ctypes.create_string_buffer(pdu_size)
+        if self._lib.hakoniwa_asset_read_pdu(
+            self.runtime_asset,
+            robot.encode("utf-8"),
+            channel_id,
+            buffer,
+            pdu_size,
+        ) != 0:
+            return None
+        return bytearray(buffer.raw)
 
     def close(self) -> None:
         self._connected = False
@@ -189,6 +226,61 @@ class AckermannFleetClient:
             raise AckermannClientError(
                 f"failed to publish Ackermann command: {robot}/{self.pdu}"
             )
+
+    def vehicle_poses(
+        self,
+        state_robot: str = "UrbanFleet",
+        state_pdu: str = "vehicle_states",
+    ) -> dict[str, VehiclePose]:
+        """Read the latest fleet body states and convert MuJoCo coordinates to ENU."""
+        if self._transport is None:
+            raise AckermannClientError("client is not connected")
+        raw = self._transport.read(state_robot, state_pdu)
+        if raw is None:
+            raise AckermannClientError(
+                f"failed to read vehicle state PDU: {state_robot}/{state_pdu}"
+            )
+        try:
+            state = pdu_to_py_MultiDOFJointState(raw)
+        except (IndexError, TypeError, ValueError) as error:
+            raise AckermannClientError("invalid vehicle state PDU payload") from error
+        if len(state.joint_names) != len(state.transforms):
+            raise AckermannClientError(
+                "vehicle state PDU has mismatched names and transforms"
+            )
+        result: dict[str, VehiclePose] = {}
+        for name, transform in zip(state.joint_names, state.transforms):
+            if not name or name in result:
+                raise AckermannClientError(
+                    "vehicle state PDU contains an empty or duplicate name"
+                )
+            position = transform.translation
+            quaternion = transform.rotation
+            # The state publisher reports MuJoCo X=North, Y=-East, Z=Up.
+            # Recover MuJoCo yaw from ROS-order quaternion [x,y,z,w], then
+            # rotate the heading into ENU, where zero yaw points East.
+            yaw_mjcf = math.atan2(
+                2.0 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y),
+                1.0 - 2.0 * (quaternion.y ** 2 + quaternion.z ** 2),
+            )
+            yaw_enu = math.atan2(
+                math.sin(yaw_mjcf + math.pi / 2.0),
+                math.cos(yaw_mjcf + math.pi / 2.0),
+            )
+            pose = VehiclePose(
+                east_m=-float(position.y),
+                north_m=float(position.x),
+                up_m=float(position.z),
+                yaw_rad=yaw_enu,
+            )
+            if not all(math.isfinite(value) for value in (
+                pose.east_m, pose.north_m, pose.up_m, pose.yaw_rad
+            )):
+                raise AckermannClientError(
+                    f"vehicle state PDU contains non-finite pose: {name}"
+                )
+            result[name] = pose
+        return result
 
     def stop(self, robots: list[str] | tuple[str, ...] | None = None, repeat: int = 3) -> None:
         if repeat < 1:

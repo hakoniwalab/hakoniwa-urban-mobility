@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute a timed multi-vehicle Ackermann command scenario."""
+"""Execute timed or closed-loop route scenarios for Urban Ackermann vehicles."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import time
 
 import yaml
 
-from urban_car import AckermannClientError, AckermannFleetClient
+from urban_car import AckermannClientError, AckermannFleetClient, VehiclePose
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +52,149 @@ class Scenario:
         ) + self.tail_sec
 
 
+@dataclass(frozen=True)
+class RoutePoint:
+    name: str
+    east_m: float
+    north_m: float
+    dwell_sec: float = 0.0
+
+
+@dataclass(frozen=True)
+class RouteControl:
+    speed_m_s: float
+    lookahead_m: float
+    position_gain: float
+    wheelbase_m: float
+    max_steering_rad: float
+
+
+@dataclass(frozen=True)
+class RouteVehicle:
+    name: str
+    offset_m: float
+
+
+@dataclass(frozen=True)
+class RouteScenario:
+    name: str
+    rate_hz: float
+    start_delay_sec: float
+    loop_count: int | None
+    vehicles: tuple[RouteVehicle, ...]
+    points: tuple[RoutePoint, ...]
+    control: RouteControl
+
+
+class RouteGeometry:
+    """Closed ENU polyline with projection and arc-length sampling."""
+
+    def __init__(self, points: tuple[RoutePoint, ...]):
+        self.points = points
+        self.segment_lengths: list[float] = []
+        self.cumulative = [0.0]
+        for start, end in zip(points, points[1:] + points[:1]):
+            length = math.hypot(end.east_m - start.east_m, end.north_m - start.north_m)
+            if length <= 1e-6:
+                raise ScenarioError("route contains a zero-length segment")
+            self.segment_lengths.append(length)
+            self.cumulative.append(self.cumulative[-1] + length)
+        self.length = self.cumulative[-1]
+
+    def sample(self, distance_m: float) -> tuple[float, float]:
+        wrapped = distance_m % self.length
+        for index, length in enumerate(self.segment_lengths):
+            start_s = self.cumulative[index]
+            if wrapped <= start_s + length or index + 1 == len(self.segment_lengths):
+                ratio = (wrapped - start_s) / length
+                start = self.points[index]
+                end = self.points[(index + 1) % len(self.points)]
+                return (
+                    start.east_m + ratio * (end.east_m - start.east_m),
+                    start.north_m + ratio * (end.north_m - start.north_m),
+                )
+        raise AssertionError("route sample did not resolve a segment")
+
+    def project(self, east_m: float, north_m: float) -> float:
+        best_distance_sq = math.inf
+        best_s = 0.0
+        for index, length in enumerate(self.segment_lengths):
+            start = self.points[index]
+            end = self.points[(index + 1) % len(self.points)]
+            dx = end.east_m - start.east_m
+            dy = end.north_m - start.north_m
+            ratio = max(0.0, min(1.0, (
+                (east_m - start.east_m) * dx + (north_m - start.north_m) * dy
+            ) / (length * length)))
+            projected_east = start.east_m + ratio * dx
+            projected_north = start.north_m + ratio * dy
+            distance_sq = ((east_m - projected_east) ** 2
+                           + (north_m - projected_north) ** 2)
+            if distance_sq < best_distance_sq:
+                best_distance_sq = distance_sq
+                best_s = self.cumulative[index] + ratio * length
+        return best_s % self.length
+
+    def signed_error(self, target_s: float, actual_s: float) -> float:
+        error = (target_s - actual_s) % self.length
+        if error > self.length / 2.0:
+            error -= self.length
+        return error
+
+
+class RouteCursor:
+    """Simulation-time route progress with repeatable waypoint dwell periods."""
+
+    def __init__(self, geometry: RouteGeometry, speed_m_s: float, loop_count: int | None):
+        self.geometry = geometry
+        self.speed_m_s = speed_m_s
+        self.loop_count = loop_count
+        self.distance_m = 0.0
+        self.hold_remaining_sec = 0.0
+        self.finished = False
+        self._last_stop_distance: float | None = None
+        self._stops = tuple(
+            (geometry.cumulative[index], point.dwell_sec, point.name)
+            for index, point in enumerate(geometry.points)
+            if point.dwell_sec > 0.0
+        )
+
+    @property
+    def moving(self) -> bool:
+        return not self.finished and self.hold_remaining_sec <= 0.0
+
+    def _next_stop(self) -> tuple[float, float, str] | None:
+        epsilon = 1e-7
+        lap = math.floor((self.distance_m + epsilon) / self.geometry.length)
+        candidates = []
+        for stop_s, dwell, name in self._stops:
+            absolute = lap * self.geometry.length + stop_s
+            if absolute <= self.distance_m + epsilon:
+                absolute += self.geometry.length
+            candidates.append((absolute, dwell, name))
+        return min(candidates, default=None)
+
+    def advance(self, delta_sec: float) -> str | None:
+        if self.finished or delta_sec <= 0.0:
+            return None
+        if self.hold_remaining_sec > 0.0:
+            self.hold_remaining_sec = max(0.0, self.hold_remaining_sec - delta_sec)
+            return None
+        target_distance = self.distance_m + self.speed_m_s * delta_sec
+        end_distance = (math.inf if self.loop_count is None
+                        else self.loop_count * self.geometry.length)
+        next_stop = self._next_stop()
+        if next_stop is not None and next_stop[0] <= min(target_distance, end_distance):
+            self.distance_m = next_stop[0]
+            self.hold_remaining_sec = next_stop[1]
+            self._last_stop_distance = next_stop[0]
+            return next_stop[2]
+        self.distance_m = min(target_distance, end_distance)
+        if self.distance_m >= end_distance:
+            self.finished = True
+        return None
+
+
 def finite_number(value: object, field: str) -> float:
     try:
         number = float(value)
@@ -62,13 +205,107 @@ def finite_number(value: object, field: str) -> float:
     return number
 
 
-def load_scenario(path: Path) -> Scenario:
+def load_route_scenario(root: dict) -> RouteScenario:
+    name = str(root.get("name", "")).strip()
+    if not name:
+        raise ScenarioError("scenario name must not be empty")
+    rate_hz = finite_number(root.get("rate_hz", 50.0), "rate_hz")
+    start_delay_sec = finite_number(
+        root.get("start_delay_sec", 1.0), "start_delay_sec"
+    )
+    if rate_hz <= 0.0 or start_delay_sec < 0.0:
+        raise ScenarioError("rate_hz must be positive and start_delay_sec non-negative")
+    loop_value = root.get("loop_count", "forever")
+    if loop_value == "forever":
+        loop_count = None
+    elif isinstance(loop_value, int) and not isinstance(loop_value, bool) and loop_value > 0:
+        loop_count = loop_value
+    else:
+        raise ScenarioError("loop_count must be a positive integer or 'forever'")
+
+    vehicle_inputs = root.get("vehicles")
+    if not isinstance(vehicle_inputs, list) or not vehicle_inputs:
+        raise ScenarioError("vehicles must be a non-empty array")
+    vehicles = []
+    names: set[str] = set()
+    for index, item in enumerate(vehicle_inputs):
+        if not isinstance(item, dict):
+            raise ScenarioError(f"vehicles[{index}] must be an object")
+        vehicle_name = str(item.get("name", "")).strip()
+        offset_m = finite_number(item.get("route_offset_m", 0.0),
+                                 f"vehicles[{index}].route_offset_m")
+        if not vehicle_name or vehicle_name in names:
+            raise ScenarioError("vehicle names must be non-empty and unique")
+        if offset_m > 0.0:
+            raise ScenarioError("route_offset_m must be zero or negative")
+        names.add(vehicle_name)
+        vehicles.append(RouteVehicle(vehicle_name, offset_m))
+
+    route = root.get("route")
+    if not isinstance(route, dict) or route.get("closed") is not True:
+        raise ScenarioError("route.closed must be true")
+    point_inputs = route.get("points")
+    if not isinstance(point_inputs, list) or len(point_inputs) < 3:
+        raise ScenarioError("route.points must contain at least three points")
+    points = []
+    point_names: set[str] = set()
+    for index, item in enumerate(point_inputs):
+        if not isinstance(item, dict):
+            raise ScenarioError(f"route.points[{index}] must be an object")
+        point_name = str(item.get("name", f"point-{index + 1}")).strip()
+        east_m = finite_number(item.get("east_m"), f"route.points[{index}].east_m")
+        north_m = finite_number(item.get("north_m"), f"route.points[{index}].north_m")
+        dwell_sec = finite_number(item.get("dwell_sec", 0.0),
+                                  f"route.points[{index}].dwell_sec")
+        if not point_name or point_name in point_names or dwell_sec < 0.0:
+            raise ScenarioError("route point names must be unique and dwell non-negative")
+        point_names.add(point_name)
+        points.append(RoutePoint(point_name, east_m, north_m, dwell_sec))
+
+    control_input = root.get("control")
+    if not isinstance(control_input, dict):
+        raise ScenarioError("control must be an object")
+    control = RouteControl(
+        speed_m_s=finite_number(control_input.get("speed_m_s"), "control.speed_m_s"),
+        lookahead_m=finite_number(control_input.get("lookahead_m"), "control.lookahead_m"),
+        position_gain=finite_number(
+            control_input.get("position_gain", 1.0), "control.position_gain"
+        ),
+        wheelbase_m=finite_number(control_input.get("wheelbase_m"), "control.wheelbase_m"),
+        max_steering_rad=math.radians(finite_number(
+            control_input.get("max_steering_deg"), "control.max_steering_deg"
+        )),
+    )
+    if any(value <= 0.0 for value in (
+        control.speed_m_s, control.lookahead_m, control.position_gain,
+        control.wheelbase_m, control.max_steering_rad,
+    )):
+        raise ScenarioError("route control values must be positive")
+    geometry = RouteGeometry(tuple(points))
+    if max(-vehicle.offset_m for vehicle in vehicles) >= geometry.length / 2.0:
+        raise ScenarioError("vehicle route offsets must be less than half the route length")
+    return RouteScenario(
+        name=name,
+        rate_hz=rate_hz,
+        start_delay_sec=start_delay_sec,
+        loop_count=loop_count,
+        vehicles=tuple(vehicles),
+        points=tuple(points),
+        control=control,
+    )
+
+
+def load_scenario(path: Path) -> Scenario | RouteScenario:
     try:
         root = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
         raise ScenarioError(f"failed to load scenario {path}: {error}") from error
-    if not isinstance(root, dict) or root.get("schema_version") != 1:
-        raise ScenarioError("scenario schema_version must be 1")
+    if not isinstance(root, dict):
+        raise ScenarioError("scenario root must be an object")
+    if root.get("schema_version") == 2:
+        return load_route_scenario(root)
+    if root.get("schema_version") != 1:
+        raise ScenarioError("scenario schema_version must be 1 or 2")
     name = str(root.get("name", "")).strip()
     if not name:
         raise ScenarioError("scenario name must not be empty")
@@ -138,7 +375,7 @@ def active_command(
     return None
 
 
-def execute(scenario: Scenario, pdu_def: Path) -> None:
+def execute_timed(scenario: Scenario, pdu_def: Path) -> None:
     robots = tuple(scenario.schedules)
     print(
         f"Scenario: {scenario.name} | vehicles={','.join(robots)} "
@@ -194,6 +431,115 @@ def execute(scenario: Scenario, pdu_def: Path) -> None:
     print("Scenario finished; all vehicles stopped.")
 
 
+def route_command(
+    geometry: RouteGeometry,
+    cursor: RouteCursor,
+    vehicle: RouteVehicle,
+    pose: VehiclePose,
+    control: RouteControl,
+) -> tuple[float, float]:
+    actual_s = geometry.project(pose.east_m, pose.north_m)
+    target_s = cursor.distance_m + vehicle.offset_m
+    progress_error = geometry.signed_error(target_s, actual_s)
+    feed_forward = control.speed_m_s if cursor.moving else 0.0
+    speed = max(0.0, min(
+        control.speed_m_s * 1.25,
+        feed_forward + control.position_gain * progress_error,
+    ))
+    if speed <= 1e-3:
+        return 0.0, 0.0
+    target_east, target_north = geometry.sample(target_s + control.lookahead_m)
+    bearing = math.atan2(target_north - pose.north_m, target_east - pose.east_m)
+    heading_error = math.atan2(
+        math.sin(bearing - pose.yaw_rad),
+        math.cos(bearing - pose.yaw_rad),
+    )
+    target_distance = max(
+        control.lookahead_m,
+        math.hypot(target_east - pose.east_m, target_north - pose.north_m),
+    )
+    steering = math.atan2(
+        2.0 * control.wheelbase_m * math.sin(heading_error),
+        target_distance,
+    )
+    steering = max(-control.max_steering_rad,
+                   min(control.max_steering_rad, steering))
+    return speed, steering
+
+
+def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
+    robots = tuple(vehicle.name for vehicle in scenario.vehicles)
+    geometry = RouteGeometry(scenario.points)
+    cursor = RouteCursor(geometry, scenario.control.speed_m_s, scenario.loop_count)
+    loops = "forever" if scenario.loop_count is None else str(scenario.loop_count)
+    print(
+        f"Route scenario: {scenario.name} | vehicles={','.join(robots)} "
+        f"route={geometry.length:.1f}m loops={loops} rate={scenario.rate_hz:g}Hz"
+    )
+    with AckermannFleetClient(pdu_def, robots, rate_hz=scenario.rate_hz) as fleet:
+        fleet.stop(repeat=1)
+        if scenario.start_delay_sec:
+            print(f"Starting in {scenario.start_delay_sec:g}s...")
+            time.sleep(scenario.start_delay_sec)
+        last_simulation_time = fleet.simulation_time_sec()
+        next_tick = time.monotonic()
+        period = 1.0 / scenario.rate_hz
+        previous_lap = 0
+        try:
+            while not cursor.finished:
+                simulation_time = fleet.simulation_time_sec()
+                if simulation_time + 1e-6 < last_simulation_time:
+                    raise ScenarioError(
+                        "Hakoniwa simulation time moved backwards during route execution"
+                    )
+                delta_sec = max(0.0, simulation_time - last_simulation_time)
+                last_simulation_time = simulation_time
+                stop_name = cursor.advance(delta_sec)
+                lap = int(cursor.distance_m // geometry.length)
+                if lap != previous_lap:
+                    previous_lap = lap
+                    print(f"[{simulation_time:9.3f}] convoy lap {lap + 1}")
+
+                poses = fleet.vehicle_poses()
+                missing = [robot for robot in robots if robot not in poses]
+                if missing:
+                    raise ScenarioError(
+                        "vehicle state PDU is missing: " + ", ".join(missing)
+                    )
+                if stop_name is not None:
+                    positions = ", ".join(
+                        f"{robot}=({poses[robot].east_m:.2f}E,"
+                        f"{poses[robot].north_m:.2f}N)"
+                        for robot in robots
+                    )
+                    print(
+                        f"[{simulation_time:9.3f}] convoy stop: {stop_name} "
+                        f"for {cursor.hold_remaining_sec:g}s | {positions}"
+                    )
+                for vehicle in scenario.vehicles:
+                    speed, steering = route_command(
+                        geometry, cursor, vehicle, poses[vehicle.name], scenario.control
+                    )
+                    fleet.send(vehicle.name, speed, steering)
+
+                next_tick += period
+                delay = next_tick - time.monotonic()
+                if delay > 0.0:
+                    time.sleep(delay)
+                else:
+                    next_tick = time.monotonic()
+        except KeyboardInterrupt:
+            print("Route scenario interrupted; stopping all vehicles.")
+    print("Route scenario finished; all vehicles stopped.")
+
+
+def execute(scenario: Scenario | RouteScenario, pdu_def: Path) -> None:
+    if isinstance(scenario, RouteScenario):
+        execute_route(scenario, pdu_def)
+    else:
+        execute_timed(scenario, pdu_def)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("scenario", type=Path)
@@ -210,10 +556,21 @@ def main() -> int:
     scenario_path = args.scenario.expanduser().resolve()
     scenario = load_scenario(scenario_path)
     if args.dry_run:
-        print(
-            f"Valid scenario: {scenario.name} | vehicles={','.join(scenario.schedules)} "
-            f"duration={scenario.duration_sec:.2f}s rate={scenario.rate_hz:g}Hz"
-        )
+        if isinstance(scenario, RouteScenario):
+            geometry = RouteGeometry(scenario.points)
+            loops = "forever" if scenario.loop_count is None else str(scenario.loop_count)
+            print(
+                f"Valid route scenario: {scenario.name} | "
+                f"vehicles={','.join(vehicle.name for vehicle in scenario.vehicles)} "
+                f"route={geometry.length:.2f}m loops={loops} "
+                f"rate={scenario.rate_hz:g}Hz"
+            )
+        else:
+            print(
+                f"Valid scenario: {scenario.name} | "
+                f"vehicles={','.join(scenario.schedules)} "
+                f"duration={scenario.duration_sec:.2f}s rate={scenario.rate_hz:g}Hz"
+            )
         return 0
     execute(scenario, args.pdu_def.expanduser().resolve())
     return 0

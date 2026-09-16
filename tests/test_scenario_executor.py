@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 from pathlib import Path
 import sys
 import tempfile
@@ -54,6 +55,55 @@ vehicles:
             )
             with self.assertRaises(scenario_executor.ScenarioError):
                 scenario_executor.load_scenario(path)
+
+    def test_checked_in_hotel_route_is_closed_loop_with_convoy_gap(self):
+        scenario = scenario_executor.load_scenario(
+            ROOT / "recipes/scenarios/hotel-convoy-loop.yaml"
+        )
+        self.assertIsInstance(scenario, scenario_executor.RouteScenario)
+        self.assertIsNone(scenario.loop_count)
+        self.assertEqual(
+            tuple(vehicle.name for vehicle in scenario.vehicles),
+            ("Car-1", "Car-2"),
+        )
+        self.assertEqual(scenario.vehicles[1].offset_m, -5.0)
+        self.assertEqual(
+            next(point for point in scenario.points if point.name == "hotel-stop").dwell_sec,
+            5.0,
+        )
+        geometry = scenario_executor.RouteGeometry(scenario.points)
+        self.assertGreater(geometry.length, 80.0)
+
+    def test_route_cursor_holds_at_hotel_each_lap(self):
+        scenario = scenario_executor.load_scenario(
+            ROOT / "recipes/scenarios/hotel-convoy-loop.yaml"
+        )
+        geometry = scenario_executor.RouteGeometry(scenario.points)
+        cursor = scenario_executor.RouteCursor(
+            geometry, scenario.control.speed_m_s, loop_count=None
+        )
+        stop = cursor.advance(60.0)
+        self.assertEqual(stop, "hotel-stop")
+        self.assertAlmostEqual(cursor.hold_remaining_sec, 5.0)
+        stopped_distance = cursor.distance_m
+        cursor.advance(2.0)
+        self.assertEqual(cursor.distance_m, stopped_distance)
+        self.assertAlmostEqual(cursor.hold_remaining_sec, 3.0)
+
+    def test_route_controller_drives_west_from_initial_spawn(self):
+        scenario = scenario_executor.load_scenario(
+            ROOT / "recipes/scenarios/hotel-convoy-loop.yaml"
+        )
+        geometry = scenario_executor.RouteGeometry(scenario.points)
+        cursor = scenario_executor.RouteCursor(
+            geometry, scenario.control.speed_m_s, loop_count=None
+        )
+        pose = scenario_executor.VehiclePose(35.0, -7.0, 4.6, math.pi)
+        speed, steering = scenario_executor.route_command(
+            geometry, cursor, scenario.vehicles[0], pose, scenario.control
+        )
+        self.assertGreater(speed, 0.0)
+        self.assertAlmostEqual(steering, 0.0, places=6)
 
 
 if __name__ == "__main__":

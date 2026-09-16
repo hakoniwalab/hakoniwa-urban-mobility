@@ -47,19 +47,19 @@ inputs:
         control_mode: external_python
         spawn_pose_enu:
           frame: city_origin_local_enu
-          east_m: 5.21
-          north_m: -6.07
+          east_m: 35.0
+          north_m: -7.0
           up_m: 4.6
-          yaw_deg: 11.5
+          yaw_deg: 180.0
       - name: Car-2
         type: golf_cart
         control_mode: external_python
         spawn_pose_enu:
           frame: city_origin_local_enu
-          east_m: 1.29
-          north_m: -6.87
-          up_m: 4.18
-          yaw_deg: 11.5
+          east_m: 40.0
+          north_m: -7.0
+          up_m: 4.6
+          yaw_deg: 180.0
 ```
 
 - Position uses metres.
@@ -217,6 +217,29 @@ timeline progress. One shared PDU service continuously republishes every
 vehicle command at `rate_hz`; gaps send zero commands. Commands for the same
 vehicle must not overlap. Normal completion, validation failure, and Ctrl+C
 all end with repeated stop commands for the complete scenario fleet.
+
+### Closed-loop hotel convoy
+
+[`scenarios/hotel-convoy-loop.yaml`](scenarios/hotel-convoy-loop.yaml) uses
+local ENU waypoints and the published `UrbanFleet/vehicle_states` feedback.
+The first vehicle follows a virtual point on the closed route and each
+following vehicle receives a negative `route_offset_m`. The checked-in 5 m
+offset keeps both Golf Carts in formation, including the five-second hotel
+stop. The executor converts the MuJoCo state frame back to ENU, projects each
+car onto the route, and calculates steering with a pure-pursuit controller.
+
+```bash
+$FOUNDATION_PYTHON apps/car/scenario_executor.py \
+  recipes/scenarios/hotel-convoy-loop.yaml --dry-run
+
+$FOUNDATION_PYTHON apps/car/scenario_executor.py \
+  recipes/scenarios/hotel-convoy-loop.yaml
+```
+
+`loop_count: forever` repeats until Ctrl-C. A positive integer runs that many
+laps. The route belongs to the selected City World receipt; when the receipt
+changes, define and validate a new ENU waypoint set rather than reusing these
+coordinates blindly.
 
 ### PS5 control
 

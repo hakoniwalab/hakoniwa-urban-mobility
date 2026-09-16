@@ -1,0 +1,40 @@
+schema_version: 2
+name: Hotel drop-off convoy loop
+rate_hz: 50
+start_delay_sec: 1.0
+loop_count: forever
+
+# Both cars follow one virtual progress point. Car-2 is assigned a point 5 m
+# behind Car-1, so the convoy keeps its spacing while driving and while stopped.
+vehicles:
+  - name: Car-1
+    route_offset_m: 0.0
+  - name: Car-2
+    route_offset_m: -5.0
+
+control:
+  speed_m_s: 1.0
+  lookahead_m: 2.5
+  position_gain: 0.8
+  wheelbase_m: 1.55
+  max_steering_deg: 32.0
+
+# Local ENU metres relative to the City World receipt origin. The route enters
+# the porte-cochere from the east road, pauses in formation at the hotel, turns
+# around inside the forecourt, returns to the road, and circles back to repeat.
+route:
+  closed: true
+  points:
+    - {name: road-approach, east_m: 35.0, north_m: -7.0}
+    - {name: driveway-entry, east_m: 27.0, north_m: -7.0}
+    - {name: hotel-stop, east_m: 5.0, north_m: -7.0, dwell_sec: 5.0}
+    - {name: turn-in, east_m: 0.0, north_m: -10.0}
+    - {name: turnaround-south, east_m: 4.0, north_m: -13.2}
+    - {name: turnaround-east, east_m: 13.0, north_m: -13.0}
+    - {name: driveway-exit, east_m: 28.0, north_m: -9.0}
+    - {name: road-south, east_m: 38.0, north_m: -16.0}
+    - {name: road-east, east_m: 48.0, north_m: -10.0}
+    - {name: road-north, east_m: 50.0, north_m: 0.0}
+    - {name: road-return, east_m: 45.0, north_m: 6.0}
+    - {name: approach-align, east_m: 40.0, north_m: -2.0}
+    - {name: convoy-reset, east_m: 42.0, north_m: -7.0}

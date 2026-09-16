@@ -38,19 +38,19 @@ inputs:
         control_mode: external_python  # external_python | ps5
         spawn_pose_enu:
           frame: city_origin_local_enu
-          east_m: 5.21
-          north_m: -6.07
+          east_m: 35.0
+          north_m: -7.0
           up_m: 4.6
-          yaw_deg: 11.5
+          yaw_deg: 180.0
       - name: Car-2
         type: golf_cart
         control_mode: external_python
         spawn_pose_enu:
           frame: city_origin_local_enu
-          east_m: 1.29
-          north_m: -6.87
+          east_m: 40.0
+          north_m: -7.0
           up_m: 4.6
-          yaw_deg: 11.5
+          yaw_deg: 180.0
     spawn_pose_rule: >
       Position is relative to the City World receipt origin. Yaw is positive
       counter-clockwise from East. Roll and pitch are fixed to zero. Each
@@ -139,7 +139,8 @@ known_limitations:
     The City World MJCF is the collision authority. Its separate City GLB
     contains roads and road markings for Map Viewer / Three.js presentation;
     native MuJoCo Viewer will not automatically display that GLB.
-  - No route follower is required in this stage; control is PS5 or external Python.
+  - The demo route is an ENU waypoint loop for this City World receipt; changing
+    the city requires a new route definition.
   - Drone Fleet, mirrors, and MirrorImpulseSender begin in later stages.
 
 next_stage: urban-mobility#S3_drone_car_mirroring

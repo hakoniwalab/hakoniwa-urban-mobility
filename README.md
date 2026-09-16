@@ -267,6 +267,10 @@ python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
   apps/car/scenario_executor.py recipes/scenarios/two-car-convoy.yaml
 
+# Or continuously follow the hotel drop-off loop using fleet pose feedback:
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  apps/car/scenario_executor.py recipes/scenarios/hotel-convoy-loop.yaml
+
 # Later, from another terminal:
 python3 tools/multi_car.py status --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py stop --config recipes/multi-car-viewer.yaml
@@ -280,6 +284,13 @@ receipt's city origin. Position uses local ENU metres (`east_m`, `north_m`,
 fixed to zero. The tool converts this to MuJoCo's `X=North, Y=-East, Z=Up`
 frame and radians during configuration, and records both representations in
 the composition receipt.
+
+Scenario schema version 1 is the original simulation-time command sequence.
+Schema version 2 is a closed ENU waypoint route: the executor reads
+`UrbanFleet/vehicle_states`, projects each vehicle onto the route, and applies
+pure-pursuit steering. A shared virtual route position plus each vehicle's
+`route_offset_m` preserves convoy spacing. Waypoint `dwell_sec` stops the whole
+formation, and `loop_count: forever` repeats until Ctrl-C.
 
 Each `inputs.ackermann_vehicles.vehicles[]` selects a catalogued `type`, spawn,
 and `control_mode`. The control mode selects

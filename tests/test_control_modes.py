@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -46,6 +48,9 @@ class FakeTransport:
 
     def simulation_time_sec(self):
         return 1.0
+
+    def read(self, robot, pdu):
+        return bytearray(4096)
 
 
 class ControlModeTest(unittest.TestCase):
@@ -253,6 +258,45 @@ class AckermannClientTest(unittest.TestCase):
             self.assertEqual(sent_robots[:2], ["Car-1", "Car-2"])
             self.assertEqual(sent_robots[2:], ["Car-1", "Car-2"] * 3)
             self.assertFalse(client.connected)
+
+    def test_fleet_pose_converts_mujoco_frame_and_quaternion_to_enu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdu_def = Path(directory) / "pdudef.json"
+            pdu_def.write_text("{}\n", encoding="utf-8")
+            transport = FakeTransport()
+            transform = SimpleNamespace(
+                translation=SimpleNamespace(x=-7.0, y=-35.0, z=4.6),
+                rotation=SimpleNamespace(
+                    x=0.0, y=0.0,
+                    z=2.0 ** -0.5, w=2.0 ** -0.5,
+                ),
+            )
+            state = SimpleNamespace(
+                joint_names=["Car-1"],
+                transforms=[transform],
+            )
+            with (
+                patch.object(
+                    urban_car,
+                    "HakoniwaPollingTransport",
+                    return_value=transport,
+                ),
+                patch.object(
+                    urban_car,
+                    "pdu_to_py_MultiDOFJointState",
+                    return_value=state,
+                ),
+            ):
+                client = urban_car.AckermannFleetClient(
+                    pdu_def, ["Car-1"]
+                ).connect()
+                pose = client.vehicle_poses()["Car-1"]
+                client.close(stop=False)
+
+            self.assertAlmostEqual(pose.east_m, 35.0)
+            self.assertAlmostEqual(pose.north_m, -7.0)
+            self.assertAlmostEqual(pose.up_m, 4.6)
+            self.assertAlmostEqual(abs(pose.yaw_rad), math.pi)
 
 
 if __name__ == "__main__":
