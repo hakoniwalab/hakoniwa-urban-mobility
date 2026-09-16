@@ -55,8 +55,18 @@ def load_json(path: Path, label: str) -> dict:
     return data
 
 
-def write_json(path: Path, value: dict) -> None:
+def write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def workspace_url(path: Path) -> str:
+    """Return an HTTP path for a file served from the workspace root."""
+    try:
+        relative = path.resolve().relative_to(WORKSPACE.resolve())
+    except ValueError as error:
+        raise RecipeError(f"browser asset is outside the workspace: {path}") from error
+    return "/" + relative.as_posix()
 
 
 def sha256(path: Path) -> str:
@@ -200,6 +210,14 @@ def resolve_config(config_path: Path) -> dict:
         realtime_sync_cycle_msec = int(config["inputs"]["ackermann_runtime"].get(
             "realtime_sync_cycle_msec", 2
         ))
+        visualization = config["inputs"].get("browser_visualization", {})
+        visualization_enabled = bool(visualization.get("enabled", False))
+        web_bridge_port = int(visualization.get("web_bridge_port", 8765))
+        http_port = int(visualization.get("http_port", 8000))
+        threejs_root = resolve_path(
+            visualization.get("threejs_root", "../hakoniwa-threejs-drone"),
+            "Three.js root",
+        )
         work = resolve_path(config["composition"]["output"]["directory"], "output directory")
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"unsupported Urban Car Fleet configuration schema: {config_path}") from error
@@ -207,6 +225,8 @@ def resolve_config(config_path: Path) -> dict:
         raise RecipeError("ackermann_vehicles.types must be a non-empty array")
     if realtime_sync_cycle_msec < 0:
         raise RecipeError("realtime_sync_cycle_msec must be non-negative")
+    if not (1 <= web_bridge_port <= 65535 and 1 <= http_port <= 65535):
+        raise RecipeError("browser visualization ports must be within 1..65535")
 
     vehicle_types = {}
     for index, type_input in enumerate(type_inputs):
@@ -217,6 +237,12 @@ def resolve_config(config_path: Path) -> dict:
                 type_input["contract"], f"vehicle type {type_name} contract"
             )
             contract = load_yaml(contract_path)
+            view_model_path = resolve_path(
+                type_input["view_model"], f"vehicle type {type_name} view model"
+            )
+            view_model = load_json(view_model_path, f"vehicle type {type_name} view model")
+            if view_model.get("format") != "hako_viewer_model":
+                raise RecipeError(f"vehicle type {type_name} has an invalid view model")
             validation = contract["validation"]
             interface = validation["interface"]
             geometry = validation["geometry"]
@@ -224,6 +250,10 @@ def resolve_config(config_path: Path) -> dict:
                 "type": type_name,
                 "mjcf": required(mjcf, f"vehicle type {type_name} MJCF"),
                 "contract": required(contract_path, f"vehicle type {type_name} contract"),
+                "view_model": required(
+                    view_model_path, f"vehicle type {type_name} view model"
+                ),
+                "view_model_data": view_model,
                 "interface": {
                     "base_freejoint": str(interface["base_freejoint"]),
                     "joints": {
@@ -309,6 +339,12 @@ def resolve_config(config_path: Path) -> dict:
         "vehicle_types": vehicle_types,
         "vehicle_generation": vehicle_generation,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
+        "visualization": {
+            "enabled": visualization_enabled,
+            "web_bridge_port": web_bridge_port,
+            "http_port": http_port,
+            "threejs_root": threejs_root,
+        },
     }
 
 
@@ -330,6 +366,7 @@ def paths() -> dict[str, Path]:
         "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
         "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
+        "web_bridge": foundation_install() / "bin/hakoniwa-pdu-web-bridge",
     }
 
 
@@ -373,6 +410,7 @@ def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
         north_south = float(half_extent["north_south"])
         east_west = float(half_extent["east_west"])
         mjcf_frame = coordinate_frame["coordinate_systems"]["mjcf"]
+        glb_frame = coordinate_frame["coordinate_systems"]["glb"]
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"City World receipt has an unsupported schema: {city_receipt}") from error
     if any(
@@ -382,6 +420,8 @@ def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
         raise RecipeError(f"City World receipt has invalid origin or extent: {city_receipt}")
     if mjcf_frame != "X=North,Y=-East,Z=Up":
         raise RecipeError(f"unsupported City World MJCF coordinate system: {mjcf_frame}")
+    if glb_frame != "X=East,Y=Up,Z=-North":
+        raise RecipeError(f"unsupported City World GLB coordinate system: {glb_frame}")
     return required(mjcf, "City World MJCF"), required(glb, "City World GLB"), receipt
 
 
@@ -642,10 +682,10 @@ def materialize_runtime(
     runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime["actuators"] = {}
 
-    # JointState carries four names plus position/velocity/effort values per
-    # vehicle. MultiDOFJointState also carries one name, transform, twist, and
-    # wrench per vehicle. Keep a power-of-two buffer with conservative room for
-    # both generated variable-length payloads.
+    # JointState carries the actuator-backed steering and driven-wheel joints.
+    # MultiDOFJointState also carries one name, transform, twist, and wrench per
+    # vehicle. Keep a power-of-two buffer with conservative room for both
+    # generated variable-length payloads.
     estimated_state_bytes = 1024 + 768 * len(vehicles)
     state_pdu_size = max(4096, 1 << (estimated_state_bytes - 1).bit_length())
 
@@ -788,6 +828,201 @@ def materialize_runtime(
     }
 
 
+def materialize_browser_visualization(
+    runtime_files: dict[str, Path],
+    work: Path,
+    city_glb: Path,
+    vehicles: list[dict],
+    visualization: dict,
+) -> dict[str, Path | str]:
+    """Materialize a read-only state bridge and compact Three.js configs."""
+    bridge_root = work / "web-bridge"
+    browser_root = work / "threejs"
+    state_types = json.loads(runtime_files["state_pdu_types"].read_text(encoding="utf-8"))
+
+    state_types_path = bridge_root / "pdu/urban-fleet-state-pdutypes.json"
+    state_types_path.parent.mkdir(parents=True, exist_ok=True)
+    state_types_path.write_text(json.dumps(state_types, indent=2) + "\n", encoding="utf-8")
+    browser_pdu_def = {
+        "paths": [{
+            "id": "urban-fleet-state",
+            "path": "urban-fleet-state-pdutypes.json",
+        }],
+        "robots": [{
+            "name": FLEET_PDU_ROBOT,
+            "pdutypes_id": "urban-fleet-state",
+        }],
+    }
+    browser_pdu_def_path = bridge_root / "pdu/urban-visual-state.json"
+    write_json(browser_pdu_def_path, browser_pdu_def)
+    write_json(bridge_root / "cache/latest.json", {
+        "type": "buffer",
+        "name": "urban_vehicle_state_latest_buffer",
+        "store": {"mode": "latest"},
+    })
+    write_json(bridge_root / "comm/urban-state-shm-callback.json", {
+        "protocol": "shm",
+        "impl_type": "callback",
+        "name": "urban_vehicle_state_shm_callback",
+        "direction": "inout",
+        "io": {"robots": [{
+            "name": FLEET_PDU_ROBOT,
+            "pdu": [
+                {"name": "joint_states", "notify_on_recv": False},
+                {"name": "vehicle_states", "notify_on_recv": False},
+            ],
+        }]},
+    })
+    write_json(bridge_root / "comm/urban-state-websocket-server.json", {
+        "protocol": "websocket",
+        "name": "urban_vehicle_state_websocket_server",
+        "direction": "inout",
+        "role": "server",
+        "comm_raw_version": "v2",
+        "local": {"port": visualization["web_bridge_port"]},
+        "options": {
+            "connect_timeout_ms": 5000,
+            "read_timeout_ms": 5000,
+            "write_timeout_ms": 5000,
+            "ping_interval_sec": 30,
+            "handshake_timeout_ms": 5000,
+        },
+    })
+    for endpoint_name, comm_name in (
+        ("urban-state-shm", "urban-state-shm-callback.json"),
+        ("urban-state-ws", "urban-state-websocket-server.json"),
+    ):
+        write_json(bridge_root / f"endpoint/{endpoint_name}.json", {
+            "name": f"{endpoint_name}-ep",
+            "pdu_def_path": "../pdu/urban-visual-state.json",
+            "cache": "../cache/latest.json",
+            "comm": f"../comm/{comm_name}",
+        })
+    write_json(bridge_root / "endpoint/endpoint_container.json", [{
+        "nodeId": "urban_vehicle_viewer_node1",
+        "endpoints": [
+            {
+                "id": "bridge-shm-ep",
+                "mode": "local",
+                "config_path": "urban-state-shm.json",
+                "direction": "in",
+            },
+            {
+                "id": "bridge-ws-ep",
+                "mode": "local",
+                "config_path": "urban-state-ws.json",
+                "direction": "out",
+            },
+        ],
+    }])
+    bridge_config_path = bridge_root / "bridge/bridge.json"
+    write_json(bridge_config_path, {
+        "version": "2.0.0",
+        "transferPolicies": {
+            "ticker_20ms": {"type": "ticker", "intervalMs": 20},
+        },
+        "nodes": [{"id": "urban_vehicle_viewer_node1"}],
+        "endpoints_config_path": "../endpoint/endpoint_container.json",
+        "wireLinks": [],
+        "pduKeyGroups": {
+            "urban_vehicle_state": [
+                {
+                    "id": f"{FLEET_PDU_ROBOT}.joint_states",
+                    "robot_name": FLEET_PDU_ROBOT,
+                    "pdu_name": "joint_states",
+                },
+                {
+                    "id": f"{FLEET_PDU_ROBOT}.vehicle_states",
+                    "robot_name": FLEET_PDU_ROBOT,
+                    "pdu_name": "vehicle_states",
+                },
+            ],
+        },
+        "connections": [{
+            "id": "conn_urban_state_shm_to_ws",
+            "nodeId": "urban_vehicle_viewer_node1",
+            "source": {"endpointId": "bridge-shm-ep"},
+            "destinations": [{"endpointId": "bridge-ws-ep"}],
+            "transferPdus": [{
+                "pduKeyGroupId": "urban_vehicle_state",
+                "policyId": "ticker_20ms",
+            }],
+        }],
+    })
+
+    type_definitions = {
+        vehicle["type"]: vehicle["type_definition"] for vehicle in vehicles
+    }
+    vehicle_types_path = browser_root / "vehicle-types.json"
+    write_json(vehicle_types_path, {
+        type_name: {
+            "viewModelPath": workspace_url(definition["view_model"]),
+        }
+        for type_name, definition in sorted(type_definitions.items())
+    })
+    scene_config_path = browser_root / "scene-config.json"
+    write_json(scene_config_path, {
+        "version": "1.0",
+        "format": "compact",
+        "environments": [{
+            "name": "city",
+            "model": workspace_url(city_glb),
+        }],
+        "main_camera": {
+            "fov": 60,
+            "near": 0.1,
+            "far": 20000,
+            "initialMode": "fixed",
+            "position": [-12.0, -12.0, 8.0],
+            "target": vehicles[0]["name"],
+        },
+        "vehicleTypesPath": "./vehicle-types.json",
+        "vehicles": [
+            {"name": vehicle["name"], "type": vehicle["type"]}
+            for vehicle in vehicles
+        ],
+    })
+    viewer_config_path = browser_root / "viewer-config.json"
+    write_json(viewer_config_path, {
+        "version": "1.0",
+        "three": {
+            "sceneConfigPath": workspace_url(scene_config_path),
+            "initialCameraMode": "free",
+        },
+        "pdu": {
+            "pduDefPath": workspace_url(browser_pdu_def_path),
+            "wsUri": f"ws://127.0.0.1:{visualization['web_bridge_port']}",
+            "wireVersion": "v2",
+        },
+        "ui": {
+            "enableAttachedCameras": False,
+            "enableMainCameraMouseControl": True,
+        },
+        "stateInput": {
+            "mode": "none",
+            "vehicles": {"roleMap": {
+                "vehicle_states": "sensor_msgs/MultiDOFJointState",
+                "joint_states": "sensor_msgs/JointState",
+            }},
+        },
+    })
+    viewer_url = (
+        f"http://127.0.0.1:{visualization['http_port']}"
+        + workspace_url(visualization["threejs_root"] / "index.html")
+        + "?viewerConfigPath="
+        + workspace_url(viewer_config_path)
+    )
+    return {
+        "bridge_root": bridge_root,
+        "bridge_config": bridge_config_path,
+        "pdu_def": browser_pdu_def_path,
+        "vehicle_types": vehicle_types_path,
+        "scene_config": scene_config_path,
+        "viewer_config": viewer_config_path,
+        "viewer_url": viewer_url,
+    }
+
+
 def launcher_supports_cleanup(python: Path) -> bool:
     probe = subprocess.run(
         [
@@ -836,6 +1071,7 @@ def materialize_launcher(
     work: Path,
     realtime_sync_cycle_msec: int,
     vehicles: list[dict],
+    browser_files: dict[str, Path | str] | None = None,
 ) -> Path:
     source = paths()
     python = foundation_python()
@@ -884,6 +1120,35 @@ def materialize_launcher(
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,
         })
+    if browser_files is not None:
+        assets.extend([
+            {
+                "name": "urban-vehicle-web-bridge",
+                "activation_timing": "before_start",
+                "command": str(source["web_bridge"]),
+                "args": [
+                    "--config-root", str(browser_files["bridge_root"]),
+                    "--node-name", "urban_vehicle_viewer_node1",
+                    "--delta-time-step-usec", "20000",
+                    "--enable-ondemand",
+                ],
+                "depends_on": ["urban-car-fleet-plant"],
+                "delay_sec": 1,
+            },
+            {
+                "name": "urban-vehicle-http-server",
+                "activation_timing": "after_start",
+                "command": str(python),
+                "args": [
+                    "-m", "http.server",
+                    str(browser_files["http_port"]),
+                    "--bind", "127.0.0.1",
+                ],
+                "cwd": str(WORKSPACE),
+                "depends_on": ["urban-vehicle-web-bridge"],
+                "delay_sec": 1,
+            },
+        ])
 
     launcher = {
         "version": "0.1",
@@ -944,10 +1209,16 @@ def doctor(resolved: dict) -> int:
         ("Foundation Python", foundation_install() / "python/bin/python3"),
         ("Foundation Core config", source["core_config"]),
     ])
+    if resolved["visualization"]["enabled"]:
+        checks.extend([
+            ("Hakoniwa PDU WebBridge", source["web_bridge"]),
+            ("Three.js viewer", resolved["visualization"]["threejs_root"] / "index.html"),
+        ])
     for definition in resolved["vehicle_types"].values():
         checks.extend([
             (f"Vehicle type {definition['type']} MJCF", definition["mjcf"]),
             (f"Vehicle type {definition['type']} contract", definition["contract"]),
+            (f"Vehicle type {definition['type']} view model", definition["view_model"]),
         ])
     try:
         checks.append(("Ackermann MuJoCo library", mujoco_library()))
@@ -986,11 +1257,22 @@ def configure(resolved: dict) -> int:
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
     runtime_files = materialize_runtime(mjb, work, vehicles)
+    browser_files = None
+    if resolved["visualization"]["enabled"]:
+        browser_files = materialize_browser_visualization(
+            runtime_files,
+            work,
+            city_glb,
+            vehicles,
+            resolved["visualization"],
+        )
+        browser_files["http_port"] = resolved["visualization"]["http_port"]
     launcher = materialize_launcher(
         runtime_files,
         work,
         resolved["realtime_sync_cycle_msec"],
         vehicles,
+        browser_files,
     )
     compose_receipt = {
         "schema_version": 1,
@@ -1006,6 +1288,10 @@ def configure(resolved: dict) -> int:
                 "contract": {
                     "path": str(definition["contract"]),
                     "sha256": sha256(definition["contract"]),
+                },
+                "view_model": {
+                    "path": str(definition["view_model"]),
+                    "sha256": sha256(definition["view_model"]),
                 },
             }
             for definition in resolved["vehicle_types"].values()
@@ -1046,12 +1332,23 @@ def configure(resolved: dict) -> int:
         "runtime_ownership": "exclusive Foundation mmap; Launcher cleanup_mmap_on_start",
         "realtime_sync_cycle_msec": resolved["realtime_sync_cycle_msec"],
         "launcher": str(launcher),
+        "browser_visualization": (
+            None if browser_files is None else {
+                "viewer_url": browser_files["viewer_url"],
+                "viewer_config": str(browser_files["viewer_config"]),
+                "scene_config": str(browser_files["scene_config"]),
+                "vehicle_types": str(browser_files["vehicle_types"]),
+                "bridge_config": str(browser_files["bridge_config"]),
+            }
+        ),
     }
     write_json(work / "compose-receipt.json", compose_receipt)
     print(f"Composed MJCF : {output}")
     print(f"Runtime MJB   : {mjb}")
     print(f"Manifest      : {runtime_files['manifest']}")
     print(f"Launcher      : {launcher}")
+    if browser_files is not None:
+        print(f"Three.js      : {browser_files['viewer_url']}")
     print("Vehicles      : " + ", ".join(
         f"{vehicle['name']}:{vehicle['type']}={vehicle['control_mode']}"
         for vehicle in vehicles

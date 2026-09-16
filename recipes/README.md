@@ -41,6 +41,7 @@ inputs:
       - type: golf_cart
         mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
         contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+        view_model: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/view-model.json
     vehicles:
       generated_from_route:
         scenario: recipes/scenarios/hotel-convoy-loop.yaml
@@ -57,10 +58,11 @@ inputs:
   height and that type's wheel clearance.
 
 Type names and generated vehicle names must be unique. The vehicle `type` references
-one catalog entry. `mjcf` is the visual/rigid-body source; `contract` is the
-matching mbody-registry Ackermann forge contract supplying freejoint, joint,
-actuator, and geometry bindings. This keeps model-specific physics metadata
-out of Urban code.
+one catalog entry. `mjcf` is the rigid-body source; `contract` is the matching
+mbody-registry Ackermann forge contract supplying freejoint, joint, actuator,
+and geometry bindings; `view_model` is the generated browser presentation
+contract and its per-part GLBs. This keeps model-specific physics and visual
+hierarchy metadata out of Urban and Three.js code.
 
 Vehicle names become their PDU robot names. During configuration each pose is
 converted to the City World MJCF convention
@@ -82,8 +84,35 @@ python3 tools/multi_car.py start \
 
 `configure` composes the City World and all selected vehicle instances into one MJCF,
 namespaces their bodies, joints, geoms, and actuators, compiles and validates
-a MuJoCo-version-bound MJB, and generates one fleet Runtime and Launcher. It
-does not download or regenerate the city.
+a MuJoCo-version-bound MJB, and generates one fleet Runtime and Launcher. With
+`browser_visualization.enabled: true`, it also generates the WebBridge and
+Three.js configuration under `work/multi-car-viewer/`. It does not download or
+regenerate the city or vehicle GLBs.
+
+### Browser visualization
+
+The generated Launcher starts one WebBridge and one workspace-root HTTP
+server. `configure` prints the complete browser URL; with the checked-in ports
+it is:
+
+```text
+http://127.0.0.1:8000/hakoniwa-threejs-drone/index.html?viewerConfigPath=/hakoniwa-urban-mobility/work/multi-car-viewer/threejs/viewer-config.json
+```
+
+The browser loads the City World GLB and each vehicle type's standard
+`hako_viewer_model`. It consumes the existing variable-length state channels:
+
+```text
+UrbanFleet/vehicle_states  sensor_msgs/MultiDOFJointState
+UrbanFleet/joint_states    sensor_msgs/JointState
+```
+
+The WebBridge is read-only for these channels. Vehicle commands continue to
+use each vehicle's shared-memory `ackermann_cmd`; no control or physics logic
+is moved into JavaScript. Current JointState publication covers the
+actuator-backed front steering and driven rear-wheel joints. Passive front
+wheel spin is not yet published by the generic Runtime and therefore is not
+animated independently.
 
 `inputs.ackermann_runtime.realtime_sync_cycle_msec` controls wall-clock pacing.
 The default `2` ms matches the current Ackermann MJCF timestep, so simulation time

@@ -6,9 +6,9 @@ city environment. It composes existing Hakoniwa vehicle simulators into a
 repeatable urban-mobility scenario; it does not replace their vehicle models,
 flight controllers, or physics engines.
 
-The first demonstration target is two Virtual Drone Show drones and two
+The first demonstration target is two Virtual Drone Show drones and multiple
 Ackermann-steered vehicles moving through the same city area, with shared
-visualization and safety-aware interaction.
+browser visualization and safety-aware interaction.
 
 > **Status:** the City World + two independently controlled typed Ackermann vehicles
 > is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
@@ -219,8 +219,12 @@ build/bin/urban-car-hakoniwa-asset \
 
 The `multi_car.py` recipe materializes the Urban-owned AckermannDrive,
 JointState, and MultiDOF contracts, compiles the composed city model to MJB,
-and launches the application with explicit wall-clock pacing. Application
-ownership is independent of Robot Arm Pack.
+and launches the application with explicit wall-clock pacing. When browser
+visualization is enabled it also generates a read-only WebBridge and a compact
+Three.js scene. Vehicle geometry remains owned by the standard
+`hako_viewer_model` generated in `hakoniwa-mbody-registry`; the browser does
+not reconstruct MJCF or vehicle dynamics. Application ownership is independent
+of Robot Arm Pack.
 
 ## Delivery stages
 
@@ -256,6 +260,9 @@ contracts.
 python3 tools/multi_car.py doctor --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py configure --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
+
+# Open the Three.js URL printed by configure (default):
+# http://127.0.0.1:8000/hakoniwa-threejs-drone/index.html?viewerConfigPath=/hakoniwa-urban-mobility/work/multi-car-viewer/threejs/viewer-config.json
 
 # Drive any externally controlled vehicle from another terminal:
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \

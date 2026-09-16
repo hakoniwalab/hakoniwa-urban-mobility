@@ -12,8 +12,9 @@ status: specified
 goal:
   description: >
     Compose a configured PLATEAU City World and multiple Ackermann
-    vehicles into one MuJoCo model, view them in the native MuJoCo Viewer,
-    and control each vehicle through its selected AckermannDrive source.
+    vehicles into one MuJoCo model, view them in the native MuJoCo Viewer or
+    the shared Three.js browser, and control each vehicle through its selected
+    AckermannDrive source.
   boundary: >
     This is the multi-Car urban-mobility integration checkpoint. Drone Fleet,
     mirrors, and cross-simulator contact events remain excluded.
@@ -32,6 +33,7 @@ inputs:
       - type: golf_cart
         mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
         contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+        view_model: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/view-model.json
     vehicles:
       generated_from_route:
         scenario: recipes/scenarios/hotel-convoy-loop.yaml
@@ -65,6 +67,12 @@ inputs:
       vehicle_state_pdu: vehicle_states
     realtime_sync_cycle_msec: 2
 
+  browser_visualization:
+    enabled: true
+    web_bridge_port: 8765
+    http_port: 8000
+    threejs_root: ../hakoniwa-threejs-drone
+
 composition:
   owner: hakoniwa-mbody-registry
   tool: ../hakoniwa-mbody-registry/tools/compose_mujoco_world.py
@@ -90,6 +98,8 @@ composition:
     - Use the shared Foundation runtime under an explicit single-Launcher exclusive-ownership contract.
     - Clean only Foundation Hakoniwa mmap/lock files before activation and wait for UrbanCarFleet registration before hako-cmd start.
     - Preserve the Urban-owned actuator, Ackermann controller, and state-output configuration paths.
+    - Materialize one read-only WebBridge for UrbanFleet vehicle and joint state when browser visualization is enabled.
+    - Load vehicle visuals only through each type's generated hako_viewer_model; do not rebuild MJCF geometry in JavaScript.
 
 execution:
   prerequisites:
@@ -107,8 +117,9 @@ execution:
       and its native MuJoCo Viewer enabled.
     start: >
       Start the generated Launcher: one fleet plant starts before simulation
-      time. A PS5 sender starts for each ps5 vehicle; external_python leaves
-      that vehicle's command publication to a separate process.
+      time. When enabled, the state WebBridge and workspace HTTP server start
+      alongside it. A PS5 sender starts for each ps5 vehicle; external_python
+      leaves that vehicle's command publication to a separate process.
     stop: Terminate the generated Launcher session.
 
 acceptance:
@@ -118,6 +129,8 @@ acceptance:
   - Each selected command source changes only its target vehicle.
   - All vehicles collide with terrain, buildings, and each other in one MuJoCo world.
   - UrbanFleet/vehicle_states publishes one array entry per configured vehicle.
+  - The browser loads the City GLB and generated vehicle view model and receives
+    UrbanFleet/vehicle_states and UrbanFleet/joint_states through WebSocket v2.
   - The compose receipt records the source City receipt, City hash, selected type MJCF and
     contract hashes, generated model path, and selected spawn poses.
 
@@ -129,5 +142,6 @@ known_limitations:
   - The demo route is an ENU waypoint loop for this City World receipt; changing
     the city requires a new route definition.
   - Drone Fleet, mirrors, and MirrorImpulseSender begin in later stages.
+  - Passive front-wheel spin is not present in the actuator-backed JointState output.
 
 next_stage: urban-mobility#S3_drone_car_mirroring
