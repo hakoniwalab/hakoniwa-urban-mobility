@@ -13,7 +13,7 @@ goal:
   description: >
     Compose a configured PLATEAU City World and one Generic Ackermann
     Golf Cart into a single MuJoCo model, view it in the native MuJoCo Viewer,
-    and control Car-1 through the existing PS5 gamepad path.
+    and control Car-1 through the Urban AckermannDrive PS5 path.
   boundary: >
     This is the first urban-mobility integration checkpoint. It contains one
     real vehicle only; Drone Fleet, mirrors, second vehicles, and contact
@@ -102,7 +102,7 @@ execution:
       and its native MuJoCo Viewer enabled.
     start: >
       Start the generated Launcher: the Car-1 plant starts before simulation
-      time and the existing PS5 sender starts afterwards.
+      time and the Urban-owned PS5 sender starts afterwards.
     stop: Terminate the generated Launcher session.
 
 acceptance:

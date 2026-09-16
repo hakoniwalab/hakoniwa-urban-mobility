@@ -2,7 +2,8 @@
 """Materialize and operate the S1 Urban City World + Car-1 recipe.
 
 This wrapper composes component-owned artifacts.  It does not download PLATEAU
-data, generate a vehicle model, or reimplement the Generic Ackermann runtime.
+data, generate a vehicle model, or reimplement the generic Robot Runtime or
+MuJoCo physics backend.
 """
 
 from __future__ import annotations
