@@ -46,20 +46,21 @@ inputs:
         Urban Car runtime. This candidate includes Golf Cart wheel clearance.
 
   ackermann_runtime:
-    owner: hakoniwa-mujoco-robots
-    source_recipe: recipes/generic_ackermann
+    owner: hakoniwa-urban-mobility
+    runtime_framework: hakoniwa-robot-runtime
+    physics_backend: hakoniwa-mujoco-robots
     profile: golf-cart
-    plant_binary: >
-      ../hakoniwa-mujoco-robots/src/cmake-build/examples/actuators/
-      generic_ackermann/generic-ackermann-hakoniwa-asset
-    source_manifest: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/asset-manifest.json
-    source_runtime_config: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/ackermann-runtime.json
-    ps5_sender: ../hakoniwa-mujoco-robots/python/ackermann_gamepad.py
-    ps5_mapping: ../hakoniwa-mujoco-robots/recipes/generic_ackermann/ps5-controller-macos.json
-    pdu_definition: ../hakoniwa-mujoco-robots/config/ackermann-gamepad-pdudef-compact.json
+    plant_binary: build/bin/urban-car-hakoniwa-asset
+    runtime_config: config/car/runtime.json
+    controller_config: config/car/controller/ackermann.json
+    ps5_sender: apps/car/ps5_ackermann_sender.py
+    ps5_mapping: config/car/ps5-controller-macos.json
     pdu_identity:
       asset_name: Car-1
-      command_pdu: hako_cmd_game
+      command_pdu: ackermann_cmd
+      joint_state_pdu: joint_states
+      vehicle_state_pdu: vehicle_states
+    realtime_sync_cycle_msec: 2
 
 composition:
   owner: hakoniwa-mbody-registry
@@ -80,25 +81,24 @@ composition:
     - Import the City World's static worldbody and assets.
     - Compile and reload-validate the composed XML as an MJB with the exact MuJoCo library linked by the Ackermann plant.
     - Materialize a runtime manifest whose model points to the generated MJB.
-    - Materialize a runtime config that changes only the asset/PDU identity to Car-1.
+    - Materialize the Urban-owned Robot Runtime manifest and bind its PDU identity to Car-1.
     - Use the shared Foundation runtime under an explicit single-Launcher exclusive-ownership contract.
     - Clean only Foundation Hakoniwa mmap/lock files before activation and wait for Car-1 registration before hako-cmd start.
-    - Preserve all component-owned actuator and controller configuration paths.
+    - Preserve the Urban-owned actuator, Ackermann controller, and state-output configuration paths.
 
 execution:
   prerequisites:
     - >
-      The Generic Ackermann Golf Cart has been forged and the
-      generic-ackermann-hakoniwa-asset binary has been built in
-      hakoniwa-mujoco-robots.
-    - A PS5 DualSense is visible to the existing ackermann_gamepad.py sender.
+      The Generic Ackermann Golf Cart has been forged and
+      urban-car-hakoniwa-asset has been built in this repository.
+    - A PS5 DualSense is visible to the Urban AckermannDrive sender.
     - The City receipt's MJCF and GLB artifacts still exist.
   commands_to_materialize:
     configure: >
       Resolve the receipt, compose car-1-city.xml, compile and reload-validate
       car-1-city.mjb, generate Car-1 runtime files, and generate a Launcher configuration.
     view: >
-      Run generic-ackermann-hakoniwa-asset with the generated Car-1 manifest
+      Run urban-car-hakoniwa-asset with the generated Car-1 manifest
       and its native MuJoCo Viewer enabled.
     start: >
       Start the generated Launcher: the Car-1 plant starts before simulation

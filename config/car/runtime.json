@@ -1,0 +1,9 @@
+{
+  "$schema": "https://hakoniwa.dev/schemas/robot-runtime.schema.json",
+  "actuators": {
+    "front_left_steer": {"command_timeout_sec": 0.2},
+    "front_right_steer": {"command_timeout_sec": 0.2},
+    "rear_left_wheel": {"command_timeout_sec": 0.2},
+    "rear_right_wheel": {"command_timeout_sec": 0.2}
+  }
+}

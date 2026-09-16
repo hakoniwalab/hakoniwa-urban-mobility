@@ -9,7 +9,8 @@ PLATEAU Urban Car-1 checkpoint.
   `../hakoniwa-business-pack/work/foundation`.
 - A City World job has produced `city-world-receipt.json`, its MJCF, and GLB.
 - The Generic Ackermann Golf Cart is generated in `hakoniwa-mbody-registry`.
-- The Generic Ackermann plant is built in `hakoniwa-mujoco-robots`.
+- The Urban Car application is built in this repository and uses
+  `hakoniwa-robot-runtime` with the `hakoniwa-mujoco-robots` physics backend.
 - A PS5 DualSense is available when interactive control is required.
 
 Run all commands from the `hakoniwa-urban-mobility` repository root.
@@ -63,6 +64,9 @@ python3 tools/urban_car_1.py doctor \
 python3 tools/urban_car_1.py configure \
   --config recipes/urban-car-1-viewer.yaml
 
+python3 tools/urban_car_1.py check-ps5 \
+  --config recipes/urban-car-1-viewer.yaml
+
 python3 tools/urban_car_1.py start \
   --config recipes/urban-car-1-viewer.yaml
 ```
@@ -71,10 +75,35 @@ python3 tools/urban_car_1.py start \
 a MuJoCo-version-bound MJB, and generates the runtime and Launcher files. It
 does not download or regenerate the city.
 
-Use the existing PS5 mapping after startup:
+`inputs.ackermann_runtime.realtime_sync_cycle_msec` controls wall-clock pacing.
+The default `2` ms matches the Golf Cart MuJoCo timestep, so simulation time
+tracks real time. Set it to `0` only for explicit faster-than-real-time runs.
+
+The Urban-owned sender publishes `ackermann_msgs/AckermannDrive` after startup:
 
 - Left stick: steering
 - Right stick vertical: throttle and reverse
+
+### PS5 regression checklist
+
+Use this checklist when changing the Urban AckermannDrive path. The input
+mapping and observed vehicle direction must remain stable.
+
+1. `check-ps5` reports a selected `DualSense` or `Wireless Controller`, with
+   no Hakoniwa runtime active.
+2. Start the recipe and leave both sticks neutral. The car remains stopped and
+   steering returns to centre.
+3. Push the right stick forward. The car moves forward without steering.
+4. Pull the right stick backward. The car reverses without steering.
+5. While moving slowly forward, move the left stick left and then right. The
+   front wheels and vehicle yaw follow the same direction.
+6. Release both sticks. Drive velocity returns to zero and steering returns to
+   centre without continued motion commands.
+7. Stop the recipe normally; `status` reports `TERMINATED` and no controller
+   sender remains active.
+
+Retain the generated Launcher logs under `work/urban-car-1-viewer/logs/` when
+investigating a regression.
 
 Inspect or stop the background session from another terminal:
 

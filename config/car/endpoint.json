@@ -1,0 +1,6 @@
+{
+  "name": "urban_car_endpoint",
+  "pdu_def_path": "generated-at-configure-time",
+  "cache": "cache.json",
+  "comm": "comm.json"
+}

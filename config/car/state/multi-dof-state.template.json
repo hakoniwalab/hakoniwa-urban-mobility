@@ -1,0 +1,19 @@
+{
+  "$schema": "https://hakoniwa.dev/schemas/multi-dof-joint-state-output.schema.json",
+  "spec": {
+    "frame_id": "city_map",
+    "bodies": [
+      {"name": "${CAR_NAME}"}
+    ]
+  },
+  "mjcf_binding": {
+    "bodies": [
+      {"name": "${CAR_NAME}", "mjcf_freejoint": "base_freejoint"}
+    ]
+  },
+  "pdu_config": {
+    "pdu_name": "vehicle_states",
+    "update_rate_hz": 50.0,
+    "message_type": "sensor_msgs/MultiDOFJointState"
+  }
+}

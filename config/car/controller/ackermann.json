@@ -1,0 +1,22 @@
+{
+  "$schema": "https://hakoniwa.dev/schemas/ackermann-controller.schema.json",
+  "input": {
+    "pdu_name": "ackermann_cmd",
+    "message_type": "ackermann_msgs/AckermannDrive",
+    "update_rate_hz": 50.0,
+    "timeout_sec": 0.2
+  },
+  "geometry": {
+    "wheelbase_m": 1.55,
+    "track_width_m": 1.04,
+    "wheel_radius_m": 0.25,
+    "max_steering_angle_rad": 0.70,
+    "max_wheel_angular_velocity_rad_s": 20.0
+  },
+  "actuators": {
+    "steering_left": "front_left_steer",
+    "steering_right": "front_right_steer",
+    "drive_left": "rear_left_wheel",
+    "drive_right": "rear_right_wheel"
+  }
+}

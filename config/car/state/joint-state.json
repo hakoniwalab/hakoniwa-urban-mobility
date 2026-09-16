@@ -1,0 +1,18 @@
+{
+  "$schema": "https://hakoniwa.dev/schemas/joint-state-output.schema.json",
+  "spec": {
+    "type": "joint_state",
+    "name": "joint_states",
+    "joints": [
+      {"name": "front_left_steer_joint"},
+      {"name": "front_right_steer_joint"},
+      {"name": "rear_left_wheel_joint"},
+      {"name": "rear_right_wheel_joint"}
+    ]
+  },
+  "pdu_config": {
+    "pdu_name": "joint_states",
+    "update_rate_hz": 50.0,
+    "message_type": "sensor_msgs/JointState"
+  }
+}

@@ -24,7 +24,7 @@ MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
 DEFAULT_CONFIG = ROOT / "recipes/urban-car-1-viewer.yaml"
 CAR_NAME = "Car-1"
-COMMAND_PDU = "hako_cmd_game"
+COMMAND_PDU = "ackermann_cmd"
 
 
 class RecipeError(RuntimeError):
@@ -112,11 +112,16 @@ def resolve_config(config_path: Path) -> dict:
         north = float(spawn["north_m"])
         up = float(spawn["up_m"])
         yaw_deg = float(spawn["yaw_deg"])
+        realtime_sync_cycle_msec = int(config["inputs"]["ackermann_runtime"].get(
+            "realtime_sync_cycle_msec", 2
+        ))
         work = resolve_path(config["composition"]["output"]["directory"], "output directory")
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"unsupported Urban Car-1 configuration schema: {config_path}") from error
     if any(not math.isfinite(value) for value in (east, north, up, yaw_deg)):
         raise RecipeError("spawn values must be finite")
+    if realtime_sync_cycle_msec < 0:
+        raise RecipeError("realtime_sync_cycle_msec must be non-negative")
 
     # City World MJCF is X=North, Y=-East, Z=Up. ENU yaw is positive
     # counter-clockwise from East, while MuJoCo yaw is measured from +X (North).
@@ -135,6 +140,7 @@ def resolve_config(config_path: Path) -> dict:
             "yaw_deg": yaw_deg,
         },
         "spawn_mjcf": (north, -east, up, 0.0, 0.0, yaw_mjcf_rad),
+        "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
     }
 
 
@@ -143,15 +149,16 @@ def paths() -> dict[str, Path]:
         "compose_tool": MBODY / "tools/compose_mujoco_world.py",
         "mujoco_compiler": BUSINESS_PACK / "tools/mujoco_model_compiler.py",
         "car_model": MBODY / "bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml",
-        "plant": MUJOCO_ROBOTS / "src/cmake-build/examples/actuators/generic_ackermann/generic-ackermann-hakoniwa-asset",
-        "source_manifest": MUJOCO_ROBOTS / "recipes/generic_ackermann/asset-manifest.json",
-        "source_runtime": MUJOCO_ROBOTS / "recipes/generic_ackermann/ackermann-runtime.json",
-        "source_endpoint": MUJOCO_ROBOTS / "config/endpoint/ackermann_gamepad_endpoint.json",
-        "source_cache": MUJOCO_ROBOTS / "config/endpoint/cache/buffer.json",
-        "source_comm": MUJOCO_ROBOTS / "config/endpoint/comm/shm_ackermann_gamepad_comm.json",
-        "source_pdu_def": MUJOCO_ROBOTS / "config/ackermann-gamepad-pdudef-compact.json",
-        "ps5_sender": MUJOCO_ROBOTS / "python/ackermann_gamepad.py",
-        "ps5_mapping": MUJOCO_ROBOTS / "recipes/generic_ackermann/ps5-controller-macos.json",
+        "plant": ROOT / "build/bin/urban-car-hakoniwa-asset",
+        "source_runtime": ROOT / "config/car/runtime.json",
+        "ackermann_controller": ROOT / "config/car/controller/ackermann.json",
+        "joint_state_output": ROOT / "config/car/state/joint-state.json",
+        "multi_dof_state_template": ROOT / "config/car/state/multi-dof-state.template.json",
+        "source_endpoint": ROOT / "config/car/endpoint.json",
+        "source_cache": ROOT / "config/car/cache.json",
+        "source_comm": ROOT / "config/car/comm.json",
+        "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
+        "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
     }
 
@@ -162,19 +169,23 @@ def mujoco_library() -> Path:
     ).strip()
     if not version:
         raise RecipeError("hakoniwa-mujoco-robots/MUJOCO_VERSION.txt is empty")
-    root = MUJOCO_ROBOTS / "src/cmake-build/_deps/mujoco_precompiled-src"
-    candidates = (
-        root / f"lib/mujoco.framework/Versions/A/libmujoco.{version}.dylib",
-        root / f"lib/libmujoco.so.{version}",
-        root / "lib/libmujoco.so",
-        root / "bin/mujoco.dll",
+    roots = (
+        ROOT / "build/_deps/mujoco_precompiled-src",
+        MUJOCO_ROBOTS / "src/cmake-build/_deps/mujoco_precompiled-src",
     )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
+    for root in roots:
+        candidates = (
+            root / f"lib/mujoco.framework/Versions/A/libmujoco.{version}.dylib",
+            root / f"lib/libmujoco.so.{version}",
+            root / "lib/libmujoco.so",
+            root / "bin/mujoco.dll",
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate.resolve()
     raise RecipeError(
         "MuJoCo shared library used by hakoniwa-mujoco-robots was not found under "
-        f"{root}; rebuild the Ackermann asset first"
+        f"{roots}; build the Urban Car application first"
     )
 
 
@@ -212,24 +223,42 @@ def command(command: list[str]) -> None:
 def materialize_runtime(runtime_model: Path, work: Path) -> dict[str, Path]:
     source = paths()
     work.mkdir(parents=True, exist_ok=True)
-    runtime = load_json(source["source_runtime"], "source Ackermann runtime config")
-    runtime["bindings"]["asset_name"] = CAR_NAME
-    runtime["bindings"]["pdu_name"] = COMMAND_PDU
-    runtime["bindings"]["endpoint_name"] = "urban_car_1_endpoint"
+    runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime_path = work / "car-1-runtime.json"
     write_json(runtime_path, runtime)
 
-    pdu_def = load_json(source["source_pdu_def"], "source Ackermann PDU definition")
-    pdu_def["robots"][0]["name"] = CAR_NAME
-    source_pdu_def_dir = source["source_pdu_def"].parent
-    for path_entry in pdu_def["paths"]:
-        path_entry["path"] = str((source_pdu_def_dir / path_entry["path"]).resolve())
+    pdu_types = [
+        {"channel_id": 0, "pdu_size": 48, "name": COMMAND_PDU,
+         "type": "ackermann_msgs/AckermannDrive"},
+        {"channel_id": 1, "pdu_size": 2048, "name": "joint_states",
+         "type": "sensor_msgs/JointState"},
+        {"channel_id": 2, "pdu_size": 4096, "name": "vehicle_states",
+         "type": "sensor_msgs/MultiDOFJointState"},
+        {"channel_id": 3, "pdu_size": 32, "name": "front_left_steer_target",
+         "type": "std_msgs/Float64"},
+        {"channel_id": 4, "pdu_size": 32, "name": "front_right_steer_target",
+         "type": "std_msgs/Float64"},
+        {"channel_id": 5, "pdu_size": 32, "name": "rear_left_wheel_target",
+         "type": "std_msgs/Float64"},
+        {"channel_id": 6, "pdu_size": 32, "name": "rear_right_wheel_target",
+         "type": "std_msgs/Float64"},
+    ]
+    pdu_types_path = work / "car-1-pdutypes.json"
+    pdu_types_path.write_text(json.dumps(pdu_types, indent=2) + "\n", encoding="utf-8")
+    pdu_def = {
+        "paths": [{"id": "urban-car-runtime", "path": str(pdu_types_path)}],
+        "robots": [{"name": CAR_NAME, "pdutypes_id": "urban-car-runtime"}],
+    }
     pdu_def_path = work / "car-1-pdudef.json"
     write_json(pdu_def_path, pdu_def)
 
     comm = load_json(source["source_comm"], "source Ackermann endpoint communication config")
     comm["name"] = "urban_car_1_shm"
-    comm["io"]["robots"][0]["name"] = CAR_NAME
+    comm["io"]["robots"] = [{
+        "name": CAR_NAME,
+        "pdu": [{"name": item["name"], "notify_on_recv": item["name"] == COMMAND_PDU}
+                for item in pdu_types],
+    }]
     comm_path = work / "car-1-comm.json"
     write_json(comm_path, comm)
 
@@ -241,20 +270,54 @@ def materialize_runtime(runtime_model: Path, work: Path) -> dict[str, Path]:
     endpoint_path = work / "car-1-endpoint.json"
     write_json(endpoint_path, endpoint)
 
-    manifest = load_json(source["source_manifest"], "source Ackermann manifest")
-    manifest["name"] = "Urban Car-1 Golf Cart"
-    manifest["model"] = str(runtime_model)
-    manifest["pdu_def"] = str(pdu_def_path)
-    manifest["endpoint"] = str(endpoint_path)
-    manifest["runtime_config"] = str(runtime_path)
-    source_manifest_dir = source["source_manifest"].parent
-    for component in manifest["components"]:
-        component["config"] = str((source_manifest_dir / component["config"]).resolve())
+    multi_dof = load_json(source["multi_dof_state_template"], "MultiDOF state template")
+    multi_dof["spec"]["bodies"][0]["name"] = CAR_NAME
+    multi_dof["mjcf_binding"]["bodies"][0]["name"] = CAR_NAME
+    multi_dof_path = work / "car-1-multi-dof-state.json"
+    write_json(multi_dof_path, multi_dof)
+
+    actuator_configs = {
+        "front_left_steer": ROOT / "config/car/actuator/front-left-steer.json",
+        "front_right_steer": ROOT / "config/car/actuator/front-right-steer.json",
+        "rear_left_wheel": ROOT / "config/car/actuator/rear-left-wheel.json",
+        "rear_right_wheel": ROOT / "config/car/actuator/rear-right-wheel.json",
+    }
+    component_types = {
+        "front_left_steer": "joint_position_actuator",
+        "front_right_steer": "joint_position_actuator",
+        "rear_left_wheel": "joint_velocity_actuator",
+        "rear_right_wheel": "joint_velocity_actuator",
+    }
+    components = [
+        {"id": component_id, "kind": "actuator", "type": component_types[component_id],
+         "config": str(required(config, f"{component_id} actuator config")),
+         "pdu_robot": CAR_NAME}
+        for component_id, config in actuator_configs.items()
+    ]
+    components.extend([
+        {"id": "ackermann", "kind": "controller", "type": "ackermann_controller",
+         "config": str(source["ackermann_controller"]), "pdu_robot": CAR_NAME},
+        {"id": "joint_states", "kind": "state_output", "type": "joint_state",
+         "config": str(source["joint_state_output"]), "pdu_robot": CAR_NAME},
+        {"id": "vehicle_states", "kind": "state_output", "type": "multi_dof_joint_state",
+         "config": str(multi_dof_path), "pdu_robot": CAR_NAME},
+    ])
+    manifest = {
+        "schema_version": 1,
+        "name": CAR_NAME,
+        "description": "Urban-owned Ackermann Golf Cart runtime",
+        "model": str(runtime_model),
+        "pdu_def": str(pdu_def_path),
+        "endpoint": str(endpoint_path),
+        "runtime_config": str(runtime_path),
+        "components": components,
+    }
     manifest_path = work / "car-1-asset-manifest.json"
     write_json(manifest_path, manifest)
     return {
         "runtime": runtime_path,
         "pdu_def": pdu_def_path,
+        "pdu_types": pdu_types_path,
         "endpoint": endpoint_path,
         "comm": comm_path,
         "manifest": manifest_path,
@@ -304,7 +367,9 @@ def materialize_mjb(source_xml: Path, output_mjb: Path, receipt_path: Path) -> d
     return load_json(receipt_path, "MuJoCo materialization receipt")
 
 
-def materialize_launcher(runtime_files: dict[str, Path], work: Path) -> Path:
+def materialize_launcher(
+    runtime_files: dict[str, Path], work: Path, realtime_sync_cycle_msec: int
+) -> Path:
     source = paths()
     python = foundation_python()
     logs = work / "logs"
@@ -315,7 +380,7 @@ def materialize_launcher(runtime_files: dict[str, Path], work: Path) -> Path:
     launcher = {
         "version": "0.1",
         "defaults": {
-            "cwd": str(MUJOCO_ROBOTS),
+            "cwd": str(ROOT),
             "stdout": str(logs / "${asset}.out"),
             "stderr": str(logs / "${asset}.err"),
             "start_grace_sec": 2,
@@ -338,7 +403,10 @@ def materialize_launcher(runtime_files: dict[str, Path], work: Path) -> Path:
                 "name": "urban-car-1-plant",
                 "activation_timing": "before_start",
                 "command": str(source["plant"]),
-                "args": ["--manifest", str(runtime_files["manifest"])],
+                "args": [
+                    "--manifest", str(runtime_files["manifest"]),
+                    "--realtime-sync-cycle-msec", str(realtime_sync_cycle_msec),
+                ],
                 "delay_sec": 2,
                 "readiness": {
                     "type": "hako_asset",
@@ -358,6 +426,9 @@ def materialize_launcher(runtime_files: dict[str, Path], work: Path) -> Path:
                     "--rc-config", str(source["ps5_mapping"]),
                     "--robot", CAR_NAME,
                     "--pdu", COMMAND_PDU,
+                    "--max-speed", "3.5",
+                    "--max-steering-angle", "0.70",
+                    "--deadzone", "0.06",
                 ],
                 "depends_on": ["urban-car-1-plant"],
                 "delay_sec": 1,
@@ -394,7 +465,7 @@ def doctor(resolved: dict) -> int:
         ("Golf Cart model", source["car_model"]),
         ("Ackermann plant", source["plant"]),
         ("Ackermann PDU cache", source["source_cache"]),
-        ("PS5 sender", source["ps5_sender"]),
+        ("Urban PS5 AckermannDrive sender", source["ps5_sender"]),
         ("Foundation Python", foundation_install() / "python/bin/python3"),
         ("Foundation Core config", source["core_config"]),
     ])
@@ -441,7 +512,9 @@ def configure(resolved: dict) -> int:
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
     runtime_files = materialize_runtime(mjb, work)
-    launcher = materialize_launcher(runtime_files, work)
+    launcher = materialize_launcher(
+        runtime_files, work, resolved["realtime_sync_cycle_msec"]
+    )
     compose_receipt = {
         "schema_version": 1,
         "recipe": resolved["recipe_id"],
@@ -469,6 +542,7 @@ def configure(resolved: dict) -> int:
         "runtime_manifest": str(runtime_files["manifest"]),
         "core_config": str(source["core_config"]),
         "runtime_ownership": "exclusive Foundation mmap; Launcher cleanup_mmap_on_start",
+        "realtime_sync_cycle_msec": resolved["realtime_sync_cycle_msec"],
         "launcher": str(launcher),
     }
     write_json(work / "compose-receipt.json", compose_receipt)
@@ -509,9 +583,25 @@ def view(work: Path) -> int:
     return 0
 
 
+def check_ps5(work: Path) -> int:
+    source = paths()
+    command([
+        str(foundation_python()),
+        str(required(source["ps5_sender"], "PS5 sender")),
+        "--pdu-def", str(required(work / "car-1-pdudef.json", "generated PDU definition")),
+        "--check-controller",
+        "--rc-config", str(required(source["ps5_mapping"], "PS5 mapping")),
+        "--robot", CAR_NAME,
+    ])
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Operate a configured Urban City World + Car-1 recipe")
-    result.add_argument("command", choices=("doctor", "configure", "view", "start", "status", "stop"))
+    result.add_argument(
+        "command",
+        choices=("doctor", "configure", "check-ps5", "view", "start", "status", "stop"),
+    )
     result.add_argument(
         "--config", type=Path, default=DEFAULT_CONFIG,
         help=f"configuration YAML (default: {DEFAULT_CONFIG.relative_to(ROOT)})",
@@ -526,6 +616,8 @@ def main() -> int:
         return doctor(resolved)
     if args.command == "configure":
         return configure(resolved)
+    if args.command == "check-ps5":
+        return check_ps5(resolved["work"])
     if args.command == "view":
         return view(resolved["work"])
     return launch(args.command, resolved["work"])

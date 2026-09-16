@@ -173,6 +173,52 @@ tests/           Deterministic integration and acceptance tests
 docs/            Coordinate, timing, safety, and operational documentation
 ```
 
+## Build the Urban Car application
+
+The Ackermann vehicle application is owned and built here. It consumes the
+generic contracts and adapters from `hakoniwa-robot-runtime` and the MuJoCo
+backend from `hakoniwa-mujoco-robots`; neither sibling repository owns the
+Urban executable.
+
+```bash
+cmake -S . -B build
+cmake --build build -j
+
+build/bin/urban-car-hakoniwa-asset --help
+```
+
+The default sibling-checkout layout is the Business Pack workspace. Alternate
+locations can be selected at configure time with
+`HAKONIWA_ROBOT_RUNTIME_ROOT`, `HAKONIWA_MUJOCO_ROBOTS_ROOT`,
+`HAKONIWA_PDU_REGISTRY_ROOT`, and `HAKONIWA_FOUNDATION_PREFIX`.
+
+The target explicitly enables Robot Runtime's mobile-base extension. Existing
+Robot Arm applications do not enable or link Ackermann control or MultiDOF
+vehicle-state output. Use `-DHAKO_URBAN_ENABLE_VIEWER=OFF` for a headless
+build.
+
+The application accepts a manifest-driven Runtime instance:
+
+```bash
+build/bin/urban-car-hakoniwa-asset \
+  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json
+
+# Model inspection without registering a Hakoniwa asset
+build/bin/urban-car-hakoniwa-asset \
+  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json \
+  --view-model
+
+# Headless XML/MJB compatibility check
+build/bin/urban-car-hakoniwa-asset \
+  --manifest work/urban-car-1-viewer/car-1-asset-manifest.json \
+  --validate-model
+```
+
+The `urban_car_1.py` recipe materializes the Urban-owned AckermannDrive,
+JointState, and MultiDOF contracts, compiles the composed city model to MJB,
+and launches the application with explicit wall-clock pacing. Application
+ownership is independent of Robot Arm Pack.
+
 ## Delivery stages
 
 1. **Topology:** one Drone and one Car; common `city_map`; bidirectional pose
