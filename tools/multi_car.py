@@ -21,6 +21,10 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
+sys.path.insert(0, str(ROOT / "apps/car"))
+
+from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # noqa: E402
+
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
@@ -105,6 +109,83 @@ def resolve_path(raw: str, label: str) -> Path:
     return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
 
 
+def expand_config_vehicle_inputs(
+    vehicle_inputs: object,
+) -> tuple[list[dict], dict | None]:
+    if isinstance(vehicle_inputs, list):
+        if not vehicle_inputs:
+            raise RecipeError("ackermann_vehicles.vehicles must not be empty")
+        return vehicle_inputs, None
+    if not isinstance(vehicle_inputs, dict):
+        raise RecipeError(
+            "ackermann_vehicles.vehicles must be an array or generated_from_route"
+        )
+    generated = vehicle_inputs.get("generated_from_route")
+    if not isinstance(generated, dict):
+        raise RecipeError("ackermann_vehicles.vehicles.generated_from_route is required")
+    try:
+        scenario_path = resolve_path(
+            generated["scenario"], "generated vehicle route scenario"
+        )
+        scenario = load_yaml(scenario_path)
+        if scenario.get("schema_version") != 2:
+            raise RecipeError("generated vehicle route scenario must use schema_version 2")
+        route = scenario["route"]
+        if route.get("closed") is not True:
+            raise RecipeError("generated vehicle route must be closed")
+        points = tuple(
+            RoutePoint(
+                name=str(item.get("name", f"point-{index + 1}")),
+                east_m=float(item["east_m"]),
+                north_m=float(item["north_m"]),
+                dwell_sec=float(item.get("dwell_sec", 0.0)),
+            )
+            for index, item in enumerate(route["points"])
+        )
+        geometry = RouteGeometry(points)
+        fleet = expand_route_vehicles(scenario.get("vehicles"))
+        type_name = str(generated["type"]).strip()
+        control_mode = str(
+            generated.get("control_mode", "external_python")
+        ).strip()
+        up_m = float(generated["up_m"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RecipeError(f"invalid generated vehicle route: {error}") from error
+    if not fleet:
+        raise RecipeError("generated vehicle route fleet must not be empty")
+    if not type_name:
+        raise RecipeError("generated vehicle type must not be empty")
+    if not math.isfinite(up_m):
+        raise RecipeError("generated vehicle up_m must be finite")
+    max_offset = max(-vehicle.offset_m for vehicle in fleet)
+    if max_offset >= geometry.length / 2.0:
+        raise RecipeError(
+            "generated fleet offsets must be less than half the route length"
+        )
+    result = []
+    for vehicle in fleet:
+        east_m, north_m = geometry.sample(vehicle.offset_m)
+        yaw_deg = math.degrees(geometry.heading_rad(vehicle.offset_m))
+        result.append({
+            "name": vehicle.name,
+            "type": type_name,
+            "control_mode": control_mode,
+            "spawn_pose_enu": {
+                "frame": "city_origin_local_enu",
+                "east_m": east_m,
+                "north_m": north_m,
+                "up_m": up_m,
+                "yaw_deg": yaw_deg,
+            },
+        })
+    return result, {
+        "scenario": scenario_path,
+        "route_length_m": geometry.length,
+        "vehicle_count": len(result),
+        "max_route_offset_m": max_offset,
+    }
+
+
 def resolve_config(config_path: Path) -> dict:
     config = load_yaml(config_path.resolve())
     try:
@@ -113,7 +194,9 @@ def resolve_config(config_path: Path) -> dict:
         city_receipt = resolve_path(city["path"], "City World receipt path")
         vehicle_config = config["inputs"]["ackermann_vehicles"]
         type_inputs = vehicle_config["types"]
-        vehicle_inputs = vehicle_config["vehicles"]
+        vehicle_inputs, vehicle_generation = expand_config_vehicle_inputs(
+            vehicle_config["vehicles"]
+        )
         realtime_sync_cycle_msec = int(config["inputs"]["ackermann_runtime"].get(
             "realtime_sync_cycle_msec", 2
         ))
@@ -122,8 +205,6 @@ def resolve_config(config_path: Path) -> dict:
         raise RecipeError(f"unsupported Urban Car Fleet configuration schema: {config_path}") from error
     if not isinstance(type_inputs, list) or not type_inputs:
         raise RecipeError("ackermann_vehicles.types must be a non-empty array")
-    if not isinstance(vehicle_inputs, list) or not vehicle_inputs:
-        raise RecipeError("ackermann_vehicles.vehicles must be a non-empty array")
     if realtime_sync_cycle_msec < 0:
         raise RecipeError("realtime_sync_cycle_msec must be non-negative")
 
@@ -226,6 +307,7 @@ def resolve_config(config_path: Path) -> dict:
         "work": work,
         "vehicles": vehicles,
         "vehicle_types": vehicle_types,
+        "vehicle_generation": vehicle_generation,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
     }
 
@@ -560,6 +642,13 @@ def materialize_runtime(
     runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime["actuators"] = {}
 
+    # JointState carries four names plus position/velocity/effort values per
+    # vehicle. MultiDOFJointState also carries one name, transform, twist, and
+    # wrench per vehicle. Keep a power-of-two buffer with conservative room for
+    # both generated variable-length payloads.
+    estimated_state_bytes = 1024 + 768 * len(vehicles)
+    state_pdu_size = max(4096, 1 << (estimated_state_bytes - 1).bit_length())
+
     command_pdu_types = [
         {"channel_id": 0, "pdu_size": 48, "name": COMMAND_PDU,
          "type": "ackermann_msgs/AckermannDrive"},
@@ -573,9 +662,9 @@ def materialize_runtime(
          "type": "std_msgs/Float64"},
     ]
     state_pdu_types = [
-        {"channel_id": 0, "pdu_size": 4096, "name": "joint_states",
+        {"channel_id": 0, "pdu_size": state_pdu_size, "name": "joint_states",
          "type": "sensor_msgs/JointState"},
-        {"channel_id": 1, "pdu_size": 4096, "name": "vehicle_states",
+        {"channel_id": 1, "pdu_size": state_pdu_size, "name": "vehicle_states",
          "type": "sensor_msgs/MultiDOFJointState"},
     ]
     command_types_path = work / "urban-car-command-pdutypes.json"
@@ -921,6 +1010,12 @@ def configure(resolved: dict) -> int:
             }
             for definition in resolved["vehicle_types"].values()
         ],
+        "vehicle_generation": (
+            None if resolved["vehicle_generation"] is None else {
+                **resolved["vehicle_generation"],
+                "scenario": str(resolved["vehicle_generation"]["scenario"]),
+            }
+        ),
         "output_mjcf": {"path": str(output), "sha256": sha256(output)},
         "runtime_mjb": {
             "path": str(mjb),

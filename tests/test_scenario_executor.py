@@ -56,7 +56,7 @@ vehicles:
             with self.assertRaises(scenario_executor.ScenarioError):
                 scenario_executor.load_scenario(path)
 
-    def test_checked_in_hotel_route_is_closed_loop_with_convoy_gap(self):
+    def test_checked_in_hotel_route_generates_ten_vehicle_convoy(self):
         scenario = scenario_executor.load_scenario(
             ROOT / "recipes/scenarios/hotel-convoy-loop.yaml"
         )
@@ -64,9 +64,10 @@ vehicles:
         self.assertIsNone(scenario.loop_count)
         self.assertEqual(
             tuple(vehicle.name for vehicle in scenario.vehicles),
-            ("Car-1", "Car-2"),
+            tuple(f"Car-{index}" for index in range(1, 11)),
         )
-        self.assertEqual(scenario.vehicles[1].offset_m, -5.0)
+        self.assertEqual(scenario.vehicles[1].offset_m, -4.5)
+        self.assertEqual(scenario.vehicles[-1].offset_m, -40.5)
         self.assertEqual(
             next(point for point in scenario.points if point.name == "hotel-stop").dwell_sec,
             5.0,

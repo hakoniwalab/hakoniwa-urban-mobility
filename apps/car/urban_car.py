@@ -170,11 +170,13 @@ class AckermannFleetClient:
         robots: list[str] | tuple[str, ...],
         pdu: str = "ackermann_cmd",
         rate_hz: float = 50.0,
+        publish_timeout_sec: float = 1.0,
     ):
         self.pdu_def = Path(pdu_def).expanduser().resolve()
         self.robots = tuple(robot.strip() for robot in robots)
         self.pdu = pdu.strip()
         self.rate_hz = float(rate_hz)
+        self.publish_timeout_sec = float(publish_timeout_sec)
         if not self.pdu_def.is_file():
             raise ValueError(f"PDU definition not found: {self.pdu_def}")
         if not self.robots or any(not robot for robot in self.robots) or not self.pdu:
@@ -183,6 +185,11 @@ class AckermannFleetClient:
             raise ValueError("robot names must be unique")
         if not math.isfinite(self.rate_hz) or self.rate_hz <= 0.0:
             raise ValueError("rate_hz must be finite and positive")
+        if (
+            not math.isfinite(self.publish_timeout_sec)
+            or self.publish_timeout_sec < 0.0
+        ):
+            raise ValueError("publish_timeout_sec must be finite and non-negative")
         self._transport: HakoniwaPollingTransport | None = None
 
     @property
@@ -220,12 +227,19 @@ class AckermannFleetClient:
         command = AckermannDrive()
         command.speed = speed
         command.steering_angle = steering
-        if not self._transport.send(
-            robot, self.pdu, py_to_pdu_AckermannDrive(command)
-        ):
-            raise AckermannClientError(
-                f"failed to publish Ackermann command: {robot}/{self.pdu}"
-            )
+        payload = py_to_pdu_AckermannDrive(command)
+        deadline = time.monotonic() + self.publish_timeout_sec
+        while not self._transport.send(robot, self.pdu, payload):
+            # The event-aware writer reports false while this channel's prior
+            # receive event is pending. A heavy Viewer scene can therefore
+            # apply normal, transient backpressure to an external publisher.
+            if time.monotonic() >= deadline:
+                raise AckermannClientError(
+                    "timed out publishing Ackermann command "
+                    f"after {self.publish_timeout_sec:g}s: {robot}/{self.pdu}; "
+                    "the runtime may be paused, stopped, or not consuming commands"
+                )
+            time.sleep(min(0.002, 0.25 / self.rate_hz))
 
     def vehicle_poses(
         self,

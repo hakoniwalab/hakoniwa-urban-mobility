@@ -248,13 +248,16 @@ reuses component-owned tools and assets. Choose driveable spawns relative to
 the receipt origin in local ENU before configuring; the city origin is not
 assumed to be a road. The complete operating guide is in
 [`recipes/README.md`](recipes/README.md).
+The checked-in hotel demo generates ten Golf Carts at 4.5 m route spacing;
+changing the scenario fleet `count` regenerates both spawn poses and runtime
+contracts.
 
 ```bash
 python3 tools/multi_car.py doctor --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py configure --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
 
-# Drive either externally controlled vehicle from another terminal:
+# Drive any externally controlled vehicle from another terminal:
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
   apps/car/ackermann_command.py --robot Car-1 drive \
   --speed 1.0 --steering-deg 15 --duration 3
@@ -292,8 +295,11 @@ pure-pursuit steering. A shared virtual route position plus each vehicle's
 `route_offset_m` preserves convoy spacing. Waypoint `dwell_sec` stops the whole
 formation, and `loop_count: forever` repeats until Ctrl-C.
 
-Each `inputs.ackermann_vehicles.vehicles[]` selects a catalogued `type`, spawn,
-and `control_mode`. The control mode selects
+`inputs.ackermann_vehicles.vehicles.generated_from_route` selects a catalogued
+type and derives the checked-in fleet names and spawn poses from the route
+scenario. Change its `vehicles.generate.count` to switch fleet size without
+duplicating vehicle entries. Explicit vehicle arrays remain supported for
+mixed types and per-vehicle control modes. The control mode selects
 `external_python` or `ps5` independently.
 `start` always opens the Urban-owned Car application with the shared native
 MuJoCo Viewer backend. In `ps5` mode the Launcher also starts the PS5 sender;

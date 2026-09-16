@@ -12,6 +12,11 @@ import time
 import yaml
 
 from urban_car import AckermannClientError, AckermannFleetClient, VehiclePose
+from route_geometry import (
+    RouteGeometry,
+    RoutePoint,
+    expand_route_vehicles,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,14 +58,6 @@ class Scenario:
 
 
 @dataclass(frozen=True)
-class RoutePoint:
-    name: str
-    east_m: float
-    north_m: float
-    dwell_sec: float = 0.0
-
-
-@dataclass(frozen=True)
 class RouteControl:
     speed_m_s: float
     lookahead_m: float
@@ -84,62 +81,6 @@ class RouteScenario:
     vehicles: tuple[RouteVehicle, ...]
     points: tuple[RoutePoint, ...]
     control: RouteControl
-
-
-class RouteGeometry:
-    """Closed ENU polyline with projection and arc-length sampling."""
-
-    def __init__(self, points: tuple[RoutePoint, ...]):
-        self.points = points
-        self.segment_lengths: list[float] = []
-        self.cumulative = [0.0]
-        for start, end in zip(points, points[1:] + points[:1]):
-            length = math.hypot(end.east_m - start.east_m, end.north_m - start.north_m)
-            if length <= 1e-6:
-                raise ScenarioError("route contains a zero-length segment")
-            self.segment_lengths.append(length)
-            self.cumulative.append(self.cumulative[-1] + length)
-        self.length = self.cumulative[-1]
-
-    def sample(self, distance_m: float) -> tuple[float, float]:
-        wrapped = distance_m % self.length
-        for index, length in enumerate(self.segment_lengths):
-            start_s = self.cumulative[index]
-            if wrapped <= start_s + length or index + 1 == len(self.segment_lengths):
-                ratio = (wrapped - start_s) / length
-                start = self.points[index]
-                end = self.points[(index + 1) % len(self.points)]
-                return (
-                    start.east_m + ratio * (end.east_m - start.east_m),
-                    start.north_m + ratio * (end.north_m - start.north_m),
-                )
-        raise AssertionError("route sample did not resolve a segment")
-
-    def project(self, east_m: float, north_m: float) -> float:
-        best_distance_sq = math.inf
-        best_s = 0.0
-        for index, length in enumerate(self.segment_lengths):
-            start = self.points[index]
-            end = self.points[(index + 1) % len(self.points)]
-            dx = end.east_m - start.east_m
-            dy = end.north_m - start.north_m
-            ratio = max(0.0, min(1.0, (
-                (east_m - start.east_m) * dx + (north_m - start.north_m) * dy
-            ) / (length * length)))
-            projected_east = start.east_m + ratio * dx
-            projected_north = start.north_m + ratio * dy
-            distance_sq = ((east_m - projected_east) ** 2
-                           + (north_m - projected_north) ** 2)
-            if distance_sq < best_distance_sq:
-                best_distance_sq = distance_sq
-                best_s = self.cumulative[index] + ratio * length
-        return best_s % self.length
-
-    def signed_error(self, target_s: float, actual_s: float) -> float:
-        error = (target_s - actual_s) % self.length
-        if error > self.length / 2.0:
-            error -= self.length
-        return error
 
 
 class RouteCursor:
@@ -224,18 +165,21 @@ def load_route_scenario(root: dict) -> RouteScenario:
         raise ScenarioError("loop_count must be a positive integer or 'forever'")
 
     vehicle_inputs = root.get("vehicles")
-    if not isinstance(vehicle_inputs, list) or not vehicle_inputs:
-        raise ScenarioError("vehicles must be a non-empty array")
+    try:
+        expanded_vehicles = expand_route_vehicles(vehicle_inputs)
+    except ValueError as error:
+        raise ScenarioError(str(error)) from error
+    if not expanded_vehicles:
+        raise ScenarioError("vehicles must not be empty")
     vehicles = []
     names: set[str] = set()
-    for index, item in enumerate(vehicle_inputs):
-        if not isinstance(item, dict):
-            raise ScenarioError(f"vehicles[{index}] must be an object")
-        vehicle_name = str(item.get("name", "")).strip()
-        offset_m = finite_number(item.get("route_offset_m", 0.0),
-                                 f"vehicles[{index}].route_offset_m")
+    for index, item in enumerate(expanded_vehicles):
+        vehicle_name = item.name
+        offset_m = item.offset_m
         if not vehicle_name or vehicle_name in names:
             raise ScenarioError("vehicle names must be non-empty and unique")
+        if not math.isfinite(offset_m):
+            raise ScenarioError(f"vehicles[{index}].route_offset_m must be finite")
         if offset_m > 0.0:
             raise ScenarioError("route_offset_m must be zero or negative")
         names.add(vehicle_name)

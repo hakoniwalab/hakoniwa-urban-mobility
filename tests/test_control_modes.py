@@ -54,7 +54,7 @@ class FakeTransport:
 
 
 class ControlModeTest(unittest.TestCase):
-    def test_checked_in_recipe_selects_two_external_vehicles(self):
+    def test_checked_in_recipe_generates_ten_external_vehicles(self):
         resolved = multi_car.resolve_config(
             ROOT / "recipes/multi-car-viewer.yaml"
         )
@@ -62,14 +62,21 @@ class ControlModeTest(unittest.TestCase):
             [(item["name"], item["type"], item["control_mode"])
              for item in resolved["vehicles"]],
             [
-                ("Car-1", "golf_cart", "external_python"),
-                ("Car-2", "golf_cart", "external_python"),
+                (f"Car-{index}", "golf_cart", "external_python")
+                for index in range(1, 11)
             ],
         )
         self.assertEqual(
             [item["prefix"] for item in resolved["vehicles"]],
-            ["car_1_", "car_2_"],
+            [f"car_{index}_" for index in range(1, 11)],
         )
+        self.assertEqual(resolved["vehicle_generation"]["vehicle_count"], 10)
+        self.assertAlmostEqual(
+            resolved["vehicle_generation"]["max_route_offset_m"], 40.5
+        )
+        self.assertAlmostEqual(resolved["vehicles"][0]["spawn_enu"]["east_m"], 35.0)
+        self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["east_m"], 39.5)
+        self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["yaw_deg"], 180.0)
 
     def launcher(self, modes: list[str]) -> dict:
         with tempfile.TemporaryDirectory() as directory:
@@ -180,17 +187,24 @@ class ControlModeTest(unittest.TestCase):
             pdu_def = json.loads(files["pdu_def"].read_text(encoding="utf-8"))
             self.assertEqual(
                 [item["name"] for item in pdu_def["robots"]],
-                ["Car-1", "Car-2", "UrbanFleet"],
+                [*[f"Car-{index}" for index in range(1, 11)], "UrbanFleet"],
             )
             self.assertEqual(
                 [item["pdu_robot"] for item in manifest["components"]
                  if item["kind"] == "controller"],
-                ["Car-1", "Car-2"],
+                [f"Car-{index}" for index in range(1, 11)],
             )
             self.assertEqual(
                 [item["pdu_robot"] for item in manifest["components"]
                  if item["kind"] == "state_output"],
                 ["UrbanFleet", "UrbanFleet"],
+            )
+            state_pdu_types = json.loads(
+                files["state_pdu_types"].read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                [item["pdu_size"] for item in state_pdu_types],
+                [16384, 16384],
             )
 
 
@@ -258,6 +272,42 @@ class AckermannClientTest(unittest.TestCase):
             self.assertEqual(sent_robots[:2], ["Car-1", "Car-2"])
             self.assertEqual(sent_robots[2:], ["Car-1", "Car-2"] * 3)
             self.assertFalse(client.connected)
+
+    def test_fleet_client_retries_transient_receive_event_backpressure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdu_def = Path(directory) / "pdudef.json"
+            pdu_def.write_text("{}\n", encoding="utf-8")
+            transport = FakeTransport()
+            attempts = 0
+
+            def send_with_backpressure(robot, pdu, payload):
+                nonlocal attempts
+                attempts += 1
+                transport.sent.append((robot, pdu, payload))
+                return attempts >= 3
+
+            transport.send = send_with_backpressure
+            with (
+                patch.object(
+                    urban_car,
+                    "HakoniwaPollingTransport",
+                    return_value=transport,
+                ),
+                patch.object(
+                    urban_car,
+                    "py_to_pdu_AckermannDrive",
+                    return_value=bytearray(48),
+                ),
+            ):
+                client = urban_car.AckermannFleetClient(
+                    pdu_def,
+                    ["Car-1"],
+                    publish_timeout_sec=0.1,
+                ).connect()
+                client.send("Car-1", 1.0)
+                client.close(stop=False)
+
+            self.assertEqual(attempts, 3)
 
     def test_fleet_pose_converts_mujoco_frame_and_quaternion_to_enu(self):
         with tempfile.TemporaryDirectory() as directory:

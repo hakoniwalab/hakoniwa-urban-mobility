@@ -4,13 +4,13 @@ rate_hz: 50
 start_delay_sec: 1.0
 loop_count: forever
 
-# Both cars follow one virtual progress point. Car-2 is assigned a point 5 m
-# behind Car-1, so the convoy keeps its spacing while driving and while stopped.
+# All cars follow one virtual progress point. Each generated follower is
+# assigned another 4.5 m behind, preserving formation while driving and stopped.
 vehicles:
-  - name: Car-1
-    route_offset_m: 0.0
-  - name: Car-2
-    route_offset_m: -5.0
+  generate:
+    count: 10
+    name_prefix: Car-
+    route_spacing_m: 4.5
 
 control:
   speed_m_s: 1.0

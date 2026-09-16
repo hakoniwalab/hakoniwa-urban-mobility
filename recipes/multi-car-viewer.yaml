@@ -33,30 +33,17 @@ inputs:
         mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
         contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
     vehicles:
-      - name: Car-1
-        type: golf_cart
-        control_mode: external_python  # external_python | ps5
-        spawn_pose_enu:
-          frame: city_origin_local_enu
-          east_m: 35.0
-          north_m: -7.0
-          up_m: 4.6
-          yaw_deg: 180.0
-      - name: Car-2
+      generated_from_route:
+        scenario: recipes/scenarios/hotel-convoy-loop.yaml
         type: golf_cart
         control_mode: external_python
-        spawn_pose_enu:
-          frame: city_origin_local_enu
-          east_m: 40.0
-          north_m: -7.0
-          up_m: 4.6
-          yaw_deg: 180.0
+        up_m: 4.6
     spawn_pose_rule: >
-      Position is relative to the City World receipt origin. Yaw is positive
-      counter-clockwise from East. Roll and pitch are fixed to zero. Each
-      vehicle name is also its AckermannDrive PDU robot name. Type references
-      one entry in types; its contract supplies the model-specific Ackermann
-      interface and geometry without duplicating those values here.
+      The route scenario generates vehicle names, route offsets, and initial
+      ENU poses. Yaw is positive counter-clockwise from East. Roll and pitch
+      are fixed to zero. Each vehicle name is also its AckermannDrive PDU robot
+      name. Type references one entry in types; its contract supplies the
+      model-specific Ackermann interface and geometry.
 
   ackermann_runtime:
     owner: hakoniwa-urban-mobility

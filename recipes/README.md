@@ -30,9 +30,9 @@ inputs:
 The tool reads the city origin, extent, coordinate systems, MJCF path, and GLB
 path from that receipt. Do not duplicate them in this configuration.
 
-## Define vehicle types, instances, and spawn poses
+## Define vehicle types and route-generated instances
 
-The spawn is relative to the City World origin in local ENU coordinates:
+The checked-in demo derives every vehicle's initial pose from the route scenario:
 
 ```yaml
 inputs:
@@ -42,33 +42,21 @@ inputs:
         mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
         contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
     vehicles:
-      - name: Car-1
+      generated_from_route:
+        scenario: recipes/scenarios/hotel-convoy-loop.yaml
         type: golf_cart
         control_mode: external_python
-        spawn_pose_enu:
-          frame: city_origin_local_enu
-          east_m: 35.0
-          north_m: -7.0
-          up_m: 4.6
-          yaw_deg: 180.0
-      - name: Car-2
-        type: golf_cart
-        control_mode: external_python
-        spawn_pose_enu:
-          frame: city_origin_local_enu
-          east_m: 40.0
-          north_m: -7.0
-          up_m: 4.6
-          yaw_deg: 180.0
+        up_m: 4.6
 ```
 
-- Position uses metres.
-- Yaw uses degrees, positive counter-clockwise from East toward North.
+- The route scenario generates names, route offsets, ENU positions, and yaw.
+- Position and route spacing use metres.
+- Generated yaw is positive counter-clockwise from East toward North.
 - Roll and pitch are fixed to zero and are not configuration inputs.
 - `up_m` is the selected model's top-level body origin, so include terrain
   height and that type's wheel clearance.
 
-Type names and vehicle names must be unique. Each vehicle `type` references
+Type names and generated vehicle names must be unique. The vehicle `type` references
 one catalog entry. `mjcf` is the visual/rigid-body source; `contract` is the
 matching mbody-registry Ackermann forge contract supplying freejoint, joint,
 actuator, and geometry bindings. This keeps model-specific physics metadata
@@ -172,8 +160,8 @@ publishes stop commands and closes the external PDU service.
 
 Vehicle state is published once per Runtime tick through the shared
 `UrbanFleet/vehicle_states` `sensor_msgs/MultiDOFJointState` channel. Its
-variable-length arrays follow Recipe vehicle order (`Car-1`, then `Car-2` in
-the checked-in configuration). `UrbanFleet/joint_states` similarly contains
+variable-length arrays follow Recipe vehicle order (`Car-1` through `Car-10`
+in the checked-in configuration). `UrbanFleet/joint_states` similarly contains
 the namespaced joints for every configured vehicle.
 
 ### Timed multi-vehicle scenarios
@@ -223,10 +211,22 @@ all end with repeated stop commands for the complete scenario fleet.
 [`scenarios/hotel-convoy-loop.yaml`](scenarios/hotel-convoy-loop.yaml) uses
 local ENU waypoints and the published `UrbanFleet/vehicle_states` feedback.
 The first vehicle follows a virtual point on the closed route and each
-following vehicle receives a negative `route_offset_m`. The checked-in 5 m
-offset keeps both Golf Carts in formation, including the five-second hotel
+following vehicle receives a generated negative `route_offset_m`. The checked-in
+10-Car fleet uses 4.5 m spacing, including the five-second hotel
 stop. The executor converts the MuJoCo state frame back to ENU, projects each
 car onto the route, and calculates steering with a pure-pursuit controller.
+
+```yaml
+vehicles:
+  generate:
+    count: 10
+    name_prefix: Car-
+    route_spacing_m: 4.5
+```
+
+Changing `count` is sufficient to select a smaller fleet. `configure` samples
+the same route offsets to generate matching MJCF spawn poses. Fleet state PDU
+buffers grow automatically with the configured vehicle count.
 
 ```bash
 $FOUNDATION_PYTHON apps/car/scenario_executor.py \
