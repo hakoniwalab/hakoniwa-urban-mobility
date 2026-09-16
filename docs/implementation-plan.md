@@ -1,4 +1,4 @@
-# Numazu Urban Mobility Implementation Plan
+# Urban Mobility Implementation Plan
 
 The first executable path is deliberately car-first. It proves City World
 composition, multi-vehicle namespaces, and common Hakoniwa time before the
@@ -68,4 +68,3 @@ Contact is the final initial milestone, not a prerequisite for movement.
 collision-enabled mirrored Drone proxy, then emits `ImpulseCollision` to the
 real Drone owner. The Car's simplified local response is contact with a static
 obstacle. Viewer and policy logic receive a separate `ContactEvent`.
-

@@ -3,8 +3,8 @@
 # This is intentionally a composition contract, not a replacement for the
 # component-owned vehicle, city, or controller configurations it references.
 
-id: numazu-urban-mobility
-title: Numazu PLATEAU Urban Mobility Demo
+id: urban-mobility
+title: Configurable PLATEAU Urban Mobility Demo
 recipe_version: 0.1
 status: planning
 
@@ -21,7 +21,7 @@ external_inputs:
   city_world:
     owner: hakoniwa-business-pack / hakoniwa-envsim
     source_of_truth: >
-      A validated Numazu City World receipt and generated artifacts under the
+      A validated, explicitly configured City World receipt and generated artifacts under the
       Business Pack work directory. Urban Mobility never downloads or
       regenerates PLATEAU data implicitly.
     path_resolution:
@@ -65,20 +65,20 @@ composition:
       Drone and Car bodies into one MuJoCo model.
   worlds:
     car_world:
-      final_mjcf: build/numazu/car-fleet-city.xml
+      final_mjcf: build/urban/car-fleet-city.xml
       contains: [city_static_collider, real_car_1, real_car_2, mirrored_drone_1, mirrored_drone_2]
     drone_world:
-      final_mjcf: build/numazu/drone-fleet-city.xml
+      final_mjcf: build/urban/drone-fleet-city.xml
       contains: [city_static_collider, real_drone_1, real_drone_2, mirrored_car_1, mirrored_car_2]
   timing:
     rule: One explicit Hakoniwa Conductor owner advances all participating assets.
 
 delivery_stages:
   - id: S0_city_receipt
-    title: Materialize and validate the Numazu City World
+    title: Materialize and validate the configured City World
     owner_repositories: [hakoniwa-business-pack, hakoniwa-envsim]
     work:
-      - Build the bounded Numazu City World through the Business Pack recipe.
+      - Build the bounded configured City World through the Business Pack recipe.
       - Record receipt, city MJCF, visual GLB, capabilities, and city_map origin.
       - Reject the scenario when required road-marking or collision capabilities are absent.
     outputs:
@@ -89,7 +89,7 @@ delivery_stages:
       - MJCF and GLB use the same city_map origin.
 
   - id: S1_single_car
-    title: One Ackermann vehicle in the Numazu City World
+    title: One Ackermann vehicle in the configured City World
     depends_on: [S0_city_receipt]
     owner_repositories: [hakoniwa-mbody-registry, hakoniwa-mujoco-robots]
     work:
@@ -97,7 +97,7 @@ delivery_stages:
       - Generate one named Car-1 runtime binding and one controller command path.
       - Run a deterministic road-following or scripted low-speed route.
     outputs:
-      - build/numazu/car-1-city.xml
+      - build/urban/car-1-city.xml
       - one-car Launcher and controller configuration
       - state trace and visual smoke evidence
     acceptance:
@@ -115,7 +115,7 @@ delivery_stages:
         must join the same Conductor domain; record the selected topology.
       - Drive non-overlapping scripted routes before enabling interaction policy.
     outputs:
-      - build/numazu/car-fleet-city.xml
+      - build/urban/car-fleet-city.xml
       - Car-1 and Car-2 controller configurations
       - launcher with exactly one Conductor owner
     acceptance:
@@ -144,7 +144,7 @@ delivery_stages:
       - Materialize per-Drone Fleet types rather than assuming a homogeneous Fleet.
       - Add Quad Drone-1 and Hexa Drone-2 with unique model, propeller, PDU, and mirror names.
       - Add mirrored Drone-1/2 to the car world and mirrored Car-1/2 to the Drone world.
-      - Run the four-entity Numazu timeline with no intentional contact.
+      - Run the four-entity configured-city timeline with no intentional contact.
     acceptance:
       - Each entity has a unique namespace and actual-pose stream.
       - Quad and Hexa are simultaneously visible and follow their own Fleet commands.

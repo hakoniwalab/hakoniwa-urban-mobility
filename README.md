@@ -129,7 +129,8 @@ time-of-impact resolution are future work.
 6. Apply the initial safety policy: car brake/stop and drone hold, pause, or
    ascent according to the scenario.
 
-The initial preset is expected to use the validated Numazu city region, a
+The checked-in configuration selects the validated compact Hokkaido/Sapporo
+city region, a
 Golf Cart and Hunter V2, and Quad and Hexa drones. Those are demonstration
 choices, not hard-coded product requirements.
 
@@ -187,31 +188,36 @@ docs/            Coordinate, timing, safety, and operational documentation
 The executable dependency plan and the car-first integration checkpoints are
 defined in [`docs/implementation-plan.md`](docs/implementation-plan.md). The
 first concrete composition contract is
-[`recipes/numazu-urban-mobility.yaml`](recipes/numazu-urban-mobility.yaml).
+[`recipes/urban-mobility.yaml`](recipes/urban-mobility.yaml).
 The first viewer and PS5 checkpoint is
-[`recipes/numazu-car-1-viewer.yaml`](recipes/numazu-car-1-viewer.yaml).
+[`recipes/urban-car-1-viewer.yaml`](recipes/urban-car-1-viewer.yaml).
 
-### Numazu Car-1 operation
+### Urban Car-1 operation
 
 The recipe wrapper materializes only local generated files under `work/` and
-reuses component-owned tools and assets. Choose a driveable spawn in the
-receipt's MJCF frame (`North, -East, Up`) before configuring; the city origin
-is not assumed to be a road.
+reuses component-owned tools and assets. Choose a driveable spawn relative to
+the receipt origin in local ENU before configuring; the city origin is not
+assumed to be a road. The complete operating guide is in
+[`recipes/README.md`](recipes/README.md).
 
 ```bash
-python3 tools/numazu_car_1.py doctor
-python3 tools/numazu_car_1.py configure --spawn "46.05 -8.70 6.07 0 0 -0.13"
-python3 tools/numazu_car_1.py start
+python3 tools/urban_car_1.py doctor --config recipes/urban-car-1-viewer.yaml
+python3 tools/urban_car_1.py configure --config recipes/urban-car-1-viewer.yaml
+python3 tools/urban_car_1.py start --config recipes/urban-car-1-viewer.yaml
 
 # Later, from another terminal:
-python3 tools/numazu_car_1.py status
-python3 tools/numazu_car_1.py stop
+python3 tools/urban_car_1.py status --config recipes/urban-car-1-viewer.yaml
+python3 tools/urban_car_1.py stop --config recipes/urban-car-1-viewer.yaml
 ```
 
-The shown spawn is a first candidate sampled from a large source-road polygon:
-`North=46.05 m`, `-East=-8.70 m`, and road height plus the Golf Cart's wheel
-clearance. It is a starting point for visual verification, not a permanent
-route definition.
+The YAML selects a city by its City World receipt `path`; changing that one
+path is sufficient to switch cities. Origin, extent, coordinate systems, and
+artifact paths are derived from the receipt. The spawn is relative to the
+receipt's city origin. Position uses local ENU metres (`east_m`, `north_m`,
+`up_m`); `yaw_deg` is positive counter-clockwise from East. Roll and pitch are
+fixed to zero. The tool converts this to MuJoCo's `X=North, Y=-East, Z=Up`
+frame and radians during configuration, and records both representations in
+the composition receipt.
 
 `start` opens the existing Generic Ackermann native MuJoCo Viewer and starts
 the existing PS5 sender after the plant. Use `view` after `configure` for a

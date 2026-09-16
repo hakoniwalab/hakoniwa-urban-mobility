@@ -4,14 +4,14 @@
 # operation worker. This recipe must consume its receipt; it never downloads
 # PLATEAU data itself.
 
-id: numazu-car-1-viewer
-title: Numazu City World with one PS5-controlled Golf Cart
+id: urban-car-1-viewer
+title: Configured Urban City World with one PS5-controlled Golf Cart
 recipe_version: 0.1
 status: specified
 
 goal:
   description: >
-    Compose the existing Numazu PLATEAU City World and one Generic Ackermann
+    Compose a configured PLATEAU City World and one Generic Ackermann
     Golf Cart into a single MuJoCo model, view it in the native MuJoCo Viewer,
     and control Car-1 through the existing PS5 gamepad path.
   boundary: >
@@ -21,22 +21,11 @@ goal:
 
 inputs:
   business_pack_city_receipt:
-    path: >
-      ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/
-      shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
-    expected:
-      origin_wgs84: [35.0988, 138.8587]
-      half_extent_m: [100.0, 100.0]
-      mjcf_coordinate_frame: X=North,Y=-East,Z=Up
-      capabilities:
-        - terrain
-        - roads_visual_glb
-        - road_markings_visual_glb
-        - building_collision
+    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
     resolution_rule: >
-      Read absolute City World paths and the coordinate origin from the receipt
-      at configure time. Do not copy those absolute paths into generated
-      source files.
+      The path is the only city selection input. Read the MJCF, GLB, origin,
+      extent, coordinate systems, and capabilities from the receipt at
+      configure time.
 
   golf_cart_model:
     owner: hakoniwa-mbody-registry
@@ -45,14 +34,16 @@ inputs:
       model.minimal_world.xml
     body_name: vehicle
     freejoint: base_freejoint
-    spawn_pose_mjcf:
-      status: required-before-run
-      format: [north_m, minus_east_m, up_m, roll_rad, pitch_rad, yaw_rad]
-      first_candidate: [46.05, -8.70, 6.07, 0.0, 0.0, -0.13]
+    spawn_pose_enu:
+      frame: city_origin_local_enu
+      east_m: 5.21
+      north_m: -6.07
+      up_m: 4.6
+      yaw_deg: 11.5
       note: >
-        This candidate is sampled from a large source-road polygon and includes
-        Golf Cart wheel clearance. Verify it in the native Viewer before using
-        it as a route start; do not assume the City World origin is safe.
+        Position is relative to the City World receipt origin. Yaw is positive
+        counter-clockwise from East. Roll and pitch are fixed to zero by the
+        Urban Car runtime. This candidate includes Golf Cart wheel clearance.
 
   ackermann_runtime:
     owner: hakoniwa-mujoco-robots
@@ -74,14 +65,14 @@ composition:
   owner: hakoniwa-mbody-registry
   tool: ../hakoniwa-mbody-registry/tools/compose_mujoco_world.py
   output:
-    directory: work/numazu-car-1-viewer
-    mjcf: work/numazu-car-1-viewer/car-1-city.xml
-    mjb: work/numazu-car-1-viewer/car-1-city.mjb
-    mujoco_materialization_receipt: work/numazu-car-1-viewer/mujoco-materialization.json
-    compose_receipt: work/numazu-car-1-viewer/compose-receipt.json
-    runtime_manifest: work/numazu-car-1-viewer/car-1-asset-manifest.json
-    runtime_config: work/numazu-car-1-viewer/car-1-runtime.json
-    launcher: work/numazu-car-1-viewer/launcher.json
+    directory: work/urban-car-1-viewer
+    mjcf: work/urban-car-1-viewer/car-1-city.xml
+    mjb: work/urban-car-1-viewer/car-1-city.mjb
+    mujoco_materialization_receipt: work/urban-car-1-viewer/mujoco-materialization.json
+    compose_receipt: work/urban-car-1-viewer/compose-receipt.json
+    runtime_manifest: work/urban-car-1-viewer/car-1-asset-manifest.json
+    runtime_config: work/urban-car-1-viewer/car-1-runtime.json
+    launcher: work/urban-car-1-viewer/launcher.json
     core_config: ../hakoniwa-business-pack/work/foundation/config/cpp_core_config.json
   rules:
     - Remove the Golf Cart's standalone ground plane during composition.
@@ -131,4 +122,4 @@ known_limitations:
   - No route follower is required in this stage; the PS5 controller is the only control source.
   - Car-2, Drone Fleet, mirrors, and MirrorImpulseSender begin in later stages.
 
-next_stage: numazu-urban-mobility#S2_two_cars
+next_stage: urban-mobility#S2_two_cars

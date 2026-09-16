@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize and operate the S1 Numazu City World + Car-1 recipe.
+"""Materialize and operate the S1 Urban City World + Car-1 recipe.
 
 This wrapper composes component-owned artifacts.  It does not download PLATEAU
 data, generate a vehicle model, or reimplement the Generic Ackermann runtime.
@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -21,15 +22,9 @@ WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
-CITY_RECEIPT = (
-    BUSINESS_PACK
-    / "work/remote-operation/city-world-worker/jobs"
-    / "shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json"
-)
-WORK = ROOT / "work/numazu-car-1-viewer"
+DEFAULT_CONFIG = ROOT / "recipes/urban-car-1-viewer.yaml"
 CAR_NAME = "Car-1"
 COMMAND_PDU = "hako_cmd_game"
-SUGGESTED_SPAWN = "46.05 -8.70 6.07 0 0 -0.13"
 
 
 class RecipeError(RuntimeError):
@@ -72,6 +67,77 @@ def foundation_python() -> Path:
     return required(foundation_install() / "python/bin/python3", "Foundation Python")
 
 
+def load_yaml(path: Path) -> dict:
+    """Load YAML through the dependency-pinned Foundation Python environment."""
+    required(path, "Urban Car-1 configuration")
+    result = subprocess.run(
+        [
+            str(foundation_python()),
+            "-c",
+            "import json,sys,yaml; "
+            "print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))",
+            str(path),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RecipeError(f"failed to load configuration {path}: {result.stderr.strip()}")
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RecipeError(f"configuration loader returned invalid JSON for {path}") from error
+    if not isinstance(value, dict):
+        raise RecipeError(f"configuration must contain a YAML mapping: {path}")
+    return value
+
+
+def resolve_path(raw: str, label: str) -> Path:
+    if not isinstance(raw, str) or not raw.strip():
+        raise RecipeError(f"{label} must be a non-empty path")
+    path = Path(raw.strip()).expanduser()
+    return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+
+
+def resolve_config(config_path: Path) -> dict:
+    config = load_yaml(config_path.resolve())
+    try:
+        recipe_id = str(config["id"])
+        city = config["inputs"]["business_pack_city_receipt"]
+        city_receipt = resolve_path(city["path"], "City World receipt path")
+        spawn = config["inputs"]["golf_cart_model"]["spawn_pose_enu"]
+        east = float(spawn["east_m"])
+        north = float(spawn["north_m"])
+        up = float(spawn["up_m"])
+        yaw_deg = float(spawn["yaw_deg"])
+        work = resolve_path(config["composition"]["output"]["directory"], "output directory")
+    except (KeyError, TypeError, ValueError) as error:
+        raise RecipeError(f"unsupported Urban Car-1 configuration schema: {config_path}") from error
+    if any(not math.isfinite(value) for value in (east, north, up, yaw_deg)):
+        raise RecipeError("spawn values must be finite")
+
+    # City World MJCF is X=North, Y=-East, Z=Up. ENU yaw is positive
+    # counter-clockwise from East, while MuJoCo yaw is measured from +X (North).
+    yaw_mjcf_rad = math.radians(yaw_deg - 90.0)
+    return {
+        "raw": config,
+        "path": config_path.resolve(),
+        "recipe_id": recipe_id,
+        "city_receipt": city_receipt,
+        "work": work,
+        "spawn_enu": {
+            "frame": "city_origin_local_enu",
+            "east_m": east,
+            "north_m": north,
+            "up_m": up,
+            "yaw_deg": yaw_deg,
+        },
+        "spawn_mjcf": (north, -east, up, 0.0, 0.0, yaw_mjcf_rad),
+    }
+
+
 def paths() -> dict[str, Path]:
     return {
         "compose_tool": MBODY / "tools/compose_mujoco_world.py",
@@ -112,32 +178,30 @@ def mujoco_library() -> Path:
     )
 
 
-def city_inputs() -> tuple[Path, Path, dict]:
-    receipt = load_json(CITY_RECEIPT, "Numazu City World receipt")
+def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
+    receipt = load_json(city_receipt, "City World receipt")
     try:
         mjcf = Path(receipt["mjcf"]["path"])
         glb = Path(receipt["glb"]["path"])
-        origin = receipt["coordinate_frame"]["origin"]
+        coordinate_frame = receipt["coordinate_frame"]
+        origin = coordinate_frame["origin"]
         latitude = float(origin["latitude"])
         longitude = float(origin["longitude"])
+        altitude_offset = float(origin["altitude_offset_m"])
+        half_extent = coordinate_frame["half_extent_m"]
+        north_south = float(half_extent["north_south"])
+        east_west = float(half_extent["east_west"])
+        mjcf_frame = coordinate_frame["coordinate_systems"]["mjcf"]
     except (KeyError, TypeError, ValueError) as error:
-        raise RecipeError(f"City World receipt has an unsupported schema: {CITY_RECEIPT}") from error
-    if (latitude, longitude) != (35.0988, 138.8587):
-        raise RecipeError(
-            "unexpected City World origin; expected Numazu 35.0988, 138.8587, got "
-            f"{latitude}, {longitude}"
-        )
+        raise RecipeError(f"City World receipt has an unsupported schema: {city_receipt}") from error
+    if any(
+        not math.isfinite(value)
+        for value in (latitude, longitude, altitude_offset, north_south, east_west)
+    ) or north_south <= 0.0 or east_west <= 0.0:
+        raise RecipeError(f"City World receipt has invalid origin or extent: {city_receipt}")
+    if mjcf_frame != "X=North,Y=-East,Z=Up":
+        raise RecipeError(f"unsupported City World MJCF coordinate system: {mjcf_frame}")
     return required(mjcf, "City World MJCF"), required(glb, "City World GLB"), receipt
-
-
-def parse_spawn(raw: str) -> tuple[float, float, float, float, float, float]:
-    try:
-        values = tuple(float(value) for value in raw.replace(",", " ").split())
-    except ValueError as error:
-        raise RecipeError("--spawn must contain six finite numbers") from error
-    if len(values) != 6 or any(value != value or abs(value) == float("inf") for value in values):
-        raise RecipeError("--spawn must contain six finite numbers: N -E U roll pitch yaw")
-    return values  # type: ignore[return-value]
 
 
 def command(command: list[str]) -> None:
@@ -145,14 +209,14 @@ def command(command: list[str]) -> None:
     subprocess.run(command, cwd=ROOT, check=True)
 
 
-def materialize_runtime(runtime_model: Path) -> dict[str, Path]:
+def materialize_runtime(runtime_model: Path, work: Path) -> dict[str, Path]:
     source = paths()
-    WORK.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
     runtime = load_json(source["source_runtime"], "source Ackermann runtime config")
     runtime["bindings"]["asset_name"] = CAR_NAME
     runtime["bindings"]["pdu_name"] = COMMAND_PDU
-    runtime["bindings"]["endpoint_name"] = "numazu_car_1_endpoint"
-    runtime_path = WORK / "car-1-runtime.json"
+    runtime["bindings"]["endpoint_name"] = "urban_car_1_endpoint"
+    runtime_path = work / "car-1-runtime.json"
     write_json(runtime_path, runtime)
 
     pdu_def = load_json(source["source_pdu_def"], "source Ackermann PDU definition")
@@ -160,25 +224,25 @@ def materialize_runtime(runtime_model: Path) -> dict[str, Path]:
     source_pdu_def_dir = source["source_pdu_def"].parent
     for path_entry in pdu_def["paths"]:
         path_entry["path"] = str((source_pdu_def_dir / path_entry["path"]).resolve())
-    pdu_def_path = WORK / "car-1-pdudef.json"
+    pdu_def_path = work / "car-1-pdudef.json"
     write_json(pdu_def_path, pdu_def)
 
     comm = load_json(source["source_comm"], "source Ackermann endpoint communication config")
-    comm["name"] = "numazu_car_1_shm"
+    comm["name"] = "urban_car_1_shm"
     comm["io"]["robots"][0]["name"] = CAR_NAME
-    comm_path = WORK / "car-1-comm.json"
+    comm_path = work / "car-1-comm.json"
     write_json(comm_path, comm)
 
     endpoint = load_json(source["source_endpoint"], "source Ackermann endpoint config")
-    endpoint["name"] = "numazu_car_1_endpoint"
+    endpoint["name"] = "urban_car_1_endpoint"
     endpoint["pdu_def_path"] = str(pdu_def_path)
     endpoint["cache"] = str(source["source_cache"].resolve())
     endpoint["comm"] = str(comm_path)
-    endpoint_path = WORK / "car-1-endpoint.json"
+    endpoint_path = work / "car-1-endpoint.json"
     write_json(endpoint_path, endpoint)
 
     manifest = load_json(source["source_manifest"], "source Ackermann manifest")
-    manifest["name"] = "Numazu Car-1 Golf Cart"
+    manifest["name"] = "Urban Car-1 Golf Cart"
     manifest["model"] = str(runtime_model)
     manifest["pdu_def"] = str(pdu_def_path)
     manifest["endpoint"] = str(endpoint_path)
@@ -186,7 +250,7 @@ def materialize_runtime(runtime_model: Path) -> dict[str, Path]:
     source_manifest_dir = source["source_manifest"].parent
     for component in manifest["components"]:
         component["config"] = str((source_manifest_dir / component["config"]).resolve())
-    manifest_path = WORK / "car-1-asset-manifest.json"
+    manifest_path = work / "car-1-asset-manifest.json"
     write_json(manifest_path, manifest)
     return {
         "runtime": runtime_path,
@@ -240,11 +304,11 @@ def materialize_mjb(source_xml: Path, output_mjb: Path, receipt_path: Path) -> d
     return load_json(receipt_path, "MuJoCo materialization receipt")
 
 
-def materialize_launcher(runtime_files: dict[str, Path]) -> Path:
+def materialize_launcher(runtime_files: dict[str, Path], work: Path) -> Path:
     source = paths()
     python = foundation_python()
-    logs = WORK / "logs"
-    runtime = WORK / "runtime"
+    logs = work / "logs"
+    runtime = work / "runtime"
     logs.mkdir(parents=True, exist_ok=True)
     runtime.mkdir(parents=True, exist_ok=True)
     install = foundation_install()
@@ -271,7 +335,7 @@ def materialize_launcher(runtime_files: dict[str, Path]) -> Path:
         },
         "assets": [
             {
-                "name": "numazu-car-1-plant",
+                "name": "urban-car-1-plant",
                 "activation_timing": "before_start",
                 "command": str(source["plant"]),
                 "args": ["--manifest", str(runtime_files["manifest"])],
@@ -285,7 +349,7 @@ def materialize_launcher(runtime_files: dict[str, Path]) -> Path:
                 },
             },
             {
-                "name": "numazu-car-1-ps5-controller",
+                "name": "urban-car-1-ps5-controller",
                 "activation_timing": "after_start",
                 "command": str(python),
                 "args": [
@@ -295,7 +359,7 @@ def materialize_launcher(runtime_files: dict[str, Path]) -> Path:
                     "--robot", CAR_NAME,
                     "--pdu", COMMAND_PDU,
                 ],
-                "depends_on": ["numazu-car-1-plant"],
+                "depends_on": ["urban-car-1-plant"],
                 "delay_sec": 1,
             },
         ],
@@ -306,17 +370,20 @@ def materialize_launcher(runtime_files: dict[str, Path]) -> Path:
             "upgrade hakoniwa-pdu before running this exclusive runtime Recipe"
         )
     launcher["runtime"] = {"cleanup_mmap_on_start": True}
-    launcher_path = WORK / "launcher.json"
+    launcher_path = work / "launcher.json"
     write_json(launcher_path, launcher)
     return launcher_path
 
 
-def doctor() -> int:
+def doctor(resolved: dict) -> int:
     source = paths()
-    checks: list[tuple[str, Path]] = [("City receipt", CITY_RECEIPT)]
+    checks: list[tuple[str, Path]] = [
+        ("Urban Car-1 configuration", resolved["path"]),
+        ("City receipt", resolved["city_receipt"]),
+    ]
     failed = False
     try:
-        city_mjcf, city_glb, _ = city_inputs()
+        city_mjcf, city_glb, _ = city_inputs(resolved["city_receipt"])
         checks.extend([("City MJCF", city_mjcf), ("City GLB", city_glb)])
     except RecipeError as error:
         print(f"[NG] City receipt: {error}")
@@ -343,16 +410,18 @@ def doctor() -> int:
     return 1 if failed else 0
 
 
-def configure(spawn: tuple[float, float, float, float, float, float]) -> int:
+def configure(resolved: dict) -> int:
     source = paths()
-    city_mjcf, city_glb, receipt = city_inputs()
+    work = resolved["work"]
+    spawn = resolved["spawn_mjcf"]
+    city_mjcf, city_glb, receipt = city_inputs(resolved["city_receipt"])
     for label, path in paths().items():
         if label != "plant":
             required(path, label)
     required(foundation_install() / "python/bin/python3", "Foundation Python")
     required(source["core_config"], "Foundation Core config")
-    WORK.mkdir(parents=True, exist_ok=True)
-    output = WORK / "car-1-city.xml"
+    work.mkdir(parents=True, exist_ok=True)
+    output = work / "car-1-city.xml"
     command([
         str(foundation_python()), str(source["compose_tool"]),
         str(source["car_model"]), str(city_mjcf),
@@ -367,16 +436,17 @@ def configure(spawn: tuple[float, float, float, float, float, float]) -> int:
     ET.indent(tree, space="  ")
     tree.write(output, encoding="utf-8", xml_declaration=True)
 
-    mjb = WORK / "car-1-city.mjb"
-    mjb_receipt = WORK / "mujoco-materialization.json"
+    mjb = work / "car-1-city.mjb"
+    mjb_receipt = work / "mujoco-materialization.json"
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
-    runtime_files = materialize_runtime(mjb)
-    launcher = materialize_launcher(runtime_files)
+    runtime_files = materialize_runtime(mjb, work)
+    launcher = materialize_launcher(runtime_files, work)
     compose_receipt = {
         "schema_version": 1,
-        "recipe": "numazu-car-1-viewer",
-        "city_receipt": str(CITY_RECEIPT.resolve()),
+        "recipe": resolved["recipe_id"],
+        "configuration": str(resolved["path"]),
+        "city_receipt": str(resolved["city_receipt"]),
         "city_mjcf": {"path": str(city_mjcf), "sha256": sha256(city_mjcf)},
         "city_glb": {"path": str(city_glb), "sha256": sha256(city_glb)},
         "golf_cart_mjcf": {"path": str(source["car_model"]), "sha256": sha256(source["car_model"])},
@@ -389,14 +459,19 @@ def configure(spawn: tuple[float, float, float, float, float, float]) -> int:
             "reload_validation": materialization["reload_validation"],
             "materialization_receipt": str(mjb_receipt),
         },
-        "spawn_pose_mjcf": list(spawn),
+        "spawn_pose_city_enu": resolved["spawn_enu"],
+        "spawn_pose_mjcf": {
+            "frame": "X=North,Y=-East,Z=Up",
+            "position_m": list(spawn[:3]),
+            "yaw_rad": spawn[5],
+        },
         "coordinate_frame": receipt["coordinate_frame"],
         "runtime_manifest": str(runtime_files["manifest"]),
         "core_config": str(source["core_config"]),
         "runtime_ownership": "exclusive Foundation mmap; Launcher cleanup_mmap_on_start",
         "launcher": str(launcher),
     }
-    write_json(WORK / "compose-receipt.json", compose_receipt)
+    write_json(work / "compose-receipt.json", compose_receipt)
     print(f"Composed MJCF : {output}")
     print(f"Runtime MJB   : {mjb}")
     print(f"Manifest      : {runtime_files['manifest']}")
@@ -405,59 +480,55 @@ def configure(spawn: tuple[float, float, float, float, float, float]) -> int:
     return 0
 
 
-def launcher_path() -> Path:
-    return required(WORK / "launcher.json", "generated Launcher; run configure first")
+def launcher_path(work: Path) -> Path:
+    return required(work / "launcher.json", "generated Launcher; run configure first")
 
 
-def session_path() -> Path:
-    return WORK / "runtime/launcher-session.json"
+def session_path(work: Path) -> Path:
+    return work / "runtime/launcher-session.json"
 
 
-def launch(operation: str) -> int:
+def launch(operation: str, work: Path) -> int:
     python = foundation_python()
     if operation == "start":
         command([
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher",
-            str(launcher_path()), "--background", str(session_path()),
+            str(launcher_path(work)), "--background", str(session_path(work)),
         ])
     else:
         command([
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher_ctl",
-            "status" if operation == "status" else "terminate", str(session_path()),
+            "status" if operation == "status" else "terminate", str(session_path(work)),
         ])
     return 0
 
 
-def view() -> int:
-    manifest = required(WORK / "car-1-asset-manifest.json", "generated manifest; run configure first")
+def view(work: Path) -> int:
+    manifest = required(work / "car-1-asset-manifest.json", "generated manifest; run configure first")
     command([str(paths()["plant"]), "--manifest", str(manifest), "--view-model"])
     return 0
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Operate the Numazu City World + Car-1 recipe")
+    result = argparse.ArgumentParser(description="Operate a configured Urban City World + Car-1 recipe")
     result.add_argument("command", choices=("doctor", "configure", "view", "start", "status", "stop"))
     result.add_argument(
-        "--spawn",
-        help="required for configure: N -E U roll pitch yaw in MJCF metres/radians",
+        "--config", type=Path, default=DEFAULT_CONFIG,
+        help=f"configuration YAML (default: {DEFAULT_CONFIG.relative_to(ROOT)})",
     )
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
+    resolved = resolve_config(args.config)
     if args.command == "doctor":
-        return doctor()
+        return doctor(resolved)
     if args.command == "configure":
-        if args.spawn is None:
-            raise RecipeError(
-                "configure requires --spawn 'N -E U roll pitch yaw'; "
-                f"first candidate: --spawn '{SUGGESTED_SPAWN}'"
-            )
-        return configure(parse_spawn(args.spawn))
+        return configure(resolved)
     if args.command == "view":
-        return view()
-    return launch(args.command)
+        return view(resolved["work"])
+    return launch(args.command, resolved["work"])
 
 
 if __name__ == "__main__":
