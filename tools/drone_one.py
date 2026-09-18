@@ -35,6 +35,9 @@ CITY_RECEIPT = (
 EAMS_CHASSIS_FRICTION = "0.05 0.001 0.0001"
 EAMS_SKID_FRICTION = "0.2 0.005 0.0001"
 EAMS_PROPELLER_FRICTION = "0.01 0.001 0.0001"
+EAMS_LANDING_COLLIDER_NAME = "landing_gear_support_contact"
+EAMS_LANDING_COLLIDER_POSITION = "0 0 -0.44"
+EAMS_LANDING_COLLIDER_SIZE = "0.31 0.29 0.04"
 
 for path in (
     BUSINESS_PACK_ROOT / "tools" / "recipe",
@@ -270,12 +273,38 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         geom.set("condim", "1")
         geom.set("friction", EAMS_PROPELLER_FRICTION)
 
+    if hexa_body.find(
+        f".//geom[@name='{EAMS_LANDING_COLLIDER_NAME}']"
+    ) is not None:
+        raise base.RecipeError(
+            f"EAMS model already has landing collider: {EAMS_LANDING_COLLIDER_NAME}"
+        )
+    ET.SubElement(hexa_body, "geom", {
+        "name": EAMS_LANDING_COLLIDER_NAME,
+        "type": "box",
+        "pos": EAMS_LANDING_COLLIDER_POSITION,
+        "size": EAMS_LANDING_COLLIDER_SIZE,
+        "rgba": "0 0 0 0",
+        "mass": "0",
+        "group": "2",
+        "contype": "1",
+        "conaffinity": "1",
+        "condim": "3",
+        "friction": EAMS_SKID_FRICTION,
+        "margin": "0.005",
+    })
+
     return {
         "chassis_friction": EAMS_CHASSIS_FRICTION,
         "skid_friction": EAMS_SKID_FRICTION,
         "propeller_friction": EAMS_PROPELLER_FRICTION,
         "propeller_collision_geoms": len(propeller_names),
         "propeller_contact_dimension": 1,
+        "landing_collider": {
+            "name": EAMS_LANDING_COLLIDER_NAME,
+            "position": EAMS_LANDING_COLLIDER_POSITION,
+            "size": EAMS_LANDING_COLLIDER_SIZE,
+        },
     }
 
 

@@ -132,6 +132,15 @@ class DroneOneToolTest(unittest.TestCase):
             self.assertEqual(propeller.get("conaffinity"), "1")
             self.assertEqual(propeller.get("condim"), "1")
         self.assertEqual(policy["propeller_collision_geoms"], 6)
+        landing = body.find(
+            f".//geom[@name='{drone_one.EAMS_LANDING_COLLIDER_NAME}']"
+        )
+        self.assertIsNotNone(landing)
+        self.assertEqual(landing.get("type"), "box")
+        self.assertEqual(landing.get("pos"), "0 0 -0.44")
+        self.assertEqual(landing.get("size"), "0.31 0.29 0.04")
+        self.assertEqual(landing.get("contype"), "1")
+        self.assertEqual(landing.get("conaffinity"), "1")
 
     def test_city_contact_policy_rejects_incomplete_propeller_set(self):
         body = ET.fromstring(

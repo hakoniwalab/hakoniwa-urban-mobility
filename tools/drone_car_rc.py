@@ -22,6 +22,8 @@ sys.path.insert(0, str(ROOT / "apps/drone"))
 
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
+
+
 class RcDemoError(RuntimeError):
     pass
 
@@ -59,6 +61,21 @@ def configured_drone_start() -> tuple[float, float, float]:
     if not isinstance(position, list) or len(position) != 3:
         raise RcDemoError("Drone-1 has no valid initial position")
     return float(position[0]), float(position[1]), -float(position[2])
+
+
+def use_generated_drone_body_for_mirrors(resolved: dict) -> Path:
+    """Use the Urban-patched Drone body for the Car-side visual/physics Mirror."""
+    body = (
+        drone_paths().recipe_config
+        / "drone/mujoco-city-fleet/process-01/eams-hexa-body.xml"
+    )
+    if not body.is_file():
+        raise RcDemoError(f"generated EAMS body is missing: {body}")
+    mirrors = resolved.get("mirrors")
+    if not isinstance(mirrors, list) or len(mirrors) != 1:
+        raise RcDemoError("RC demo requires exactly one Drone Mirror")
+    mirrors[0]["mjcf_model"] = body
+    return body
 
 
 def merge_launchers(
@@ -119,19 +136,6 @@ def merge_launchers(
     if "--external-conductor" not in car_plant["args"]:
         car_plant["args"].append("--external-conductor")
 
-    car_scenario = car_scenario_path()
-    car_route = {
-        "name": "urban-golf-cart-one-lap",
-        "command": str(foundation_python()),
-        "args": [
-            str(ROOT / "apps/car/scenario_executor.py"),
-            str(car_scenario),
-            "--pdu-def", str(unified_pdu_definition),
-        ],
-        "depends_on": ["drone-service-1", "urban-car-fleet-plant"],
-        "activation_timing": "after_start",
-        "delay_sec": 1,
-    }
     rc_controller = {
         "name": "urban-drone-ps4-controller",
         "command": str(foundation_python()),
@@ -154,7 +158,7 @@ def merge_launchers(
     launcher = {
         "version": "0.1",
         "defaults": defaults,
-        "assets": [drone_service, car_plant, car_route, rc_controller],
+        "assets": [drone_service, car_plant, rc_controller],
         "runtime": {"cleanup_mmap_on_start": True},
     }
     multi_car.write_json(output, launcher)
@@ -184,6 +188,7 @@ def configure(drone_root: Path) -> int:
         runtime_config_dir=resolved["work"],
     ) != 0:
         return 1
+    use_generated_drone_body_for_mirrors(resolved)
     # Keep the safe launch point selected by drone_one.configure(). Moving the
     # physical Drone to the Car route caused the EAMS vehicle to settle on a
     # different surface and prevented the previously verified takeoff.
@@ -206,6 +211,7 @@ def configure(drone_root: Path) -> int:
     print("Viewer   : Car world only (Golf Cart + Mirror Drone)")
     print("PS4      : press Cross (button 0) once to enable RadioControl")
     print("Start    : python3 tools/drone_car_rc.py start")
+    print("Car start: python3 tools/drone_car_rc.py car-start")
     print("Status   : python3 tools/drone_car_rc.py status")
     print("Stop     : python3 tools/drone_car_rc.py stop")
     return 0
@@ -253,10 +259,39 @@ def control(operation: str) -> int:
     return 0
 
 
+def start_car() -> int:
+    """Start the one-lap Golf Cart route on explicit operator command."""
+    experiment_work = work()
+    session = experiment_work / "runtime/launcher-session.json"
+    if not session.is_file():
+        raise RcDemoError(
+            "simulation is stopped; run 'python3 tools/drone_car_rc.py start' first"
+        )
+    try:
+        session_state = json.loads(session.read_text(encoding="utf-8")).get("state")
+    except (OSError, json.JSONDecodeError) as error:
+        raise RcDemoError(f"cannot read Launcher session: {session}") from error
+    if session_state != "RUNNING":
+        raise RcDemoError(
+            f"simulation is not running (state={session_state}); "
+            "run 'python3 tools/drone_car_rc.py start' first"
+        )
+    command = [
+        str(foundation_python()),
+        str(ROOT / "apps/car/scenario_executor.py"),
+        str(car_scenario_path()),
+        "--pdu-def",
+        str(experiment_work / "urban-car-pdudef.json"),
+    ]
+    subprocess.run(command, cwd=ROOT, check=True)
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
-        "command", choices=("configure", "doctor", "start", "status", "stop")
+        "command",
+        choices=("configure", "doctor", "start", "car-start", "status", "stop"),
     )
     result.add_argument("--drone-root", type=Path, default=DEFAULT_DRONE_ROOT)
     return result
@@ -269,6 +304,8 @@ def main() -> int:
         return configure(drone_root)
     if args.command == "doctor":
         return doctor(drone_root)
+    if args.command == "car-start":
+        return start_car()
     return control(args.command)
 
 

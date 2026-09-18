@@ -56,9 +56,10 @@ command phases and the actual takeoff, target, and landing poses.
 
 The two-asset demo uses one Launcher and one Conductor. The Drone service owns
 the Conductor, while the Car asset joins it with `--external-conductor`. The
-Golf Cart executes one route lap automatically; the EAMS 6-rotor Drone is
-operated with a PS4 controller through Drone PRO's `drone_api/rc/rc-custom.py`.
-Only the Car-side MuJoCo viewer is shown, including the mirrored Drone.
+Golf Cart waits at its initial position until the operator explicitly starts
+its one-lap route. The EAMS 6-rotor Drone is operated with a PS4 controller
+through Drone PRO's `drone_api/rc/rc-custom.py`. Only the Car-side MuJoCo
+viewer is shown, including the mirrored Drone.
 
 Connect the PS4 controller, then configure and run with the Foundation Python:
 
@@ -68,6 +69,22 @@ Connect the PS4 controller, then configure and run with the Foundation Python:
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
   tools/drone_car_rc.py start
 ```
+
+When both assets are ready, start the Golf Cart route from another terminal:
+
+```bash
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  tools/drone_car_rc.py car-start
+```
+
+`car-start` runs the one-lap scenario in the foreground, so `Ctrl-C` stops the
+Golf Cart without terminating the Drone or the simulation.
+
+The generated Urban model adds an invisible landing envelope across the Hexa
+Drone's skid footprint. The same patched body is used by the physical Drone
+and the Car-side Mirror, preventing thin landing skids from tunneling through
+roofs during impact. Cross-simulator resting contact is still outside the
+Impulse-only Mirror contract; the envelope improves collision, not support.
 
 The controller uses mode 2: the left stick controls throttle and yaw, and the
 right stick controls pitch and roll. Press the Cross button (button 0) once to
