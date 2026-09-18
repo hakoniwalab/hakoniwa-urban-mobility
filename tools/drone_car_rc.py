@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Configure and run the Golf Cart + surveillance Drone Urban demo."""
+"""Configure and run the Golf Cart + PS4-controlled Drone Urban demo."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
-CONFIG = ROOT / "recipes/experiments/drone-car-surveillance.yaml"
+CONFIG = ROOT / "recipes/experiments/drone-car-rc.yaml"
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "apps/car"))
@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "apps/drone"))
 
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
-class SurveillanceDemoError(RuntimeError):
+class RcDemoError(RuntimeError):
     pass
 
 
@@ -38,16 +38,12 @@ def drone_paths():
     return drone_one._paths()
 
 
-def scenario_paths() -> tuple[Path, Path]:
+def car_scenario_path() -> Path:
     root = multi_car.load_yaml(CONFIG)
     try:
-        car = multi_car.resolve_path(root["scenarios"]["car"], "Car scenario")
-        drone = multi_car.resolve_path(root["scenarios"]["drone"], "Drone scenario")
+        return multi_car.resolve_path(root["scenarios"]["car"], "Car scenario")
     except (KeyError, TypeError) as error:
-        raise SurveillanceDemoError(
-            "experiment has no valid scenario references"
-        ) from error
-    return car, drone
+        raise RcDemoError("experiment has no valid Car scenario reference") from error
 
 
 def configured_drone_start() -> tuple[float, float, float]:
@@ -58,10 +54,10 @@ def configured_drone_start() -> tuple[float, float, float]:
     fleet = json.loads(fleet_path.read_text(encoding="utf-8"))
     drones = fleet.get("drones")
     if not isinstance(drones, list) or len(drones) != 1:
-        raise SurveillanceDemoError("surveillance demo requires exactly one Drone")
+        raise RcDemoError("RC demo requires exactly one Drone")
     position = drones[0].get("position_meter")
     if not isinstance(position, list) or len(position) != 3:
-        raise SurveillanceDemoError("Drone-1 has no valid initial position")
+        raise RcDemoError("Drone-1 has no valid initial position")
     return float(position[0]), float(position[1]), -float(position[2])
 
 
@@ -79,13 +75,6 @@ def merge_launchers(
         ),
         None,
     )
-    mission = next(
-        (
-            asset for asset in drone_launcher.get("assets", [])
-            if asset.get("name") == "urban-drone-mission"
-        ),
-        None,
-    )
     car_plant = next(
         (
             asset for asset in car_launcher.get("assets", [])
@@ -93,8 +82,8 @@ def merge_launchers(
         ),
         None,
     )
-    if drone_service is None or mission is None or car_plant is None:
-        raise SurveillanceDemoError("source Launcher is missing a required asset")
+    if drone_service is None or car_plant is None:
+        raise RcDemoError("source Launcher is missing a required asset")
 
     logs = output.parent / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -115,7 +104,7 @@ def merge_launchers(
     ]
     unified_pdu_definition = output.parent / "urban-car-pdudef.json"
     if len(drone_service["args"]) < 2:
-        raise SurveillanceDemoError("Drone service has no PDU definition argument")
+        raise RcDemoError("Drone service has no PDU definition argument")
     drone_service["args"][1] = str(unified_pdu_definition)
     drone_service["readiness"] = {
         "type": "hako_asset",
@@ -130,33 +119,42 @@ def merge_launchers(
     if "--external-conductor" not in car_plant["args"]:
         car_plant["args"].append("--external-conductor")
 
-    car_scenario, drone_scenario = scenario_paths()
-    scenario = copy.deepcopy(mission)
-    scenario.update({
-        "name": "urban-drone-car-surveillance",
+    car_scenario = car_scenario_path()
+    car_route = {
+        "name": "urban-golf-cart-one-lap",
         "command": str(foundation_python()),
         "args": [
-            str(ROOT / "apps/scenario/drone_car_surveillance_demo.py"),
-            "--drone-root", str(drone_root.resolve()),
-            "--service-config", str(
-                drone_paths().recipe_config
-                / "drone/fleets/services/api-current-service.json"
-            ),
+            str(ROOT / "apps/car/scenario_executor.py"),
+            str(car_scenario),
             "--pdu-def", str(unified_pdu_definition),
-            "--car-scenario", str(car_scenario),
-            "--drone-scenario", str(drone_scenario),
-            "--summary-json", str(
-                output.parent / "validation/surveillance-demo.json"
-            ),
         ],
         "depends_on": ["drone-service-1", "urban-car-fleet-plant"],
+        "activation_timing": "after_start",
         "delay_sec": 1,
-    })
+    }
+    rc_controller = {
+        "name": "urban-drone-ps4-controller",
+        "command": str(foundation_python()),
+        "args": [
+            str(drone_root.resolve() / "drone_api/rc/rc-custom.py"),
+            str(unified_pdu_definition),
+            str(
+                drone_root.resolve()
+                / "drone_api/rc/rc_config/ps4-control.json"
+            ),
+            "--name", "Drone-1",
+            "--index", "0",
+        ],
+        "cwd": str(drone_root.resolve() / "drone_api"),
+        "depends_on": ["drone-service-1"],
+        "activation_timing": "after_start",
+        "delay_sec": 1,
+    }
 
     launcher = {
         "version": "0.1",
         "defaults": defaults,
-        "assets": [drone_service, car_plant, scenario],
+        "assets": [drone_service, car_plant, car_route, rc_controller],
         "runtime": {"cleanup_mmap_on_start": True},
     }
     multi_car.write_json(output, launcher)
@@ -179,7 +177,12 @@ def build_car_asset() -> None:
 
 def configure(drone_root: Path) -> int:
     build_car_asset()
-    if drone_one.configure(drone_root) != 0:
+    resolved = multi_car.resolve_config(CONFIG)
+    if drone_one.configure(
+        drone_root,
+        rc_mode=True,
+        runtime_config_dir=resolved["work"],
+    ) != 0:
         return 1
     # Keep the safe launch point selected by drone_one.configure(). Moving the
     # physical Drone to the Car route caused the EAMS vehicle to settle on a
@@ -190,7 +193,6 @@ def configure(drone_root: Path) -> int:
         drone_one.EXPERIMENT, drone_root, drone_one.DEFAULT_VIEWER_ROOT
     ) != 0:
         return 1
-    resolved = multi_car.resolve_config(CONFIG)
     if multi_car.configure(resolved) != 0:
         return 1
     launcher = merge_launchers(
@@ -198,11 +200,14 @@ def configure(drone_root: Path) -> int:
         resolved["work"] / "launcher-two-assets.json",
         drone_root,
     )
-    print("Golf Cart + surveillance Drone demo configured")
+    print("Golf Cart + PS4-controlled Drone demo configured")
     print(f"Launcher : {launcher}")
     print(f"Drone    : start=({start[0]:.1f},{start[1]:.1f},{start[2]:.1f})")
     print("Viewer   : Car world only (Golf Cart + Mirror Drone)")
-    print("Run      : python3 tools/drone_car_surveillance.py run")
+    print("PS4      : press Cross (button 0) once to enable RadioControl")
+    print("Start    : python3 tools/drone_car_rc.py start")
+    print("Status   : python3 tools/drone_car_rc.py status")
+    print("Stop     : python3 tools/drone_car_rc.py stop")
     return 0
 
 
@@ -211,8 +216,9 @@ def doctor(drone_root: Path) -> int:
     checks = [
         ("Drone PRO service", drone_root / "mac/mac-main_hako_drone_service"),
         ("Car Mirror asset", ROOT / "build/bin/urban-car-hakoniwa-asset"),
-        ("Car scenario", scenario_paths()[0]),
-        ("Drone scenario", scenario_paths()[1]),
+        ("Car scenario", car_scenario_path()),
+        ("PS4 RC program", drone_root / "drone_api/rc/rc-custom.py"),
+        ("PS4 mapping", drone_root / "drone_api/rc/rc_config/ps4-control.json"),
         ("Combined Launcher", resolved["work"] / "launcher-two-assets.json"),
     ]
     failed = False
@@ -228,6 +234,9 @@ def control(operation: str) -> int:
     launcher = experiment_work / "launcher-two-assets.json"
     session = experiment_work / "runtime/launcher-session.json"
     session.parent.mkdir(parents=True, exist_ok=True)
+    if operation != "start" and not session.is_file():
+        print(f"Simulation is stopped (no Launcher session: {session})")
+        return 0
     if operation == "start":
         command = [
             str(foundation_python()), "-m",
@@ -244,21 +253,10 @@ def control(operation: str) -> int:
     return 0
 
 
-def run(drone_root: Path) -> int:
-    if configure(drone_root) != 0:
-        return 1
-    launcher = work() / "launcher-two-assets.json"
-    subprocess.run([
-        str(foundation_python()), "-m",
-        "hakoniwa_pdu.apps.launcher.hako_launcher", str(launcher),
-    ], cwd=ROOT, check=True)
-    return 0
-
-
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
-        "command", choices=("configure", "doctor", "run", "start", "status", "stop")
+        "command", choices=("configure", "doctor", "start", "status", "stop")
     )
     result.add_argument("--drone-root", type=Path, default=DEFAULT_DRONE_ROOT)
     return result
@@ -271,8 +269,6 @@ def main() -> int:
         return configure(drone_root)
     if args.command == "doctor":
         return doctor(drone_root)
-    if args.command == "run":
-        return run(drone_root)
     return control(args.command)
 
 
@@ -282,7 +278,7 @@ if __name__ == "__main__":
     except (
         OSError,
         subprocess.CalledProcessError,
-        SurveillanceDemoError,
+        RcDemoError,
         multi_car.RecipeError,
         drone_one.base.RecipeError,
         drone_one.city.FleetMujocoError,

@@ -52,6 +52,33 @@ mission result is written to the Business Pack Recipe workspace as
 `validation/urban-drone-mission.json`; a successful run contains all four
 command phases and the actual takeoff, target, and landing poses.
 
+## Golf Cart + PS4-controlled Hexa Drone demo
+
+The two-asset demo uses one Launcher and one Conductor. The Drone service owns
+the Conductor, while the Car asset joins it with `--external-conductor`. The
+Golf Cart executes one route lap automatically; the EAMS 6-rotor Drone is
+operated with a PS4 controller through Drone PRO's `drone_api/rc/rc-custom.py`.
+Only the Car-side MuJoCo viewer is shown, including the mirrored Drone.
+
+Connect the PS4 controller, then configure and run with the Foundation Python:
+
+```bash
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  tools/drone_car_rc.py configure
+../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \
+  tools/drone_car_rc.py start
+```
+
+The controller uses mode 2: the left stick controls throttle and yaw, and the
+right stick controls pitch and roll. Press the Cross button (button 0) once to
+enable the latched RadioControl mode; it is not a dead-man switch.
+
+Inspect the background session with `status` and terminate it with `stop`.
+The generated RC controller configuration and
+the EAMS tuning overlay are copied to `work/drone-car-rc/drone_config_0.json`
+and `work/drone-car-rc/controller-params.txt`. The tracked Drone PRO
+configuration and controller parameter files are not edited.
+
 Drone Core v4's public service binary opens MuJoCo models through its XML path,
 so this adapter uses the generated City XML at runtime while retaining MJB
 compile/reload validation as configuration evidence. Its Land RPC also assumes

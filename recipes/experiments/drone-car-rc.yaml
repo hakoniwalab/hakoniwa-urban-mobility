@@ -1,11 +1,10 @@
-id: urban-drone-car-surveillance
-title: One Golf Cart loop with one EAMS Hexa surveillance Drone
+id: urban-drone-car-rc
+title: One Golf Cart loop with one PS4-controlled EAMS Hexa Drone
 recipe_version: 0.1
 status: experimental
 
 scenarios:
   car: recipes/scenarios/golf-cart-demo-loop.yaml
-  drone: recipes/scenarios/drone-surveillance-golf-cart.json
 
 inputs:
   business_pack_city_receipt:
@@ -42,4 +41,4 @@ inputs:
 
 composition:
   output:
-    directory: work/drone-car-surveillance
+    directory: work/drone-car-rc

@@ -30,6 +30,12 @@ CITY_RECEIPT = (
     / "hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json"
 )
 
+# Urban collision policy applied only to the generated City model. The Drone
+# PRO golden model remains the tuning authority and is never rewritten here.
+EAMS_CHASSIS_FRICTION = "0.05 0.001 0.0001"
+EAMS_SKID_FRICTION = "0.2 0.005 0.0001"
+EAMS_PROPELLER_FRICTION = "0.01 0.001 0.0001"
+
 for path in (
     BUSINESS_PACK_ROOT / "tools" / "recipe",
     BUSINESS_PACK_ROOT / "tools",
@@ -167,15 +173,52 @@ def _parameter_values(path: Path) -> dict[str, str]:
     return values
 
 
-def materialize_eams_controller_params(drone_root: Path, output: Path) -> Path:
-    """Overlay the completed EAMS tuning result on the Fleet RPC baseline."""
-    base_path = drone_root / "config/controller/param-api-mixer-mujoco.txt"
+def materialize_eams_controller_params(
+    drone_root: Path, output: Path, *, rc_mode: bool = False
+) -> Path:
+    """Overlay the completed EAMS tuning result on the selected controller baseline."""
+    base_path = (
+        drone_root / "tuning/vehicle/eams/config/controller-params.txt"
+        if rc_mode
+        else drone_root / "config/controller/param-api-mixer-mujoco.txt"
+    )
     tuned_path = drone_root / EAMS_TUNED_PARAMS_RELATIVE
     if not base_path.is_file() or not tuned_path.is_file():
         raise base.RecipeError("EAMS controller parameter inputs are incomplete")
     tuned = _parameter_values(tuned_path)
+    if rc_mode:
+        # RC supplies angle and throttle commands directly. Keep the completed
+        # EAMS gains, but select the control stages and explicit ground-start
+        # state machine required by RadioController. Without the landing
+        # thresholds, their zero defaults make RC-safe input enter Landing.
+        tuned.update({
+            # RadioOperation starts in GPS mode. ANGLE_CONTROL_ENABLE=1 with
+            # GPS resolves to the Unknown profile and drops thrust after the
+            # takeoff phase completes.
+            "ANGLE_CONTROL_ENABLE": "0",
+            "ANGLE_RATE_CONTROL_ENABLE": "0",
+            "ALT_SPD_CONTROL_ENABLE": "0",
+            "CTRLMODE_START_IN_HOVERING": "0",
+            "CTRLMODE_STARTUP_SETTLE_TIME_SEC": "0.5",
+            "CTRLMODE_TAKEOFF_IDLE_THROTTLE_RATE": "0.2",
+            "CTRLMODE_TAKEOFF_TRIGGER_THROTTLE_VALUE": "0.1",
+            "CTRLMODE_TAKEOFF_TRIGGER_HOLD_SEC": "0.1",
+            "CTRLMODE_TAKEOFF_ACTION_TARGET_ALTITUDE_M": "0.23",
+            "CTRLMODE_TAKEOFF_ACTION_MAX_SPEED_M_S": "0.1",
+            "CTRLMODE_TAKEOFF_COMPLETION_ALTITUDE_ERROR_M": "0.03",
+            "CTRLMODE_TAKEOFF_COMPLETION_STABLE_DURATION_SEC": "1.0",
+            "CTRLMODE_TAKEOFF_COMPLETION_STABLE_ANGLE_DEG": "1.0",
+            "CTRLMODE_LANDING_TRIGGER_ALTITUDE_M": "0.2",
+            "CTRLMODE_LANDING_TRIGGER_THROTTLE_VALUE": "0.3",
+            "CTRLMODE_LANDING_TRIGGER_HOLD_SEC": "0.1",
+            "CTRLMODE_LANDING_ACTION_TARGET_SPEED_M_S": "0.1",
+            "CTRLMODE_LANDING_COMPLETION_ALTITUDE_M": "0.05",
+            "CTRLMODE_LANDING_COMPLETION_STABLE_ANGLE_DEG": "1.0",
+            "CTRLMODE_LANDING_COMPLETION_STABLE_DURATION_SEC": "1.0",
+        })
+    baseline = "EAMS RC" if rc_mode else "Fleet RPC"
     lines: list[str] = [
-        "# Fleet RPC baseline with completed EAMS nominal 9 kg tuning overlay."
+        f"# {baseline} baseline with completed nominal 9 kg tuning overlay."
     ]
     seen: set[str] = set()
     for raw_line in base_path.read_text(encoding="utf-8").splitlines():
@@ -184,11 +227,15 @@ def materialize_eams_controller_params(drone_root: Path, output: Path) -> Path:
             lines.append(raw_line)
             continue
         key = line.split(None, 1)[0]
+        # Some legacy parameter files contain the same mode selector twice.
+        # Emit each key once so the generated runtime contract is unambiguous.
+        if key in seen:
+            continue
         if key in tuned:
             lines.append(f"{key} {tuned[key]}")
-            seen.add(key)
         else:
             lines.append(raw_line)
+        seen.add(key)
     for key, value in tuned.items():
         if key not in seen:
             lines.append(f"{key} {value}")
@@ -197,7 +244,48 @@ def materialize_eams_controller_params(drone_root: Path, output: Path) -> Path:
     return output
 
 
-def materialize_eams_city_model(marker: dict, drone_root: Path) -> Path:
+def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
+    """Make the generated Hexa model slide off walls and collide at its rotors."""
+    contact_friction = {
+        "frame_chassis_contact": EAMS_CHASSIS_FRICTION,
+        "landing_gear_left_skid_contact": EAMS_SKID_FRICTION,
+        "landing_gear_right_skid_contact": EAMS_SKID_FRICTION,
+    }
+    for name, friction in contact_friction.items():
+        geom = hexa_body.find(f".//geom[@name='{name}']")
+        if geom is None:
+            raise base.RecipeError(f"EAMS model has no required contact geom: {name}")
+        geom.set("friction", friction)
+
+    propeller_names = [f"prop{index}_geom" for index in range(1, 7)]
+    for name in propeller_names:
+        geom = hexa_body.find(f".//geom[@name='{name}']")
+        if geom is None:
+            raise base.RecipeError(f"EAMS model has no required propeller geom: {name}")
+        # PLATEAU City geoms use contype=1. The source visual masks (2/4)
+        # intentionally do not meet that mask, so enable the swept propeller
+        # discs as low-friction collision envelopes in the generated copy.
+        geom.set("contype", "1")
+        geom.set("conaffinity", "1")
+        geom.set("condim", "1")
+        geom.set("friction", EAMS_PROPELLER_FRICTION)
+
+    return {
+        "chassis_friction": EAMS_CHASSIS_FRICTION,
+        "skid_friction": EAMS_SKID_FRICTION,
+        "propeller_friction": EAMS_PROPELLER_FRICTION,
+        "propeller_collision_geoms": len(propeller_names),
+        "propeller_contact_dimension": 1,
+    }
+
+
+def materialize_eams_city_model(
+    marker: dict,
+    drone_root: Path,
+    *,
+    rc_mode: bool = False,
+    runtime_config_dir: Path | None = None,
+) -> Path:
     """Compose the tuned EAMS Hexa body with the configured PLATEAU City."""
     eams_root = drone_root / "tuning/vehicle/eams"
     model_source = eams_root / "generated/nominal-9kg/drone.xml"
@@ -229,6 +317,7 @@ def materialize_eams_city_model(marker: dict, drone_root: Path) -> Path:
         if item is not hexa_body and not is_composition_ground:
             worldbody.remove(item)
     hexa_body.set("pos", "0 0 0")
+    contact_policy = apply_eams_city_contact_policy(hexa_body)
     ET.indent(tree, space="  ")
     tree.write(body_only, encoding="utf-8", xml_declaration=True)
 
@@ -261,11 +350,49 @@ def materialize_eams_city_model(marker: dict, drone_root: Path) -> Path:
     dynamics["mujoco"]["modelPath"] = str(runtime_xml)
     dynamics["collision_detection"] = True
     type_config["simulation"]["timeStep"] = eams_config["simulation"]["timeStep"]
+    if rc_mode and runtime_config_dir is not None:
+        runtime_config_dir.mkdir(parents=True, exist_ok=True)
+        parameter_path = runtime_config_dir / "controller-params.txt"
+        runtime_type_path = runtime_config_dir / "drone_config_0.json"
+    else:
+        parameter_name = (
+            "eams-rc-controller-params.txt" if rc_mode
+            else "eams-controller-params.txt"
+        )
+        parameter_path = process_dir / parameter_name
+        runtime_type_path = type_path
     parameter_path = materialize_eams_controller_params(
-        drone_root, process_dir / "eams-controller-params.txt"
+        drone_root,
+        parameter_path,
+        rc_mode=rc_mode,
     )
-    type_config["controller"]["paramFilePath"] = str(parameter_path)
-    type_path.write_text(json.dumps(type_config, indent=2) + "\n", encoding="utf-8")
+    if rc_mode:
+        # Preserve the EAMS controller contract (including mixer.enable) and
+        # change only the implementation/mode needed for gamepad operation.
+        type_config["controller"] = copy.deepcopy(eams_config["controller"])
+        if runtime_config_dir is not None:
+            log_directory = runtime_config_dir / "logs/drone"
+            log_directory.mkdir(parents=True, exist_ok=True)
+            type_config["simulation"].setdefault("logging", {})["mode"] = "csv"
+            type_config["simulation"]["logOutputDirectory"] = str(log_directory)
+    controller = type_config["controller"]
+    controller["paramFilePath"] = (
+        "controller-params.txt"
+        if runtime_type_path.parent == parameter_path.parent
+        else str(parameter_path)
+    )
+    if rc_mode:
+        type_config.pop("serviceConfigPath", None)
+        controller.pop("apiServiceMode", None)
+        controller.update({
+            "serviceMode": "rc",
+            "moduleDirectory": "../drone_control/cmake-build/workspace/RadioController",
+            "moduleName": "RadioController",
+            "backendType": "adapter-hakoniwa",
+        })
+    runtime_type_path.write_text(
+        json.dumps(type_config, indent=2) + "\n", encoding="utf-8"
+    )
 
     fleet_path = Path(marker["fleet_config"])
     fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
@@ -276,6 +403,7 @@ def materialize_eams_city_model(marker: dict, drone_root: Path) -> Path:
         "modelName": "drone_base",
         "propNames": [f"prop{index}" for index in range(1, 7)],
     }
+    fleet_config["types"][drones[0]["type"]] = str(runtime_type_path)
     fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
 
     marker["runtime_model"] = {
@@ -283,8 +411,10 @@ def materialize_eams_city_model(marker: dict, drone_root: Path) -> Path:
         "path": str(runtime_xml),
         "vehicle": "EAMS E6106FLMP2-equivalent nominal 9 kg Hexa-X",
         "rotor_count": 6,
+        "contact_policy": contact_policy,
         "compiled_validation": compiled,
     }
+    marker["type_config"] = str(runtime_type_path)
     marker_path = _paths().recipe_config / "mujoco-city-fleet.json"
     marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
     return runtime_xml
@@ -319,7 +449,12 @@ def set_initial_drop_altitude(marker: dict, initial_altitude_m: float) -> Path:
     return fleet_path
 
 
-def configure(drone_root: Path) -> int:
+def configure(
+    drone_root: Path,
+    *,
+    rc_mode: bool = False,
+    runtime_config_dir: Path | None = None,
+) -> int:
     if not CITY_RECEIPT.is_file():
         raise base.RecipeError(f"Hokkaido City World Receipt not found: {CITY_RECEIPT}")
     rc = base.configure(EXPERIMENT, drone_root)
@@ -342,7 +477,12 @@ def configure(drone_root: Path) -> int:
     mission_config = json.loads(MISSION.read_text(encoding="utf-8"))
     initial_altitude_m = float(mission_config.get("initial_altitude_m", 7.0))
     set_initial_drop_altitude(marker, initial_altitude_m)
-    runtime_model = materialize_eams_city_model(marker, drone_root)
+    runtime_model = materialize_eams_city_model(
+        marker,
+        drone_root,
+        rc_mode=rc_mode,
+        runtime_config_dir=runtime_config_dir,
+    )
     spawn = marker["flight_plan"]["spawn_points"][0]
     print("Urban one-Drone checkpoint configured")
     print(f"City World : {CITY_RECEIPT}")
@@ -355,6 +495,7 @@ def configure(drone_root: Path) -> int:
     print(f"Fleet      : {marker['fleet_config']}")
     print(f"Runtime XML: {runtime_model}")
     print("Vehicle    : EAMS nominal 9 kg Hexa-X (6 rotors, Hakoniwa tuned)")
+    print(f"Controller : {'PS4 RC' if rc_mode else 'Fleet RPC'}")
     print("Next       : python tools/drone_one.py doctor")
     return 0
 

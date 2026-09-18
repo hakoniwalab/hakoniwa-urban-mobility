@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import types
 import unittest
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +104,46 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_city_contact_policy_reduces_friction_and_enables_six_propellers(self):
+        body = ET.fromstring(
+            "<body name='drone_base'>"
+            "<geom name='frame_chassis_contact' friction='0.5 0.02 0.001'/>"
+            "<geom name='landing_gear_left_skid_contact' friction='1 0.02 0.001'/>"
+            "<geom name='landing_gear_right_skid_contact' friction='1 0.02 0.001'/>"
+            + "".join(
+                f"<body><geom name='prop{i}_geom' contype='2' conaffinity='4'/></body>"
+                for i in range(1, 7)
+            )
+            + "</body>"
+        )
+
+        policy = drone_one.apply_eams_city_contact_policy(body)
+
+        chassis = body.find(".//geom[@name='frame_chassis_contact']")
+        self.assertEqual(chassis.get("friction"), drone_one.EAMS_CHASSIS_FRICTION)
+        for side in ("left", "right"):
+            skid = body.find(
+                f".//geom[@name='landing_gear_{side}_skid_contact']"
+            )
+            self.assertEqual(skid.get("friction"), drone_one.EAMS_SKID_FRICTION)
+        for index in range(1, 7):
+            propeller = body.find(f".//geom[@name='prop{index}_geom']")
+            self.assertEqual(propeller.get("contype"), "1")
+            self.assertEqual(propeller.get("conaffinity"), "1")
+            self.assertEqual(propeller.get("condim"), "1")
+        self.assertEqual(policy["propeller_collision_geoms"], 6)
+
+    def test_city_contact_policy_rejects_incomplete_propeller_set(self):
+        body = ET.fromstring(
+            "<body>"
+            "<geom name='frame_chassis_contact'/>"
+            "<geom name='landing_gear_left_skid_contact'/>"
+            "<geom name='landing_gear_right_skid_contact'/>"
+            "</body>"
+        )
+        with self.assertRaises(drone_one.base.RecipeError):
+            drone_one.apply_eams_city_contact_policy(body)
+
     def test_eams_tuning_is_loaded_from_drone_pro_and_keeps_rpc_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -126,6 +167,52 @@ class DroneOneToolTest(unittest.TestCase):
             self.assertEqual(params["PID_ALT_Kp"], "11.0")
             self.assertEqual(params["PID_ROLL_Kp"], "17.0")
             self.assertEqual(params["TAKEOFF_ALT"], "3")
+
+    def test_rc_parameters_keep_tuning_and_enable_angle_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base_path = root / "tuning/vehicle/eams/config/controller-params.txt"
+            tuned_path = root / drone_one.EAMS_TUNED_PARAMS_RELATIVE
+            base_path.parent.mkdir(parents=True)
+            tuned_path.parent.mkdir(parents=True)
+            base_path.write_text(
+                "ANGLE_CONTROL_ENABLE 0\n"
+                "ANGLE_CONTROL_ENABLE 0.0\n"
+                "ANGLE_RATE_CONTROL_ENABLE 1\n"
+                "ALT_SPD_CONTROL_ENABLE 1\n"
+                "PID_ROLL_Kp 10\n",
+                encoding="utf-8",
+            )
+            tuned_path.write_text(
+                "ANGLE_CONTROL_ENABLE 0\n"
+                "PID_ROLL_Kp 17.0\n",
+                encoding="utf-8",
+            )
+
+            output = root / "runtime/controller-params.txt"
+            drone_one.materialize_eams_controller_params(
+                root, output, rc_mode=True
+            )
+            params = drone_one._parameter_values(output)
+
+            self.assertEqual(params["ANGLE_CONTROL_ENABLE"], "0")
+            self.assertEqual(params["ANGLE_RATE_CONTROL_ENABLE"], "0")
+            self.assertEqual(params["ALT_SPD_CONTROL_ENABLE"], "0")
+            self.assertEqual(params["CTRLMODE_START_IN_HOVERING"], "0")
+            self.assertEqual(
+                params["CTRLMODE_TAKEOFF_TRIGGER_THROTTLE_VALUE"], "0.1"
+            )
+            self.assertEqual(
+                params["CTRLMODE_LANDING_TRIGGER_THROTTLE_VALUE"], "0.3"
+            )
+            self.assertEqual(params["PID_ROLL_Kp"], "17.0")
+            self.assertEqual(
+                sum(
+                    line.startswith("ANGLE_CONTROL_ENABLE ")
+                    for line in output.read_text(encoding="utf-8").splitlines()
+                ),
+                1,
+            )
 
     def test_initial_drop_altitude_updates_ned_fleet_position(self):
         with tempfile.TemporaryDirectory() as directory:

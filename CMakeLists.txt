@@ -253,8 +253,4 @@ if(BUILD_TESTING)
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_car_route_scenario.py")
-    add_test(NAME urban-drone-surveillance-scenario-contract
-        COMMAND
-            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drone_surveillance_scenario.py")
 endif()
