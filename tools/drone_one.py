@@ -205,6 +205,7 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
 
     viewer = json.loads(viewer_path.read_text(encoding="utf-8"))
+    viewer.setdefault("ui", {})["enableAttachedCameras"] = True
     fleets = viewer.setdefault("stateInput", {}).setdefault("fleets", {})
     fleets["motorChannels"] = [0, 1, 2, 3, 4, 5]
     fleets["rotorScale"] = 200.0

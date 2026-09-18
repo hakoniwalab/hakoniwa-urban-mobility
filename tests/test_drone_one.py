@@ -342,6 +342,7 @@ class DroneOneToolTest(unittest.TestCase):
                 viewer["stateInput"]["fleets"]["motorChannels"],
                 [0, 1, 2, 3, 4, 5],
             )
+            self.assertTrue(viewer["ui"]["enableAttachedCameras"])
 
     def test_ps4_mode_replaces_automatic_mission_in_single_drone_launcher(self):
         with tempfile.TemporaryDirectory() as directory:

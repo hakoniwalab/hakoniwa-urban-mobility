@@ -40,8 +40,9 @@ python3 tools/drone_one.py open-viewer
 
 The Drone initially falls from 7 m and settles on the PLATEAU DEM. Wait for it
 to settle before enabling RadioControl. The browser uses the EAMS body GLB and
-six independently animated propellers. If an older model is cached, reload the
-page with `Cmd+Shift+R`.
+six independently animated propellers. The upper-right inset is the onboard
+road-monitoring camera, mounted forward and pitched 50 degrees downward. If an
+older model is cached, reload the page with `Cmd+Shift+R`.
 
 ## PS4 controls
 
