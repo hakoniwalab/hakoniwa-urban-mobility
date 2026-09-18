@@ -294,6 +294,99 @@ class DroneOneToolTest(unittest.TestCase):
             )
             self.assertIn("--mujoco-viewer", service["args"])
 
+    def test_city_viewer_uses_eams_hexa_and_all_six_motor_channels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            embedded = (
+                root / "web/map-viewer/thirdparty/hakoniwa-threejs-drone"
+            )
+            config = embedded / "config"
+            models = embedded / "assets/models"
+            config.mkdir(parents=True)
+            models.mkdir(parents=True)
+            (config / "drone_config-city-fleet.json").write_text(
+                json.dumps(
+                    {
+                        "droneTypesPath": "./drone_types-quadrotor_base.json",
+                        "drones": [{"name": "Drone", "type": "quadrotor_base"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (config / "viewer-config-fleets.json").write_text(
+                json.dumps({"stateInput": {"fleets": {"roleMap": {}}}}),
+                encoding="utf-8",
+            )
+            (config / "drone_types-hexa-eams.json").write_text(
+                "{}", encoding="utf-8"
+            )
+            (models / "eams-hexa-frame.glb").write_bytes(b"glb")
+
+            drone_one.patch_eams_city_viewer(
+                types.SimpleNamespace(recipe_root=root)
+            )
+
+            scene = json.loads(
+                (config / "drone_config-city-fleet.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(scene["droneTypesPath"], "./drone_types-hexa-eams.json")
+            self.assertEqual(scene["drones"][0]["type"], "hexa_eams")
+            viewer = json.loads(
+                (config / "viewer-config-fleets.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                viewer["stateInput"]["fleets"]["motorChannels"],
+                [0, 1, 2, 3, 4, 5],
+            )
+
+    def test_ps4_mode_replaces_automatic_mission_in_single_drone_launcher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            launcher_path = root / "launcher.json"
+            launcher_path.write_text(
+                json.dumps(
+                    {
+                        "assets": [
+                            {"name": "drone-service-1"},
+                            {
+                                "name": "show-runner",
+                                "command": "/foundation/python",
+                                "depends_on": ["drone-service-1"],
+                            },
+                            {
+                                "name": "visual-state-publisher",
+                                "depends_on": ["show-runner"],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            paths = types.SimpleNamespace(recipe_config=root / "config")
+
+            drone_one.patch_rc_launcher(
+                launcher_path, paths=paths, drone_root=root / "drone-pro"
+            )
+
+            launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
+            controller = next(
+                asset
+                for asset in launcher["assets"]
+                if asset["name"] == "urban-drone-ps4-controller"
+            )
+            self.assertTrue(controller["args"][0].endswith("rc-custom.py"))
+            self.assertEqual(controller["args"][-4:], ["--name", "Drone-1", "--index", "0"])
+            publisher = next(
+                asset
+                for asset in launcher["assets"]
+                if asset["name"] == "visual-state-publisher"
+            )
+            self.assertEqual(publisher["depends_on"], ["drone-service-1"])
+
 
 if __name__ == "__main__":
     unittest.main()

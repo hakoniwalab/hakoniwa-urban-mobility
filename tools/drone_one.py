@@ -52,6 +52,7 @@ import drone_fleet_mujoco_city as city
 
 _BASE_WRITE_LAUNCHER = base.write_launcher
 _MUJOCO_VIEWER_ENABLED = False
+CONTROL_MODE_FILE = "urban-drone-control.json"
 
 
 def patch_launcher(
@@ -120,10 +121,104 @@ def patch_launcher(
     return path
 
 
+def patch_rc_launcher(path: Path, *, paths: object, drone_root: Path) -> Path:
+    """Replace the automatic mission with the proven PS4 RadioController client."""
+    launcher = json.loads(path.read_text(encoding="utf-8"))
+    assets = launcher.get("assets", [])
+    controller = next(
+        (asset for asset in assets if asset.get("name") == "show-runner"), None
+    )
+    if controller is None:
+        raise base.RecipeError("generated Launcher has no show-runner asset")
+    controller.update(
+        {
+            "name": "urban-drone-ps4-controller",
+            "args": [
+                str(drone_root.resolve() / "drone_api/rc/rc-custom.py"),
+                str(paths.recipe_config / "pdudef/drone-pdudef-current.json"),
+                str(
+                    drone_root.resolve()
+                    / "drone_api/rc/rc_config/ps4-control.json"
+                ),
+                "--name",
+                "Drone-1",
+                "--index",
+                "0",
+            ],
+            "cwd": str(drone_root.resolve() / "drone_api"),
+            "depends_on": ["drone-service-1"],
+            "activation_timing": "after_start",
+            "delay_sec": 1,
+        }
+    )
+    for asset in assets:
+        if asset.get("name") == "visual-state-publisher":
+            asset["depends_on"] = ["drone-service-1"]
+    path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_control_mode(paths: object, mode: str) -> Path:
+    if mode not in {"fleet-rpc", "ps4-rc"}:
+        raise base.RecipeError(f"unsupported Urban Drone control mode: {mode}")
+    path = paths.recipe_config / CONTROL_MODE_FILE
+    path.write_text(json.dumps({"mode": mode}, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def read_control_mode(paths: object) -> str:
+    path = paths.recipe_config / CONTROL_MODE_FILE
+    if not path.is_file():
+        return "fleet-rpc"
+    try:
+        mode = json.loads(path.read_text(encoding="utf-8"))["mode"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise base.RecipeError(f"invalid Urban Drone control mode {path}: {exc}") from exc
+    if mode not in {"fleet-rpc", "ps4-rc"}:
+        raise base.RecipeError(f"unsupported Urban Drone control mode: {mode}")
+    return mode
+
+
+def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
+    """Select the EAMS Hexa model and all six motor channels in the City viewer."""
+    embedded = (
+        paths.recipe_root
+        / "web/map-viewer/thirdparty/hakoniwa-threejs-drone"
+    )
+    scene_path = embedded / "config/drone_config-city-fleet.json"
+    viewer_path = embedded / "config/viewer-config-fleets.json"
+    type_path = embedded / "config/drone_types-hexa-eams.json"
+    model_path = embedded / "assets/models/eams-hexa-frame.glb"
+    for required in (scene_path, viewer_path, type_path, model_path):
+        if not required.is_file():
+            raise base.RecipeError(
+                f"EAMS Three.js viewer resource not found: {required}"
+            )
+
+    scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    drones = scene.get("drones")
+    if not isinstance(drones, list) or not drones:
+        raise base.RecipeError("generated Three.js City scene has no Drone template")
+    scene["droneTypesPath"] = "./drone_types-hexa-eams.json"
+    for drone in drones:
+        drone["type"] = "hexa_eams"
+    scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
+
+    viewer = json.loads(viewer_path.read_text(encoding="utf-8"))
+    fleets = viewer.setdefault("stateInput", {}).setdefault("fleets", {})
+    fleets["motorChannels"] = [0, 1, 2, 3, 4, 5]
+    fleets["rotorScale"] = 200.0
+    viewer_path.write_text(json.dumps(viewer, indent=2) + "\n", encoding="utf-8")
+    return scene_path, viewer_path
+
+
 def _write_urban_launcher(paths, drone_root, viewer_root, experiment, system_name):
     path = _BASE_WRITE_LAUNCHER(
         paths, drone_root, viewer_root, experiment, system_name
     )
+    patch_eams_city_viewer(paths)
+    if read_control_mode(paths) == "ps4-rc":
+        return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
     return patch_launcher(
         path,
         paths=paths,
@@ -490,6 +585,8 @@ def configure(
     if rc != 0:
         return rc
     paths = _paths()
+    if rc_mode and runtime_config_dir is None:
+        runtime_config_dir = paths.recipe_root / "rc"
     marker = city.configure_single_host_fleet(
         drone_root=drone_root,
         city_world_path=CITY_RECEIPT,
@@ -512,6 +609,7 @@ def configure(
         rc_mode=rc_mode,
         runtime_config_dir=runtime_config_dir,
     )
+    write_control_mode(paths, "ps4-rc" if rc_mode else "fleet-rpc")
     spawn = marker["flight_plan"]["spawn_points"][0]
     print("Urban one-Drone checkpoint configured")
     print(f"City World : {CITY_RECEIPT}")
@@ -525,6 +623,7 @@ def configure(
     print(f"Runtime XML: {runtime_model}")
     print("Vehicle    : EAMS nominal 9 kg Hexa-X (6 rotors, Hakoniwa tuned)")
     print(f"Controller : {'PS4 RC' if rc_mode else 'Fleet RPC'}")
+    print("Browser    : EAMS Hexa GLB (6 animated propellers)")
     print("Next       : python tools/drone_one.py doctor")
     return 0
 
@@ -542,6 +641,11 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="open the native MuJoCo viewer while running doctor/start",
     )
+    result.add_argument(
+        "--rc",
+        action="store_true",
+        help="configure the one-Drone checkpoint for PS4 RadioController operation",
+    )
     return result
 
 
@@ -552,7 +656,7 @@ def main() -> int:
     drone_root = args.drone_root.expanduser().resolve()
     viewer_root = args.viewer_root.expanduser().resolve()
     if args.command == "configure":
-        return configure(drone_root)
+        return configure(drone_root, rc_mode=args.rc)
     if args.command == "doctor":
         return base.doctor(EXPERIMENT, drone_root, viewer_root)
     if args.command == "start":

@@ -30,6 +30,20 @@ python3 tools/drone_one.py start
 python3 tools/drone_one.py status
 ```
 
+For the same one-Drone browser checkpoint under PS4 control, configure it in
+RC mode before running the normal doctor/start commands:
+
+```bash
+python3 tools/drone_one.py configure --rc
+python3 tools/drone_one.py doctor
+python3 tools/drone_one.py start
+```
+
+Press Cross (button 0) once to enable the latched RadioControl mode. The left
+stick controls throttle/yaw and the right stick controls pitch/roll.
+The complete operating and model-regeneration procedure is in
+[`docs/operation-one-drone-ps4-browser.md`](docs/operation-one-drone-ps4-browser.md).
+
 To open Drone Core's native MuJoCo viewer during the mission, start with:
 
 ```bash
@@ -48,7 +62,10 @@ The checkpoint uses a deliberately slow 2.5 m translation and observation
 holds between phases so its motion remains visible in the native viewer.
 
 `start` launches the PLATEAU browser view and the mission together. The
-mission result is written to the Business Pack Recipe workspace as
+browser uses the EAMS Hexa GLB with six individually animated propellers;
+the propeller mesh is the existing Three.js asset scaled to the physical
+508 mm diameter. The viewer reads motor channels 0 through 5.
+The mission result is written to the Business Pack Recipe workspace as
 `validation/urban-drone-mission.json`; a successful run contains all four
 command phases and the actual takeoff, target, and landing poses.
 
