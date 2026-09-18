@@ -23,6 +23,8 @@ set(HAKONIWA_PDU_REGISTRY_ROOT "${_pdu_registry_default}" CACHE PATH
 set(HAKONIWA_FOUNDATION_PREFIX "${_foundation_default}" CACHE PATH
     "Hakoniwa Foundation installation")
 option(HAKO_URBAN_ENABLE_VIEWER "Build the native MuJoCo viewer" ON)
+option(HAKO_URBAN_ENABLE_MIRROR
+    "Build the opt-in Robot Runtime Mirror extension" OFF)
 
 foreach(required_path IN ITEMS
     "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src/runtime/actuator_runtime.cpp"
@@ -113,11 +115,22 @@ add_executable(urban-car-hakoniwa-asset
     ${HAKO_MUJOCO_ROOT}/src/config/asset_manifest.cpp
 )
 
+if(HAKO_URBAN_ENABLE_MIRROR)
+    target_sources(urban-car-hakoniwa-asset PRIVATE
+        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
+        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
+        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
+        ${RUNTIME_SRC}/adapters/endpoint/mirror_body_twist_pdu_reader.cpp
+        ${RUNTIME_SRC}/adapters/endpoint/impulse_collision_pdu_writer.cpp)
+endif()
+
 set_target_properties(urban-car-hakoniwa-asset PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
+    HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
     ${RUNTIME_INCLUDE}
@@ -147,6 +160,57 @@ if(MSVC)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(hako-mirror-mujoco-plant-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_mujoco_plant.cpp
+        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
+    target_compile_features(hako-mirror-mujoco-plant-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-mirror-mujoco-plant-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+    target_include_directories(hako-mirror-mujoco-plant-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC}
+        ${HAKO_MUJOCO_ROOT}/src
+        ${HAKO_MUJOCO_ROOT}/include)
+    target_include_directories(hako-mirror-mujoco-plant-test SYSTEM PRIVATE
+        ${HAKO_MUJOCO_INCLUDE})
+    if(HAKO_MUJOCO_LIB_DIR)
+        target_link_directories(hako-mirror-mujoco-plant-test PRIVATE
+            ${HAKO_MUJOCO_LIB_DIR})
+    endif()
+    target_link_libraries(hako-mirror-mujoco-plant-test PRIVATE
+        mujoco-common
+        ${HAKO_MUJOCO_LIBRARY})
+
+    add_executable(hako-mirror-configuration-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_configuration.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_manifest.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_actuator.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp)
+    target_compile_features(hako-mirror-configuration-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-mirror-configuration-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+    target_include_directories(hako-mirror-configuration-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC}
+        ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
+
+    add_executable(hako-mirror-runtime-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_runtime.cpp
+        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
+        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
+        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
+        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
+        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp)
+    target_compile_features(hako-mirror-runtime-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-mirror-runtime-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+    target_include_directories(hako-mirror-runtime-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC})
+
     add_executable(hako-mobile-base-runtime-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mobile_base_runtime.cpp
         ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
@@ -171,6 +235,12 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC})
     add_test(NAME hako-mobile-base-runtime-contract
         COMMAND hako-mobile-base-runtime-test)
+    add_test(NAME hako-mirror-runtime-contract
+        COMMAND hako-mirror-runtime-test)
+    add_test(NAME hako-mirror-mujoco-plant-contract
+        COMMAND hako-mirror-mujoco-plant-test)
+    add_test(NAME hako-mirror-configuration-contract
+        COMMAND hako-mirror-configuration-test)
     add_test(NAME urban-car-control-mode-contract
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
@@ -179,4 +249,12 @@ if(BUILD_TESTING)
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scenario_executor.py")
+    add_test(NAME urban-golf-cart-demo-scenario-contract
+        COMMAND
+            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_car_route_scenario.py")
+    add_test(NAME urban-drone-surveillance-scenario-contract
+        COMMAND
+            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_drone_surveillance_scenario.py")
 endif()

@@ -22,6 +22,7 @@ struct Options {
     std::string asset_name;
     std::string endpoint_name {"urban_car_runtime"};
     bool viewer {true};
+    bool owns_conductor {true};
     bool view_model_only {false};
     bool validate_model_only {false};
     std::uint64_t realtime_sync_cycle_msec {2};
@@ -34,6 +35,7 @@ void usage(const char* program)
         << "  --asset-name NAME       override manifest asset name\n"
         << "  --endpoint-name NAME    endpoint instance name\n"
         << "  --no-viewer             run as a headless Hakoniwa asset\n"
+        << "  --external-conductor    join a Conductor owned by another asset\n"
         << "  --realtime-sync-cycle-msec N\n"
         << "                          wall-clock sync cycle (0 disables)\n"
         << "  --view-model            inspect the model without Hakoniwa\n"
@@ -52,6 +54,8 @@ bool parse_options(int argc, char** argv, Options& options)
             options.endpoint_name = argv[++index];
         } else if (argument == "--no-viewer") {
             options.viewer = false;
+        } else if (argument == "--external-conductor") {
+            options.owns_conductor = false;
         } else if (argument == "--realtime-sync-cycle-msec" && index + 1 < argc) {
             try {
                 options.realtime_sync_cycle_msec = std::stoull(argv[++index]);
@@ -121,7 +125,7 @@ int run_asset(const Options& options)
         hakoniwa::robot_runtime::factory::ManifestFactory::create(
             options.manifest,
             {options.asset_name, options.endpoint_name,
-                options.realtime_sync_cycle_msec});
+                options.realtime_sync_cycle_msec, options.owns_conductor});
     if (runner->start() != 0) {
         return 1;
     }

@@ -174,6 +174,69 @@ class ControlModeTest(unittest.TestCase):
                 self.assertIn(f'name="{prefix}wheel_motor"', text)
                 self.assertIn(f'joint="{prefix}wheel_joint"', text)
 
+    def test_drone_mirror_uses_standard_quad_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "model.xml"
+            model.write_text(
+                "<mujoco><compiler angle=\"radian\"/><worldbody>"
+                "<body name=\"vehicle\"><freejoint name=\"base_freejoint\"/>"
+                "</body></worldbody><actuator/></mujoco>",
+                encoding="utf-8",
+            )
+            vehicles = [{
+                "type": "test",
+                "type_definition": {
+                    "mjcf": model,
+                    "interface": {"base_freejoint": "base_freejoint"},
+                },
+                "prefix": "car_1_",
+                "spawn_mjcf": (0, 0, 0, 0, 0, 0),
+            }]
+            mirrors = [{
+                "prefix": "mirror_drone_1_",
+                "initial_position_mjcf": (5.0, -45.0, 7.0),
+            }]
+            fleet = Path(directory) / "fleet.xml"
+            multi_car.materialize_vehicle_fleet_model(fleet, vehicles, mirrors)
+
+            root = multi_car.ET.parse(fleet).getroot()
+            body = root.find("./worldbody/body[@name='mirror_drone_1_body']")
+            self.assertIsNotNone(body)
+            assert body is not None
+            self.assertEqual(body.get("pos"), "5.0 -45.0 7.0")
+            self.assertEqual(
+                body.find("./geom[@name='mirror_drone_1_base']").get("size"),
+                "0.07 0.07 0.015",
+            )
+            self.assertEqual(
+                [
+                    body.find(
+                        f".//geom[@name='mirror_drone_1_propeller_geom{index}']"
+                    ).get("rgba")
+                    for index in range(1, 5)
+                ],
+                [
+                    "0.3 0.7 0.9 1",
+                    "0.4 0.9 0.5 1",
+                    "1 0.6 0.7 1",
+                    "1 0.4 0 1",
+                ],
+            )
+            self.assertEqual(
+                len([
+                    item for item in body.findall("./body")
+                    if item.get("name", "").startswith("mirror_drone_1_leg")
+                ]),
+                4,
+            )
+            self.assertEqual(
+                len([
+                    item for item in body.findall("./body")
+                    if item.get("name", "").startswith("mirror_drone_1_skid")
+                ]),
+                2,
+            )
+
     def test_runtime_materializes_independent_commands_and_fleet_state(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)

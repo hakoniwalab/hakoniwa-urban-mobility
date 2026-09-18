@@ -103,6 +103,30 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_eams_tuning_is_loaded_from_drone_pro_and_keeps_rpc_parameters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base_path = root / "config/controller/param-api-mixer-mujoco.txt"
+            tuned_path = root / drone_one.EAMS_TUNED_PARAMS_RELATIVE
+            base_path.parent.mkdir(parents=True)
+            tuned_path.parent.mkdir(parents=True)
+            base_path.write_text(
+                "PID_ALT_Kp 10\nTAKEOFF_ALT 3\n",
+                encoding="utf-8",
+            )
+            tuned_path.write_text(
+                "PID_ALT_Kp 11.0\nPID_ROLL_Kp 17.0\n",
+                encoding="utf-8",
+            )
+
+            output = root / "runtime/controller-params.txt"
+            drone_one.materialize_eams_controller_params(root, output)
+            params = drone_one._parameter_values(output)
+
+            self.assertEqual(params["PID_ALT_Kp"], "11.0")
+            self.assertEqual(params["PID_ROLL_Kp"], "17.0")
+            self.assertEqual(params["TAKEOFF_ALT"], "3")
+
     def test_initial_drop_altitude_updates_ned_fleet_position(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

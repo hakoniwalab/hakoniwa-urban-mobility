@@ -151,6 +151,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--city-marker", type=Path, required=True)
     result.add_argument("--mission", type=Path, required=True)
     result.add_argument("--summary-json", type=Path, required=True)
+    result.add_argument(
+        "--keep-alive-after-mission",
+        action="store_true",
+        help="keep the Launcher asset alive until the experiment is stopped",
+    )
     return result
 
 
@@ -285,6 +290,18 @@ def main() -> int:
                 float(mission_config.get("land_hold_sec", 3.0)),
             )
         summary["status"] = "success"
+        if args.keep_alive_after_mission:
+            summary["elapsed_sec"] = time.time() - started
+            args.summary_json.parent.mkdir(parents=True, exist_ok=True)
+            args.summary_json.write_text(
+                json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+            )
+            print(
+                "MISSION: completed; keeping experiment alive until explicit stop",
+                flush=True,
+            )
+            while True:
+                time.sleep(60.0)
         return 0
     except Exception as exc:
         summary["status"] = "failed"

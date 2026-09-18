@@ -219,10 +219,13 @@ def resolve_config(config_path: Path) -> dict:
             "Three.js root",
         )
         work = resolve_path(config["composition"]["output"]["directory"], "output directory")
+        mirror_inputs = config["inputs"].get("drone_mirrors", [])
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"unsupported Urban Car Fleet configuration schema: {config_path}") from error
     if not isinstance(type_inputs, list) or not type_inputs:
         raise RecipeError("ackermann_vehicles.types must be a non-empty array")
+    if not isinstance(mirror_inputs, list):
+        raise RecipeError("drone_mirrors must be an array")
     if realtime_sync_cycle_msec < 0:
         raise RecipeError("realtime_sync_cycle_msec must be non-negative")
     if not (1 <= web_bridge_port <= 65535 and 1 <= http_port <= 65535):
@@ -329,6 +332,62 @@ def resolve_config(config_path: Path) -> dict:
                 north, -east, up, 0.0, 0.0, math.radians(yaw_deg - 90.0)
             ),
         })
+
+    mirrors = []
+    mirror_names: set[str] = set()
+    for index, mirror_input in enumerate(mirror_inputs, start=1):
+        try:
+            name = str(mirror_input["name"]).strip()
+            pdu_types = resolve_path(
+                mirror_input["pdu_types"], f"Drone Mirror {name} PDU types"
+            )
+            model_value = mirror_input.get("mjcf_model")
+            model = (
+                resolve_path(model_value, f"Drone Mirror {name} MJCF model")
+                if model_value is not None
+                else None
+            )
+            model_body = str(mirror_input.get("mjcf_body", "drone_base")).strip()
+            initial_position = tuple(
+                float(value) for value in mirror_input.get(
+                    "initial_position_mjcf", [0.0, 0.0, 7.0]
+                )
+            )
+            restitution = float(mirror_input.get("restitution_coefficient", 0.3))
+            speed_threshold = float(
+                mirror_input.get("relative_normal_speed_threshold_mps", 0.2)
+            )
+            cooldown_sec = float(mirror_input.get("cooldown_sec", 0.1))
+        except (KeyError, TypeError, ValueError) as error:
+            raise RecipeError(f"invalid Drone Mirror at index {index - 1}") from error
+        if not name or name in mirror_names:
+            raise RecipeError(f"Drone Mirror names must be non-empty and unique: {name!r}")
+        if model is not None and not model_body:
+            raise RecipeError(f"Drone Mirror {name} mjcf_body must be non-empty")
+        if len(initial_position) != 3 or any(
+            not math.isfinite(value) for value in initial_position
+        ):
+            raise RecipeError(f"Drone Mirror {name} initial_position_mjcf is invalid")
+        if not 0.0 <= restitution <= 1.0:
+            raise RecipeError(f"Drone Mirror {name} restitution must be within 0..1")
+        if speed_threshold < 0.0 or cooldown_sec <= 0.0:
+            raise RecipeError(f"Drone Mirror {name} collision policy is invalid")
+        mirror_names.add(name)
+        mirrors.append({
+            "name": name,
+            "prefix": f"mirror_drone_{index}_",
+            "pdu_types": required(pdu_types, f"Drone Mirror {name} PDU types"),
+            "mjcf_model": (
+                required(model, f"Drone Mirror {name} MJCF model")
+                if model is not None
+                else None
+            ),
+            "mjcf_body": model_body,
+            "initial_position_mjcf": initial_position,
+            "restitution_coefficient": restitution,
+            "relative_normal_speed_threshold_mps": speed_threshold,
+            "cooldown_sec": cooldown_sec,
+        })
     return {
         "raw": config,
         "path": config_path.resolve(),
@@ -336,6 +395,7 @@ def resolve_config(config_path: Path) -> dict:
         "city_receipt": city_receipt,
         "work": work,
         "vehicles": vehicles,
+        "mirrors": mirrors,
         "vehicle_types": vehicle_types,
         "vehicle_generation": vehicle_generation,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
@@ -494,6 +554,7 @@ def _absolute_asset_files(
 def materialize_vehicle_fleet_model(
     output_xml: Path,
     vehicles: list[dict],
+    mirrors: list[dict] | None = None,
 ) -> None:
     first_path = vehicles[0]["type_definition"]["mjcf"]
     tree = ET.parse(first_path)
@@ -588,6 +649,140 @@ def materialize_vehicle_fleet_model(
                 _namespace_mjcf(item, names, prefix, asset_names, asset_prefix)
                 contact_output.append(item)
 
+    # Import an explicitly selected Drone body when the experiment provides
+    # one. The Mirror owns only this rigid proxy; propulsion and control remain
+    # exclusively in the external Drone asset.
+    for mirror in mirrors or []:
+        prefix = mirror["prefix"]
+        mirror_model = mirror.get("mjcf_model")
+        if mirror_model is not None:
+            source_tree = ET.parse(mirror_model)
+            source_root = source_tree.getroot()
+            source_worldbody = source_root.find("worldbody")
+            if source_worldbody is None:
+                raise RecipeError(f"Drone Mirror MJCF has no worldbody: {mirror_model}")
+            template_body = next(
+                (
+                    item for item in list(source_worldbody)
+                    if item.tag == "body" and item.get("name") == mirror["mjcf_body"]
+                ),
+                None,
+            )
+            if template_body is None:
+                raise RecipeError(
+                    f"Drone Mirror MJCF has no body {mirror['mjcf_body']}: {mirror_model}"
+                )
+            source_asset = source_root.find("asset")
+            asset_names = (
+                _named_objects(source_asset) if source_asset is not None else set()
+            )
+            asset_prefix = prefix + "asset_"
+            if source_asset is not None:
+                for template in list(source_asset):
+                    item = copy.deepcopy(template)
+                    _absolute_asset_files(item, source_root, mirror_model)
+                    _namespace_mjcf(
+                        item, asset_names, asset_prefix, asset_names, asset_prefix
+                    )
+                    asset_output.append(item)
+            names = _named_objects(template_body)
+            body = copy.deepcopy(template_body)
+            _namespace_mjcf(body, names, prefix, asset_names, asset_prefix)
+            body.set("name", prefix + "body")
+            body.set(
+                "pos",
+                " ".join(str(value) for value in mirror["initial_position_mjcf"]),
+            )
+            freejoint = body.find("freejoint")
+            if freejoint is None:
+                raise RecipeError(f"Drone Mirror body has no freejoint: {mirror_model}")
+            freejoint.set("name", prefix + "freejoint")
+            worldbody_output.append(body)
+            continue
+
+        # Backward-compatible standard Quad proxy.
+        body = ET.SubElement(
+            worldbody_output,
+            "body",
+            {
+                "name": prefix + "body",
+                "pos": " ".join(str(value) for value in mirror["initial_position_mjcf"]),
+            },
+        )
+        ET.SubElement(body, "freejoint", {"name": prefix + "freejoint"})
+        common = {
+            "friction": "0.5 0.5 0.5",
+            "contype": "2",
+            "conaffinity": "1",
+        }
+        ET.SubElement(body, "geom", {
+            **common, "name": prefix + "base", "type": "box",
+            "size": "0.07 0.07 0.015", "density": "810",
+            "rgba": "0.5 0.5 0.5 1",
+        })
+        arm_specs = (
+            (1, 0.13, -0.13, 0.05, -0.05, math.pi / 4.0, "0.3 0.7 0.9 1"),
+            (2, -0.13, 0.13, -0.05, 0.05, math.pi / 4.0, "0.4 0.9 0.5 1"),
+            (3, 0.13, 0.13, 0.05, 0.05, -math.pi / 4.0, "1 0.6 0.7 1"),
+            (4, -0.13, -0.13, -0.05, -0.05, -math.pi / 4.0, "1 0.4 0 1"),
+        )
+        for index, arm_x, arm_y, prop_x, prop_y, arm_yaw, prop_color in arm_specs:
+            arm = ET.SubElement(body, "body", {
+                "name": prefix + f"arm{index}",
+                "pos": f"{arm_x} {arm_y} 0",
+            })
+            ET.SubElement(arm, "geom", {
+                **common, "name": prefix + f"arm_geom{index}",
+                "type": "cylinder", "size": "0.008 0.077",
+                "euler": f"{math.pi / 2.0} {arm_yaw} 0",
+                "density": "500", "rgba": "0 0 0 1",
+            })
+            propeller = ET.SubElement(arm, "body", {
+                "name": prefix + f"propeller{index}",
+                "pos": f"{prop_x} {prop_y} 0.02",
+            })
+            ET.SubElement(propeller, "geom", {
+                **common, "name": prefix + f"propeller_geom{index}",
+                "type": "cylinder", "size": "0.076 0.0025",
+                "density": "200", "rgba": prop_color,
+            })
+            motor = ET.SubElement(body, "body", {
+                "name": prefix + f"motor{index}",
+                "pos": f"{arm_x + prop_x} {arm_y + prop_y} 0.02",
+            })
+            ET.SubElement(motor, "geom", {
+                **common, "name": prefix + f"motor_geom{index}",
+                "type": "box", "size": "0.007 0.007 0.007",
+                "density": "500", "rgba": "0 0 0 1",
+            })
+
+        leg_specs = (
+            (1, -0.1, 0.1, math.radians(20.0)),
+            (2, 0.1, 0.1, math.radians(20.0)),
+            (3, -0.1, -0.1, math.radians(-20.0)),
+            (4, 0.1, -0.1, math.radians(-20.0)),
+        )
+        for index, x, y, roll in leg_specs:
+            leg = ET.SubElement(body, "body", {
+                "name": prefix + f"leg{index}", "pos": f"{x} {y} -0.10",
+            })
+            ET.SubElement(leg, "geom", {
+                **common, "name": prefix + f"leg_geom{index}",
+                "type": "cylinder", "size": "0.008 0.077",
+                "euler": f"{roll} 0 0", "density": "500",
+                "rgba": "0 0 0 1",
+            })
+        for index, y in enumerate((-0.13, 0.13), start=1):
+            skid = ET.SubElement(body, "body", {
+                "name": prefix + f"skid{index}", "pos": f"0 {y} -0.18",
+            })
+            ET.SubElement(skid, "geom", {
+                **common, "name": prefix + f"skid_geom{index}",
+                "type": "cylinder", "size": "0.008 0.13",
+                "euler": f"0 {math.pi / 2.0} 0", "density": "500",
+                "rgba": "1 0.6 0.7 1",
+            })
+
     ET.indent(tree, space="  ")
     tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
@@ -676,8 +871,10 @@ def materialize_runtime(
     runtime_model: Path,
     work: Path,
     vehicles: list[dict],
+    mirrors: list[dict] | None = None,
 ) -> dict[str, Path]:
     source = paths()
+    mirrors = mirrors or []
     work.mkdir(parents=True, exist_ok=True)
     runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime["actuators"] = {}
@@ -719,6 +916,10 @@ def materialize_runtime(
         "paths": [
             {"id": "urban-car-command", "path": str(command_types_path)},
             {"id": "urban-fleet-state", "path": str(state_types_path)},
+            *[
+                {"id": f"urban-drone-mirror-{index}", "path": str(mirror["pdu_types"])}
+                for index, mirror in enumerate(mirrors, start=1)
+            ],
         ],
         "robots": [
             *[
@@ -726,6 +927,10 @@ def materialize_runtime(
                 for vehicle in vehicles
             ],
             {"name": FLEET_PDU_ROBOT, "pdutypes_id": "urban-fleet-state"},
+            *[
+                {"name": mirror["name"], "pdutypes_id": f"urban-drone-mirror-{index}"}
+                for index, mirror in enumerate(mirrors, start=1)
+            ],
         ],
     }
     pdu_def_path = work / "urban-car-pdudef.json"
@@ -748,6 +953,14 @@ def materialize_runtime(
                 for item in state_pdu_types
             ],
         },
+        *[{
+            "name": mirror["name"],
+            "pdu": [
+                {"name": "pos", "notify_on_recv": False},
+                {"name": "velocity", "notify_on_recv": False},
+                {"name": "impulse", "notify_on_recv": False},
+            ],
+        } for mirror in mirrors],
     ]
     comm_path = work / "urban-car-comm.json"
     write_json(comm_path, comm)
@@ -769,6 +982,75 @@ def materialize_runtime(
         for component in vehicle_components:
             if component["kind"] == "actuator":
                 runtime["actuators"][component["id"]] = {"command_timeout_sec": 0.2}
+
+    for mirror in mirrors:
+        key = mirror["prefix"].rstrip("_")
+        mirror_component_id = key + "_controller"
+        mirror_config = {
+            "$schema": "https://hakoniwa.dev/schemas/mirror-body-controller.schema.json",
+            "schema_version": 1,
+            "spec": {"mirror_id": mirror["name"]},
+            "input": {
+                "pose": {
+                    "pdu_name": "pos",
+                    "message_type": "geometry_msgs/Twist",
+                },
+                "velocity": {
+                    "pdu_name": "velocity",
+                    "message_type": "geometry_msgs/Twist",
+                    "frame": "body",
+                },
+            },
+            "mjcf_binding": {
+                "freejoint": mirror["prefix"] + "freejoint",
+                "contact_bodies": [
+                    {
+                        "body_id": vehicle["name"],
+                        "mjcf_freejoint": (
+                            vehicle["prefix"]
+                            + vehicle["type_definition"]["interface"]["base_freejoint"]
+                        ),
+                    }
+                    for vehicle in vehicles
+                ],
+            },
+        }
+        mirror_config_path = work / f"{key}-controller.json"
+        write_json(mirror_config_path, mirror_config)
+        impulse_config = {
+            "$schema": "https://hakoniwa.dev/schemas/impulse-collision-output.schema.json",
+            "schema_version": 1,
+            "spec": {"mirror_component": mirror_component_id},
+            "pdu_config": {
+                "pdu_name": "impulse",
+                "message_type": "hako_msgs/ImpulseCollision",
+            },
+            "policy": {
+                "restitution_coefficient": mirror["restitution_coefficient"],
+                "relative_normal_speed_threshold_mps": (
+                    mirror["relative_normal_speed_threshold_mps"]
+                ),
+                "cooldown_sec": mirror["cooldown_sec"],
+            },
+        }
+        impulse_config_path = work / f"{key}-impulse.json"
+        write_json(impulse_config_path, impulse_config)
+        components.extend([
+            {
+                "id": mirror_component_id,
+                "kind": "controller",
+                "type": "mirror_body",
+                "config": str(mirror_config_path),
+                "pdu_robot": mirror["name"],
+            },
+            {
+                "id": key + "_impulse",
+                "kind": "state_output",
+                "type": "impulse_collision",
+                "config": str(impulse_config_path),
+                "pdu_robot": mirror["name"],
+            },
+        ])
 
     runtime_path = work / "urban-car-runtime.json"
     write_json(runtime_path, runtime)
@@ -1220,6 +1502,10 @@ def doctor(resolved: dict) -> int:
             (f"Vehicle type {definition['type']} contract", definition["contract"]),
             (f"Vehicle type {definition['type']} view model", definition["view_model"]),
         ])
+    for mirror in resolved["mirrors"]:
+        checks.append((f"Drone Mirror {mirror['name']} PDU types", mirror["pdu_types"]))
+        if mirror["mjcf_model"] is not None:
+            checks.append((f"Drone Mirror {mirror['name']} MJCF", mirror["mjcf_model"]))
     try:
         checks.append(("Ackermann MuJoCo library", mujoco_library()))
     except RecipeError as error:
@@ -1236,6 +1522,7 @@ def configure(resolved: dict) -> int:
     source = paths()
     work = resolved["work"]
     vehicles = resolved["vehicles"]
+    mirrors = resolved["mirrors"]
     city_mjcf, city_glb, receipt = city_inputs(resolved["city_receipt"])
     for label, path in paths().items():
         if label != "plant":
@@ -1244,7 +1531,7 @@ def configure(resolved: dict) -> int:
     required(source["core_config"], "Foundation Core config")
     work.mkdir(parents=True, exist_ok=True)
     fleet_model = work / "urban-car-fleet.xml"
-    materialize_vehicle_fleet_model(fleet_model, vehicles)
+    materialize_vehicle_fleet_model(fleet_model, vehicles, mirrors)
     output = work / "urban-cars-city.xml"
     command([
         str(foundation_python()), str(source["compose_tool"]),
@@ -1256,7 +1543,7 @@ def configure(resolved: dict) -> int:
     mjb_receipt = work / "mujoco-materialization.json"
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
-    runtime_files = materialize_runtime(mjb, work, vehicles)
+    runtime_files = materialize_runtime(mjb, work, vehicles, mirrors)
     browser_files = None
     if resolved["visualization"]["enabled"]:
         browser_files = materialize_browser_visualization(
@@ -1326,6 +1613,18 @@ def configure(resolved: dict) -> int:
             }
             for vehicle in vehicles
         ],
+        "drone_mirrors": [
+            {
+                "name": mirror["name"],
+                "mjcf_freejoint": mirror["prefix"] + "freejoint",
+                "pdu_types": {
+                    "path": str(mirror["pdu_types"]),
+                    "sha256": sha256(mirror["pdu_types"]),
+                },
+                "pdu_contract": ["pos", "velocity", "impulse"],
+            }
+            for mirror in mirrors
+        ],
         "coordinate_frame": receipt["coordinate_frame"],
         "runtime_manifest": str(runtime_files["manifest"]),
         "core_config": str(source["core_config"]),
@@ -1353,6 +1652,8 @@ def configure(resolved: dict) -> int:
         f"{vehicle['name']}:{vehicle['type']}={vehicle['control_mode']}"
         for vehicle in vehicles
     ))
+    if mirrors:
+        print("Drone Mirrors: " + ", ".join(mirror["name"] for mirror in mirrors))
     if any(vehicle["control_mode"] == "external_python" for vehicle in vehicles):
         print("External control: run apps/car/ackermann_command.py with --robot NAME")
     print("Use 'start' for the configured runtime, or 'view' for Viewer-only inspection.")

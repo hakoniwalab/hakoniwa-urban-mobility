@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Configure and run the Golf Cart + surveillance Drone Urban demo."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE = ROOT.parent
+DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
+CONFIG = ROOT / "recipes/experiments/drone-car-surveillance.yaml"
+
+sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "apps/car"))
+sys.path.insert(0, str(ROOT / "apps/drone"))
+
+import drone_one  # noqa: E402
+import multi_car  # noqa: E402
+class SurveillanceDemoError(RuntimeError):
+    pass
+
+
+def foundation_python() -> Path:
+    return multi_car.foundation_python()
+
+
+def work() -> Path:
+    return multi_car.resolve_config(CONFIG)["work"]
+
+
+def drone_paths():
+    return drone_one._paths()
+
+
+def scenario_paths() -> tuple[Path, Path]:
+    root = multi_car.load_yaml(CONFIG)
+    try:
+        car = multi_car.resolve_path(root["scenarios"]["car"], "Car scenario")
+        drone = multi_car.resolve_path(root["scenarios"]["drone"], "Drone scenario")
+    except (KeyError, TypeError) as error:
+        raise SurveillanceDemoError(
+            "experiment has no valid scenario references"
+        ) from error
+    return car, drone
+
+
+def configured_drone_start() -> tuple[float, float, float]:
+    """Read the City launch point selected by the proven Drone recipe."""
+    marker_path = drone_paths().recipe_config / "mujoco-city-fleet.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    fleet_path = Path(marker["fleet_config"])
+    fleet = json.loads(fleet_path.read_text(encoding="utf-8"))
+    drones = fleet.get("drones")
+    if not isinstance(drones, list) or len(drones) != 1:
+        raise SurveillanceDemoError("surveillance demo requires exactly one Drone")
+    position = drones[0].get("position_meter")
+    if not isinstance(position, list) or len(position) != 3:
+        raise SurveillanceDemoError("Drone-1 has no valid initial position")
+    return float(position[0]), float(position[1]), -float(position[2])
+
+
+def merge_launchers(
+    car_launcher_path: Path, output: Path, drone_root: Path
+) -> Path:
+    drone_launcher = json.loads(
+        (drone_paths().recipe_config / "launcher.json").read_text(encoding="utf-8")
+    )
+    car_launcher = json.loads(car_launcher_path.read_text(encoding="utf-8"))
+    drone_service = next(
+        (
+            asset for asset in drone_launcher.get("assets", [])
+            if asset.get("name") == "drone-service-1"
+        ),
+        None,
+    )
+    mission = next(
+        (
+            asset for asset in drone_launcher.get("assets", [])
+            if asset.get("name") == "urban-drone-mission"
+        ),
+        None,
+    )
+    car_plant = next(
+        (
+            asset for asset in car_launcher.get("assets", [])
+            if asset.get("name") == "urban-car-fleet-plant"
+        ),
+        None,
+    )
+    if drone_service is None or mission is None or car_plant is None:
+        raise SurveillanceDemoError("source Launcher is missing a required asset")
+
+    logs = output.parent / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    defaults = copy.deepcopy(drone_launcher["defaults"])
+    defaults["cwd"] = str(ROOT)
+    defaults["stdout"] = str(logs / "${asset}.out")
+    defaults["stderr"] = str(logs / "${asset}.err")
+    defaults.setdefault("env", {}).setdefault("set", {}).update({
+        "HAKONIWA_CORE_ROOT": str(multi_car.foundation_install()),
+        "HAKONIWA_PDU_ENDPOINT_ROOT": str(multi_car.foundation_install()),
+        "PYTHONUNBUFFERED": "1",
+    })
+
+    drone_service = copy.deepcopy(drone_service)
+    drone_service["args"] = [
+        value for value in drone_service.get("args", [])
+        if value != "--mujoco-viewer"
+    ]
+    unified_pdu_definition = output.parent / "urban-car-pdudef.json"
+    if len(drone_service["args"]) < 2:
+        raise SurveillanceDemoError("Drone service has no PDU definition argument")
+    drone_service["args"][1] = str(unified_pdu_definition)
+    drone_service["readiness"] = {
+        "type": "hako_asset",
+        "asset_name": "drone",
+        "timeout_sec": 120,
+        "poll_interval_sec": 0.2,
+        "command_timeout_sec": 2,
+    }
+    drone_service["delay_sec"] = 8
+
+    car_plant = copy.deepcopy(car_plant)
+    if "--external-conductor" not in car_plant["args"]:
+        car_plant["args"].append("--external-conductor")
+
+    car_scenario, drone_scenario = scenario_paths()
+    scenario = copy.deepcopy(mission)
+    scenario.update({
+        "name": "urban-drone-car-surveillance",
+        "command": str(foundation_python()),
+        "args": [
+            str(ROOT / "apps/scenario/drone_car_surveillance_demo.py"),
+            "--drone-root", str(drone_root.resolve()),
+            "--service-config", str(
+                drone_paths().recipe_config
+                / "drone/fleets/services/api-current-service.json"
+            ),
+            "--pdu-def", str(unified_pdu_definition),
+            "--car-scenario", str(car_scenario),
+            "--drone-scenario", str(drone_scenario),
+            "--summary-json", str(
+                output.parent / "validation/surveillance-demo.json"
+            ),
+        ],
+        "depends_on": ["drone-service-1", "urban-car-fleet-plant"],
+        "delay_sec": 1,
+    })
+
+    launcher = {
+        "version": "0.1",
+        "defaults": defaults,
+        "assets": [drone_service, car_plant, scenario],
+        "runtime": {"cleanup_mmap_on_start": True},
+    }
+    multi_car.write_json(output, launcher)
+    return output
+
+
+def build_car_asset() -> None:
+    subprocess.run([
+        "cmake", "-S", str(ROOT), "-B", str(ROOT / "build"),
+        "-DHAKO_URBAN_ENABLE_MIRROR=ON",
+        "-DHAKO_URBAN_ENABLE_VIEWER=ON",
+        "-DBUILD_TESTING=ON",
+    ], cwd=ROOT, check=True)
+    subprocess.run(
+        ["cmake", "--build", str(ROOT / "build"), "-j4"],
+        cwd=ROOT,
+        check=True,
+    )
+
+
+def configure(drone_root: Path) -> int:
+    build_car_asset()
+    if drone_one.configure(drone_root) != 0:
+        return 1
+    # Keep the safe launch point selected by drone_one.configure(). Moving the
+    # physical Drone to the Car route caused the EAMS vehicle to settle on a
+    # different surface and prevented the previously verified takeoff.
+    start = configured_drone_start()
+    drone_one._MUJOCO_VIEWER_ENABLED = False
+    if drone_one.base.doctor(
+        drone_one.EXPERIMENT, drone_root, drone_one.DEFAULT_VIEWER_ROOT
+    ) != 0:
+        return 1
+    resolved = multi_car.resolve_config(CONFIG)
+    if multi_car.configure(resolved) != 0:
+        return 1
+    launcher = merge_launchers(
+        resolved["work"] / "launcher.json",
+        resolved["work"] / "launcher-two-assets.json",
+        drone_root,
+    )
+    print("Golf Cart + surveillance Drone demo configured")
+    print(f"Launcher : {launcher}")
+    print(f"Drone    : start=({start[0]:.1f},{start[1]:.1f},{start[2]:.1f})")
+    print("Viewer   : Car world only (Golf Cart + Mirror Drone)")
+    print("Run      : python3 tools/drone_car_surveillance.py run")
+    return 0
+
+
+def doctor(drone_root: Path) -> int:
+    resolved = multi_car.resolve_config(CONFIG)
+    checks = [
+        ("Drone PRO service", drone_root / "mac/mac-main_hako_drone_service"),
+        ("Car Mirror asset", ROOT / "build/bin/urban-car-hakoniwa-asset"),
+        ("Car scenario", scenario_paths()[0]),
+        ("Drone scenario", scenario_paths()[1]),
+        ("Combined Launcher", resolved["work"] / "launcher-two-assets.json"),
+    ]
+    failed = False
+    for label, path in checks:
+        ok = path.is_file()
+        print(f"[{'OK' if ok else 'NG'}] {label}: {path}")
+        failed = failed or not ok
+    return 1 if failed else 0
+
+
+def control(operation: str) -> int:
+    experiment_work = work()
+    launcher = experiment_work / "launcher-two-assets.json"
+    session = experiment_work / "runtime/launcher-session.json"
+    session.parent.mkdir(parents=True, exist_ok=True)
+    if operation == "start":
+        command = [
+            str(foundation_python()), "-m",
+            "hakoniwa_pdu.apps.launcher.hako_launcher",
+            str(launcher), "--background", str(session),
+        ]
+    else:
+        command = [
+            str(foundation_python()), "-m",
+            "hakoniwa_pdu.apps.launcher.hako_launcher_ctl",
+            "status" if operation == "status" else "terminate", str(session),
+        ]
+    subprocess.run(command, cwd=ROOT, check=True)
+    return 0
+
+
+def run(drone_root: Path) -> int:
+    if configure(drone_root) != 0:
+        return 1
+    launcher = work() / "launcher-two-assets.json"
+    subprocess.run([
+        str(foundation_python()), "-m",
+        "hakoniwa_pdu.apps.launcher.hako_launcher", str(launcher),
+    ], cwd=ROOT, check=True)
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument(
+        "command", choices=("configure", "doctor", "run", "start", "status", "stop")
+    )
+    result.add_argument("--drone-root", type=Path, default=DEFAULT_DRONE_ROOT)
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    drone_root = args.drone_root.expanduser().resolve()
+    if args.command == "configure":
+        return configure(drone_root)
+    if args.command == "doctor":
+        return doctor(drone_root)
+    if args.command == "run":
+        return run(drone_root)
+    return control(args.command)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        SurveillanceDemoError,
+        multi_car.RecipeError,
+        drone_one.base.RecipeError,
+        drone_one.city.FleetMujocoError,
+    ) as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(2)
