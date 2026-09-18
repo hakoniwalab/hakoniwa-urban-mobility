@@ -38,6 +38,17 @@ python3 tools/drone_one.py status
 python3 tools/drone_one.py open-viewer
 ```
 
+To overlay the MJCF collision geometry as green wireframes, open the optional
+Collider view instead:
+
+```bash
+python3 tools/drone_one.py open-viewer --colliders
+```
+
+Both modes keep Three.js as the main view and place the map in a small panel
+at the lower left. The default command displays only the City GLB; Collider
+wireframes are loaded only when `--colliders` is specified.
+
 The Drone initially falls from 7 m and settles on the PLATEAU DEM. Wait for it
 to settle before enabling RadioControl. The browser uses the EAMS body GLB and
 six independently animated propellers. The upper-right inset is the onboard

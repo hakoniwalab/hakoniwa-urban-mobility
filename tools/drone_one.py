@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -180,7 +182,7 @@ def read_control_mode(paths: object) -> str:
 
 
 def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
-    """Select the EAMS Hexa model and all six motor channels in the City viewer."""
+    """Prepare normal and optional Collider-overlay EAMS City viewers."""
     embedded = (
         paths.recipe_root
         / "web/map-viewer/thirdparty/hakoniwa-threejs-drone"
@@ -195,6 +197,32 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
                 f"EAMS Three.js viewer resource not found: {required}"
             )
 
+    marker_path = paths.recipe_config / "mujoco-city-fleet.json"
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        receipt_path = Path(marker["city_world"]["receipt"]).resolve()
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise base.RecipeError(
+            f"invalid MuJoCo City viewer contract {marker_path}: {exc}"
+        ) from exc
+    world_dir = receipt_path.parent
+    if world_dir.name != "world" or world_dir.parent.name != "build":
+        raise base.RecipeError(
+            f"City World Receipt is outside a Worker job: {receipt_path}"
+        )
+    collider_source = world_dir.parent.parent / "viewer/city-world-colliders.glb"
+    if not collider_source.is_file():
+        raise base.RecipeError(
+            f"City World Collider GLB not found: {collider_source}"
+        )
+    collider_destination = embedded / "assets/local_models/city-world-colliders.glb"
+    collider_destination.parent.mkdir(parents=True, exist_ok=True)
+    collider_destination.unlink(missing_ok=True)
+    try:
+        os.link(collider_source, collider_destination)
+    except OSError:
+        shutil.copy2(collider_source, collider_destination)
+
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     drones = scene.get("drones")
     if not isinstance(drones, list) or not drones:
@@ -202,7 +230,33 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     scene["droneTypesPath"] = "./drone_types-hexa-eams.json"
     for drone in drones:
         drone["type"] = "hexa_eams"
+    scene["environments"] = [
+        environment
+        for environment in scene.get("environments", [])
+        if environment.get("name") != "city-world-colliders"
+    ]
     scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
+
+    collider_scene = copy.deepcopy(scene)
+    collider_scene["environments"].append({
+        "name": "city-world-colliders",
+        "model": "../assets/local_models/city-world-colliders.glb",
+        "pos": [0, 0, 0],
+        "hpr": [0, 0, 0],
+        "render": {
+            "mode": "wireframe",
+            "color": "#22c55e",
+            "opacity": 0.72,
+            "depthTest": True,
+            "depthWrite": False,
+        },
+    })
+    collider_scene_path = scene_path.with_name(
+        "drone_config-city-fleet-colliders.json"
+    )
+    collider_scene_path.write_text(
+        json.dumps(collider_scene, indent=2) + "\n", encoding="utf-8"
+    )
 
     viewer = json.loads(viewer_path.read_text(encoding="utf-8"))
     viewer.setdefault("ui", {})["enableAttachedCameras"] = True
@@ -210,7 +264,36 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     fleets["motorChannels"] = [0, 1, 2, 3, 4, 5]
     fleets["rotorScale"] = 200.0
     viewer_path.write_text(json.dumps(viewer, indent=2) + "\n", encoding="utf-8")
+    collider_viewer = copy.deepcopy(viewer)
+    collider_viewer.setdefault("three", {})["sceneConfigPath"] = (
+        "./drone_config-city-fleet-colliders.json"
+    )
+    collider_viewer_path = viewer_path.with_name(
+        "viewer-config-fleets-colliders.json"
+    )
+    collider_viewer_path.write_text(
+        json.dumps(collider_viewer, indent=2) + "\n", encoding="utf-8"
+    )
     return scene_path, viewer_path
+
+
+def open_viewer(*, show_colliders: bool = False) -> int:
+    paths = _paths()
+    collider_config = paths.recipe_root / (
+        "web/map-viewer/thirdparty/hakoniwa-threejs-drone/"
+        "config/viewer-config-fleets-colliders.json"
+    )
+    if show_colliders and not collider_config.is_file():
+        raise base.RecipeError(
+            "Collider viewer is not configured; run configure before open-viewer"
+        )
+    url = base.viewer_url(1, map_viewer=True) + "&layout=three-main"
+    if show_colliders:
+        url = url.replace(
+            "viewerConfigName=viewer-config-fleets.json",
+            "viewerConfigName=viewer-config-fleets-colliders.json",
+        )
+    return 0 if base.open_browser(url) else 1
 
 
 def _write_urban_launcher(paths, drone_root, viewer_root, experiment, system_name):
@@ -647,12 +730,20 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="configure the one-Drone checkpoint for PS4 RadioController operation",
     )
+    result.add_argument(
+        "--colliders",
+        action="store_true",
+        help="show green MJCF Collider wireframes with open-viewer",
+    )
     return result
 
 
 def main() -> int:
     global _MUJOCO_VIEWER_ENABLED
-    args = parser().parse_args()
+    argument_parser = parser()
+    args = argument_parser.parse_args()
+    if args.colliders and args.command != "open-viewer":
+        argument_parser.error("--colliders is available only with open-viewer")
     _MUJOCO_VIEWER_ENABLED = args.mujoco_viewer
     drone_root = args.drone_root.expanduser().resolve()
     viewer_root = args.viewer_root.expanduser().resolve()
@@ -666,7 +757,7 @@ def main() -> int:
         return base.control(EXPERIMENT, drone_root, "status")
     if args.command == "stop":
         return base.control(EXPERIMENT, drone_root, "terminate")
-    return base.open_viewer(EXPERIMENT)
+    return open_viewer(show_colliders=args.colliders)
 
 
 if __name__ == "__main__":

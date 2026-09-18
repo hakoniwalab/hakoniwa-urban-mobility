@@ -39,6 +39,10 @@ python3 tools/drone_one.py doctor
 python3 tools/drone_one.py start
 ```
 
+`python3 tools/drone_one.py open-viewer` opens the 3D-first layout with the
+map at lower left. Add `--colliders` to overlay the MJCF Collider GLB as green
+wireframes.
+
 Press Cross (button 0) once to enable the latched RadioControl mode. The left
 stick controls throttle/yaw and the right stick controls pitch/roll.
 The complete operating and model-regeneration procedure is in

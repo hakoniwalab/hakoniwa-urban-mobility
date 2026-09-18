@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import types
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 
 
@@ -104,6 +105,41 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_open_viewer_colliders_are_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            collider_config = root / (
+                "web/map-viewer/thirdparty/hakoniwa-threejs-drone/"
+                "config/viewer-config-fleets-colliders.json"
+            )
+            collider_config.parent.mkdir(parents=True)
+            collider_config.write_text("{}", encoding="utf-8")
+            opened = []
+            with (
+                mock.patch.object(
+                    drone_one, "_paths",
+                    return_value=types.SimpleNamespace(recipe_root=root),
+                ),
+                mock.patch.object(
+                    drone_one.base, "viewer_url",
+                    return_value=(
+                        "http://viewer/?viewerConfigName="
+                        "viewer-config-fleets.json"
+                    ),
+                ),
+                mock.patch.object(
+                    drone_one.base, "open_browser",
+                    side_effect=lambda url: opened.append(url) or True,
+                ),
+            ):
+                self.assertEqual(drone_one.open_viewer(), 0)
+                self.assertEqual(
+                    drone_one.open_viewer(show_colliders=True), 0
+                )
+            self.assertIn("viewer-config-fleets.json", opened[0])
+            self.assertIn("layout=three-main", opened[0])
+            self.assertIn("viewer-config-fleets-colliders.json", opened[1])
+
     def test_city_contact_policy_reduces_friction_and_enables_six_propellers(self):
         body = ET.fromstring(
             "<body name='drone_base'>"
@@ -302,11 +338,16 @@ class DroneOneToolTest(unittest.TestCase):
             )
             config = embedded / "config"
             models = embedded / "assets/models"
+            local_models = embedded / "assets/local_models"
             config.mkdir(parents=True)
             models.mkdir(parents=True)
+            local_models.mkdir(parents=True)
             (config / "drone_config-city-fleet.json").write_text(
                 json.dumps(
                     {
+                        "environments": [
+                            {"name": "city-world", "model": "city-world.glb"}
+                        ],
                         "droneTypesPath": "./drone_types-quadrotor_base.json",
                         "drones": [{"name": "Drone", "type": "quadrotor_base"}],
                     }
@@ -321,9 +362,21 @@ class DroneOneToolTest(unittest.TestCase):
                 "{}", encoding="utf-8"
             )
             (models / "eams-hexa-frame.glb").write_bytes(b"glb")
+            city_job = root / "city-job"
+            receipt = city_job / "build/world/city-world-receipt.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text("{}", encoding="utf-8")
+            collider = city_job / "viewer/city-world-colliders.glb"
+            collider.parent.mkdir(parents=True)
+            collider.write_bytes(b"collider")
+            (root / "config").mkdir(parents=True)
+            (root / "config/mujoco-city-fleet.json").write_text(
+                json.dumps({"city_world": {"receipt": str(receipt)}}),
+                encoding="utf-8",
+            )
 
             drone_one.patch_eams_city_viewer(
-                types.SimpleNamespace(recipe_root=root)
+                types.SimpleNamespace(recipe_root=root, recipe_config=root / "config")
             )
 
             scene = json.loads(
@@ -333,6 +386,25 @@ class DroneOneToolTest(unittest.TestCase):
             )
             self.assertEqual(scene["droneTypesPath"], "./drone_types-hexa-eams.json")
             self.assertEqual(scene["drones"][0]["type"], "hexa_eams")
+            self.assertFalse(any(
+                environment["name"] == "city-world-colliders"
+                for environment in scene["environments"]
+            ))
+            collider_scene = json.loads(
+                (config / "drone_config-city-fleet-colliders.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            collider_environment = next(
+                environment for environment in collider_scene["environments"]
+                if environment["name"] == "city-world-colliders"
+            )
+            self.assertEqual(collider_environment["render"]["mode"], "wireframe")
+            self.assertEqual(collider_environment["render"]["color"], "#22c55e")
+            self.assertEqual(
+                (local_models / "city-world-colliders.glb").read_bytes(),
+                b"collider",
+            )
             viewer = json.loads(
                 (config / "viewer-config-fleets.json").read_text(
                     encoding="utf-8"
@@ -343,6 +415,15 @@ class DroneOneToolTest(unittest.TestCase):
                 [0, 1, 2, 3, 4, 5],
             )
             self.assertTrue(viewer["ui"]["enableAttachedCameras"])
+            collider_viewer = json.loads(
+                (config / "viewer-config-fleets-colliders.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                collider_viewer["three"]["sceneConfigPath"],
+                "./drone_config-city-fleet-colliders.json",
+            )
 
     def test_ps4_mode_replaces_automatic_mission_in_single_drone_launcher(self):
         with tempfile.TemporaryDirectory() as directory:
