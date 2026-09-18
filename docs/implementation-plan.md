@@ -4,6 +4,15 @@ The first executable path is deliberately car-first. It proves City World
 composition, multi-vehicle namespaces, and common Hakoniwa time before the
 Drone Fleet is introduced.
 
+## Current Drone checkpoint
+
+Before S3 mirror integration, one `hakoniwa-drone-core` Fleet vehicle now runs
+in the Hokkaido PLATEAU City World and completes takeoff, an actual-pose-relative
+2.5 m move, and physical landing. This establishes the Drone City Receipt,
+MuJoCo, Fleet RPC, actual Pose, and browser paths independently of the Car
+world. The next increment connects that actual Pose to a Drone mirror in the
+existing Car world.
+
 ## Dependencies between stages
 
 ```text

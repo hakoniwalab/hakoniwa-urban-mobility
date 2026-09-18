@@ -14,6 +14,53 @@ browser visualization and safety-aware interaction.
 > is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
 > contact handling remain under development.
 
+## One-Drone Hokkaido checkpoint
+
+The first Drone milestone runs one `hakoniwa-drone-core` Fleet vehicle in the
+same compact Hokkaido/Sapporo City World used by the Car scenario. It resolves
+a level launch area from the City Receipt and executes `SetReady -> TakeOff ->
+GetState -> GoTo -> Land` through `FleetRpcController`. The GoTo target is 2.5 m
+from the actual post-takeoff pose, so the mission does not duplicate the
+Drone/MuJoCo coordinate conversion.
+
+```bash
+python3 tools/drone_one.py configure
+python3 tools/drone_one.py doctor
+python3 tools/drone_one.py start
+python3 tools/drone_one.py status
+```
+
+To open Drone Core's native MuJoCo viewer during the mission, start with:
+
+```bash
+python3 tools/drone_one.py start --mujoco-viewer
+```
+
+Press `c` to switch follow/free camera, `v` to reset the camera orientation,
+and `1` to follow the single Drone. The window closes when the checkpoint
+mission finishes and the Launcher terminates.
+
+The Drone starts at local altitude 7 m with its motors unpowered. The mission
+waits until velocity and height are stable on the PLATEAU DEM, then runs
+`SetReady`, `TakeOff`, `GoTo`, and `Land`. The standalone ground plane from the
+Drone template is removed during City composition; the DEM is the only ground.
+The checkpoint uses a deliberately slow 2.5 m translation and observation
+holds between phases so its motion remains visible in the native viewer.
+
+`start` launches the PLATEAU browser view and the mission together. The
+mission result is written to the Business Pack Recipe workspace as
+`validation/urban-drone-mission.json`; a successful run contains all four
+command phases and the actual takeoff, target, and landing poses.
+
+Drone Core v4's public service binary opens MuJoCo models through its XML path,
+so this adapter uses the generated City XML at runtime while retaining MJB
+compile/reload validation as configuration evidence. Its Land RPC also assumes
+that the landing datum is local Z=0. On an elevated PLATEAU surface the vehicle
+reports `Landed` but the RPC response times out; the checkpoint records success
+only after a follow-up `GetState` reports `Landed` below the flight altitude.
+This compatibility rule belongs at the Drone adapter boundary and must not leak
+into the later mirror contract.
+
 ## Why this repository exists
 
 Urban scenarios cross component boundaries:

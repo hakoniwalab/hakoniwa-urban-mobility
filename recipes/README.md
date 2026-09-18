@@ -3,6 +3,48 @@
 This directory contains the configuration and composition contract for the
 PLATEAU Urban Car Fleet checkpoint.
 
+## One Drone in the Hokkaido City World
+
+`tools/drone_one.py` materializes the first Drone-side checkpoint from
+`recipes/experiments/drone-one-hokkaido.yaml`. It reuses the Business Pack
+single-host Fleet workspace and the City/MuJoCo composer from
+`hakoniwa-drone-show`, but replaces the Show runner with the Urban-owned direct
+Fleet RPC mission in `apps/drone/city_fleet_mission.py`.
+
+```bash
+python3 tools/drone_one.py configure
+python3 tools/drone_one.py doctor
+python3 tools/drone_one.py start
+python3 tools/drone_one.py status
+```
+
+Add `--mujoco-viewer` to `start` to display Drone Core's native MuJoCo
+window while the checkpoint runs:
+
+```bash
+python3 tools/drone_one.py start --mujoco-viewer
+```
+
+Use `c` for follow/free camera, `v` to reset the camera orientation, and `1`
+to follow the single Drone. The native window exits with the mission Launcher.
+
+The generated Fleet position starts Drone-1 at local altitude 7 m. Before
+`SetReady`, the mission monitors the raw position and velocity PDUs and waits
+for the unpowered vehicle to settle on the PLATEAU DEM. The City composer
+removes the Drone template's flat ground plane, so no fallback floor is used.
+The 2.5 m move runs at 0.25 m/s, with short holds after settle, takeoff, move,
+and landing so each phase can be inspected in the native viewer.
+
+The checked-in mission settings are in
+`config/drone/city-one-mission.json`. `move_offset_m` is interpreted from the
+actual post-takeoff pose and is limited to the launch area's verified 3 m
+safety margin. The current `[2.5, 0.0]` mission takes off 2 m above the resolved
+surface, moves 2.5 m on the first RPC horizontal axis, and lands.
+
+This Recipe and the Virtual Drone Show share the Business Pack
+`work/recipes/drone-fleet-single-host` workspace. Stop any active owner before
+reconfiguring it.
+
 ## Prerequisites
 
 - The Business Pack Foundation runtime is installed under

@@ -1,0 +1,18 @@
+{
+  "drone": "Drone-1",
+  "initial_altitude_m": 7.0,
+  "settle_timeout_sec": 15.0,
+  "settle_stable_sec": 0.75,
+  "settle_maximum_speed_m_s": 0.08,
+  "settle_maximum_height_span_m": 0.03,
+  "settle_hold_sec": 2.0,
+  "takeoff_hold_sec": 2.0,
+  "goto_hold_sec": 2.0,
+  "land_hold_sec": 3.0,
+  "move_offset_m": [2.5, 0.0],
+  "yaw_deg": 0.0,
+  "speed_m_s": 0.25,
+  "tolerance_m": 0.25,
+  "timeout_sec": 120.0,
+  "land_timeout_sec": 20.0
+}
