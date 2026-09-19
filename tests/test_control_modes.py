@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -55,6 +56,28 @@ class FakeTransport:
 
 
 class ControlModeTest(unittest.TestCase):
+    def test_foundation_paths_follow_business_pack_workdir_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selected_workdir = Path(directory) / "alternate-work"
+            with patch.dict(
+                os.environ,
+                {"HAKONIWA_WORK_DIR": str(selected_workdir)},
+            ):
+                self.assertEqual(
+                    multi_car.foundation_install(),
+                    selected_workdir.resolve() / "foundation/install",
+                )
+                self.assertEqual(
+                    multi_car.paths()["core_config"],
+                    selected_workdir.resolve()
+                    / "foundation/config/cpp_core_config.json",
+                )
+                self.assertEqual(
+                    multi_car.paths()["web_bridge"],
+                    selected_workdir.resolve()
+                    / "foundation/install/bin/hakoniwa-pdu-web-bridge",
+                )
+
     def test_urban_car_one_recipe_selects_one_browser_visible_golf_cart(self):
         resolved = multi_car.resolve_config(
             ROOT / "recipes/experiments/urban-car-one.yaml"

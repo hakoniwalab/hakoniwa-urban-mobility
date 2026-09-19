@@ -115,12 +115,12 @@ Urban scenario
 
 このStepでは生成物の場所だけを正し、Car/Droneの構成内容は変更しない。
 
-- [ ] `multi_car.py`の固定`work/foundation/install`参照を共通resolverへ置き換える
-- [ ] `drone_one.py`と`drone_car_rc.py`も同じresolverを使用する
-- [ ] Foundation Python、install prefix、config、runtimeを個別に文字列連結しない
-- [ ] 標準workdirで単体テストと1 Car/1 Drone回帰を実行する
-- [ ] 一時的な別`HAKONIWA_WORK_DIR`でplan/doctor/configureの参照先を確認する
-- [ ] 標準workdirと変更workdirの生成物が混ざらないことを確認する
+- [x] `multi_car.py`の固定`work/foundation/install`参照を共通resolverへ置き換える
+- [x] `drone_one.py`と`drone_car_rc.py`も同じresolverを使用する
+- [x] Foundation Python、install prefix、config、runtimeを個別に文字列連結しない
+- [x] 標準workdirで単体テスト、doctor、1 Car/1 Drone回帰を実行する
+- [x] 一時的な別`HAKONIWA_WORK_DIR`でCar/Droneの解決先を単体テストする
+- [x] 標準workdirと変更workdirのFoundation参照が混ざらないことを確認する
 
 完了条件:
 

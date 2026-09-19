@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -107,6 +108,21 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_drone_workspace_follows_business_pack_workdir_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selected_workdir = Path(directory) / "alternate-work"
+            with mock.patch.dict(
+                os.environ,
+                {"HAKONIWA_WORK_DIR": str(selected_workdir)},
+            ):
+                paths = drone_one._paths()
+
+            self.assertEqual(paths.work_root, selected_workdir.resolve())
+            self.assertEqual(
+                paths.install_prefix,
+                selected_workdir.resolve() / "foundation/install",
+            )
+
     def test_urban_recipe_resolves_all_paths_relative_to_recipe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

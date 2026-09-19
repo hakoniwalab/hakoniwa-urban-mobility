@@ -24,11 +24,13 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
+BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 sys.path.insert(0, str(ROOT / "apps/car"))
+sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # noqa: E402
+from workdir import foundation_install as resolve_foundation_install  # noqa: E402
 
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
 MAP_VIEWER = WORKSPACE / "hakoniwa-map-viewer"
@@ -106,7 +108,8 @@ def sha256(path: Path) -> str:
 
 
 def foundation_install() -> Path:
-    return BUSINESS_PACK / "work/foundation/install"
+    """Resolve the active Foundation prefix through the Business Pack contract."""
+    return resolve_foundation_install(BUSINESS_PACK)
 
 
 def foundation_python() -> Path:
