@@ -14,6 +14,10 @@ browser visualization and safety-aware interaction.
 > is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
 > contact handling remain under development.
 
+The step-by-step migration to the managed Business Pack Recipe/Foundation
+contract is tracked in
+[`docs/foundation-task.md`](docs/foundation-task.md).
+
 ## Recipe-selected one-Drone checkpoint
 
 The first Drone milestone runs one `hakoniwa-drone-core` Fleet vehicle in a

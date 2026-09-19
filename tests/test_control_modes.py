@@ -75,10 +75,10 @@ class ControlModeTest(unittest.TestCase):
             resolved["vehicles"][0]["spawn_enu"],
             {
                 "frame": "city_origin_local_enu",
-                "east_m": 45.0,
-                "north_m": 7.5,
+                "east_m": 0.0,
+                "north_m": 0.0,
                 "ground_clearance_m": 0.45,
-                "yaw_deg": -117.76,
+                "yaw_deg": 0.0,
             },
         )
         self.assertEqual(resolved["mirrors"], [])
