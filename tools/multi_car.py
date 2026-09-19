@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import struct
 import subprocess
 import sys
 from urllib.parse import urlencode
@@ -185,15 +186,22 @@ def expand_config_vehicle_inputs(
         control_mode = str(
             generated.get("control_mode", "external_python")
         ).strip()
-        up_m = float(generated["up_m"])
+        has_absolute_height = "up_m" in generated
+        has_ground_clearance = "ground_clearance_m" in generated
+        if has_absolute_height == has_ground_clearance:
+            raise RecipeError(
+                "generated vehicle requires exactly one of up_m or ground_clearance_m"
+            )
+        height_key = "up_m" if has_absolute_height else "ground_clearance_m"
+        height_value = float(generated[height_key])
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"invalid generated vehicle route: {error}") from error
     if not fleet:
         raise RecipeError("generated vehicle route fleet must not be empty")
     if not type_name:
         raise RecipeError("generated vehicle type must not be empty")
-    if not math.isfinite(up_m):
-        raise RecipeError("generated vehicle up_m must be finite")
+    if not math.isfinite(height_value):
+        raise RecipeError(f"generated vehicle {height_key} must be finite")
     max_offset = max(-vehicle.offset_m for vehicle in fleet)
     if max_offset >= geometry.length / 2.0:
         raise RecipeError(
@@ -211,7 +219,7 @@ def expand_config_vehicle_inputs(
                 "frame": "city_origin_local_enu",
                 "east_m": east_m,
                 "north_m": north_m,
-                "up_m": up_m,
+                height_key: height_value,
                 "yaw_deg": yaw_deg,
             },
         })
@@ -331,7 +339,14 @@ def resolve_config(config_path: Path) -> dict:
             spawn = vehicle_input["spawn_pose_enu"]
             east = float(spawn["east_m"])
             north = float(spawn["north_m"])
-            up = float(spawn["up_m"])
+            has_absolute_height = "up_m" in spawn
+            has_ground_clearance = "ground_clearance_m" in spawn
+            if has_absolute_height == has_ground_clearance:
+                raise RecipeError(
+                    "spawn pose requires exactly one of up_m or ground_clearance_m"
+                )
+            height_key = "up_m" if has_absolute_height else "ground_clearance_m"
+            height_value = float(spawn[height_key])
             yaw_deg = float(spawn["yaw_deg"])
         except (KeyError, TypeError, ValueError) as error:
             raise RecipeError(f"invalid vehicle entry at index {index - 1}") from error
@@ -339,7 +354,9 @@ def resolve_config(config_path: Path) -> dict:
             raise RecipeError(f"vehicle names must be non-empty and unique: {name!r}")
         if type_name not in vehicle_types:
             raise RecipeError(f"vehicle {name} references unknown type: {type_name!r}")
-        if any(not math.isfinite(value) for value in (east, north, up, yaw_deg)):
+        if any(not math.isfinite(value) for value in (
+            east, north, height_value, yaw_deg
+        )):
             raise RecipeError(f"spawn values must be finite for vehicle {name}")
         if control_mode not in CONTROL_MODES:
             raise RecipeError(
@@ -357,13 +374,18 @@ def resolve_config(config_path: Path) -> dict:
                 "frame": "city_origin_local_enu",
                 "east_m": east,
                 "north_m": north,
-                "up_m": up,
+                height_key: height_value,
                 "yaw_deg": yaw_deg,
+            },
+            "spawn_height": {
+                "mode": "absolute" if has_absolute_height else "terrain_relative",
+                "value_m": height_value,
             },
             # City World MJCF is X=North, Y=-East, Z=Up. ENU yaw is positive
             # counter-clockwise from East; MuJoCo yaw is measured from +X.
             "spawn_mjcf": (
-                north, -east, up, 0.0, 0.0, math.radians(yaw_deg - 90.0)
+                north, -east, height_value, 0.0, 0.0,
+                math.radians(yaw_deg - 90.0)
             ),
         })
 
@@ -520,6 +542,113 @@ def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
     if glb_frame != "X=East,Y=Up,Z=-North":
         raise RecipeError(f"unsupported City World GLB coordinate system: {glb_frame}")
     return required(mjcf, "City World MJCF"), required(glb, "City World GLB"), receipt
+
+
+def terrain_height_mjcf(receipt: dict, north_m: float, minus_east_m: float) -> float:
+    """Evaluate the exact MuJoCo hfield triangle surface at one local XY point."""
+    try:
+        coordinate_frame = receipt["coordinate_frame"]
+        half_extent = coordinate_frame["half_extent_m"]
+        north_south = float(half_extent["north_south"])
+        east_west = float(half_extent["east_west"])
+        altitude_offset = float(coordinate_frame["origin"]["altitude_offset_m"])
+        terrain_xml = Path(receipt["components"]["terrain_xml"])
+        terrain_receipt = load_json(
+            terrain_xml.with_name("terrain-receipt.json"), "terrain receipt"
+        )
+        hfield_path = Path(terrain_receipt["hfield"]["path"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RecipeError("City World receipt has no usable terrain hfield") from error
+
+    data = required(hfield_path, "terrain hfield").read_bytes()
+    if len(data) < 8:
+        raise RecipeError(f"terrain hfield is truncated: {hfield_path}")
+    nrow, ncol = struct.unpack("<ii", data[:8])
+    expected = 8 + 4 * nrow * ncol
+    if nrow < 2 or ncol < 2 or len(data) != expected:
+        raise RecipeError(f"terrain hfield has an invalid shape: {hfield_path}")
+    samples = struct.unpack(f"<{nrow * ncol}f", data[8:])
+
+    column = (north_m + north_south) * (ncol - 1) / (2.0 * north_south)
+    row = (minus_east_m + east_west) * (nrow - 1) / (2.0 * east_west)
+    column = min(max(column, 0.0), ncol - 1.0)
+    row = min(max(row, 0.0), nrow - 1.0)
+    col_index = min(int(column), ncol - 2)
+    row_index = min(int(row), nrow - 2)
+    dc = column - col_index
+    dr = row - row_index
+    at = lambda r, c: samples[r * ncol + c]
+    bottom_left = at(row_index, col_index)
+    top_right = at(row_index + 1, col_index + 1)
+    if dr >= dc:
+        top_left = at(row_index + 1, col_index)
+        absolute_height = (
+            bottom_left
+            + dr * (top_left - bottom_left)
+            + dc * (top_right - top_left)
+        )
+    else:
+        bottom_right = at(row_index, col_index + 1)
+        absolute_height = (
+            bottom_left
+            + dc * (bottom_right - bottom_left)
+            + dr * (top_right - bottom_right)
+        )
+    return absolute_height - altitude_offset
+
+
+def initial_body_poses(resolved: dict, receipt: dict | None = None) -> list[dict]:
+    if receipt is None:
+        _, _, receipt = city_inputs(resolved["city_receipt"])
+    poses = []
+    for vehicle in resolved["vehicles"]:
+        north, minus_east, _, roll, pitch, yaw = vehicle["spawn_mjcf"]
+        height = vehicle["spawn_height"]
+        if height["mode"] == "terrain_relative":
+            surface = terrain_height_mjcf(receipt, north, minus_east)
+            up = surface + height["value_m"]
+        else:
+            surface = None
+            up = height["value_m"]
+        poses.append({
+            "name": vehicle["name"],
+            "mjcf_freejoint": (
+                vehicle["prefix"]
+                + vehicle["type_definition"]["interface"]["base_freejoint"]
+            ),
+            "position_m": [north, minus_east, up],
+            "orientation_rpy_rad": [roll, pitch, yaw],
+            "terrain_height_m": surface,
+        })
+    return poses
+
+
+def refresh_runtime_initial_body_poses(resolved: dict) -> list[dict]:
+    runtime_path = required(
+        resolved["work"] / "urban-car-runtime.json",
+        "generated Runtime configuration; run configure first",
+    )
+    runtime = load_json(runtime_path, "Runtime configuration")
+    poses = initial_body_poses(resolved)
+    runtime["initial_body_poses"] = [
+        {
+            "mjcf_freejoint": pose["mjcf_freejoint"],
+            "position_m": pose["position_m"],
+            "orientation_rpy_rad": pose["orientation_rpy_rad"],
+        }
+        for pose in poses
+    ]
+    write_json(runtime_path, runtime)
+    for pose in poses:
+        terrain = pose["terrain_height_m"]
+        detail = "absolute"
+        if terrain is not None:
+            detail = f"terrain={terrain:.3f}m"
+        print(
+            f"Initial pose  : {pose['name']} z={pose['position_m'][2]:.3f}m "
+            f"({detail})"
+        )
+    return poses
 
 
 def city_collider_glb(city_receipt: Path) -> Path:
@@ -681,11 +810,10 @@ def materialize_vehicle_fleet_model(
             )
         asset_names, asset_prefix = type_assets[vehicle["type"]]
         prefix = vehicle["prefix"]
-        spawn = vehicle["spawn_mjcf"]
         body = copy.deepcopy(template_body)
         _namespace_mjcf(body, names, prefix, asset_names, asset_prefix)
-        body.set("pos", " ".join(str(value) for value in spawn[:3]))
-        body.set("euler", " ".join(str(value) for value in spawn[3:]))
+        # Vehicle spawn poses are runtime state, not model structure. Keeping
+        # them out of MJCF lets the expensive City World MJB remain reusable.
         worldbody_output.append(body)
 
         for template in actuator_templates:
@@ -1643,6 +1771,10 @@ def configure(resolved: dict) -> int:
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
     runtime_files = materialize_runtime(mjb, work, vehicles, mirrors)
+    configured_initial_poses = refresh_runtime_initial_body_poses(resolved)
+    initial_pose_by_name = {
+        pose["name"]: pose for pose in configured_initial_poses
+    }
     browser_files = None
     if resolved["visualization"]["enabled"]:
         browser_files = materialize_browser_visualization(
@@ -1714,8 +1846,13 @@ def configure(resolved: dict) -> int:
                 "spawn_pose_city_enu": vehicle["spawn_enu"],
                 "spawn_pose_mjcf": {
                     "frame": "X=North,Y=-East,Z=Up",
-                    "position_m": list(vehicle["spawn_mjcf"][:3]),
-                    "yaw_rad": vehicle["spawn_mjcf"][5],
+                    "position_m": initial_pose_by_name[vehicle["name"]]["position_m"],
+                    "yaw_rad": initial_pose_by_name[vehicle["name"]][
+                        "orientation_rpy_rad"
+                    ][2],
+                    "terrain_height_m": initial_pose_by_name[vehicle["name"]][
+                        "terrain_height_m"
+                    ],
                 },
             }
             for vehicle in vehicles
@@ -1776,9 +1913,11 @@ def session_path(work: Path) -> Path:
     return work / "runtime/launcher-session.json"
 
 
-def launch(operation: str, work: Path) -> int:
+def launch(operation: str, resolved: dict) -> int:
+    work = resolved["work"]
     python = foundation_python()
     if operation == "start":
+        refresh_runtime_initial_body_poses(resolved)
         command([
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher",
             str(launcher_path(work)), "--background", str(session_path(work)),
@@ -1872,7 +2011,7 @@ def main() -> int:
         return view(resolved["work"])
     if args.command == "open-viewer":
         return open_viewer(resolved, show_colliders=args.colliders)
-    return launch(args.command, resolved["work"])
+    return launch(args.command, resolved)
 
 
 if __name__ == "__main__":

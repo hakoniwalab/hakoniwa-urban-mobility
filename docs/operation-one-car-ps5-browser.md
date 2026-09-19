@@ -1,6 +1,6 @@
 # Golf Cart 1台をPS5コントローラで操作する
 
-`urban-car-one.yaml`を使い、北海道City World上のGolf Cart 1台を
+`urban-car-one.yaml`を使い、レシピで選択したCity World上のGolf Cart 1台を
 DualSenseで操作し、Three.jsブラウザにCity GLBと緑色のColliderを表示する手順です。
 ネイティブMuJoCo Viewerは起動しません。
 
@@ -54,6 +54,14 @@ python3 tools/multi_car.py configure \
 生成先は`work/urban-car-one/`です。この処理では、City WorldとGolf Cartを
 合成したMJCF/MJB、Runtime manifest、Launcher、WebBridge設定、通常表示と
 Collider表示用のThree.js設定を生成します。
+
+車両の初期高さにはレシピの`ground_clearance_m`を使用します。`start`のたびに
+指定した初期X・Yの物理hfieldを評価し、その地表面から指定量だけ上へ車両を配置します。
+初期姿勢はMJBロード後に適用されるため、この値だけを調整する場合は
+`configure`をやり直さず、`stop`と`start`だけで反映できます。
+開始位置と向きも`urban-car-one.yaml`の`spawn_pose_enu`で指定します。
+`east_m`、`north_m`、`yaw_deg`、`ground_clearance_m`はいずれも、次回の
+`start`時に再計算・適用されるため、変更時の`configure`は不要です。
 
 ## 4. PS5コントローラを確認する
 

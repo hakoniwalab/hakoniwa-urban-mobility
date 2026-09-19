@@ -3,15 +3,12 @@ title: One PS5-controlled Golf Cart in a recipe-selected City World
 recipe_version: 0.1
 status: experimental
 
-# The route supplies the initial pose. Driving is owned by the PS5 RC sender.
-scenarios:
-  car: recipes/scenarios/golf-cart-demo-loop.yaml
-
 inputs:
   # Replace only this receipt to select another City World. The composer reads
   # the MJCF, GLB, origin, extent, and coordinate systems from the receipt.
   business_pack_city_receipt:
-    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+    #path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
 
   ackermann_vehicles:
     types:
@@ -20,11 +17,16 @@ inputs:
         contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
         view_model: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/view-model.json
     vehicles:
-      generated_from_route:
-        scenario: recipes/scenarios/golf-cart-demo-loop.yaml
+      - name: Car-1
         type: golf_cart
         control_mode: ps5
-        up_m: 4.6
+        spawn_pose_enu:
+          east_m: 0.0
+          north_m: 0.0
+          yaw_deg: 0.0
+          # Base-frame height above terrain at startup. This is applied after
+          # loading the MJB, so changing the pose does not recompile City World.
+          ground_clearance_m: 0.45
 
   ackermann_runtime:
     realtime_sync_cycle_msec: 2

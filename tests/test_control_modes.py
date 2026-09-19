@@ -4,6 +4,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import struct
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -65,7 +66,21 @@ class ControlModeTest(unittest.TestCase):
              for item in resolved["vehicles"]],
             [("Car-1", "golf_cart", "ps5")],
         )
-        self.assertEqual(resolved["vehicle_generation"]["vehicle_count"], 1)
+        self.assertIsNone(resolved["vehicle_generation"])
+        self.assertEqual(
+            resolved["vehicles"][0]["spawn_height"],
+            {"mode": "terrain_relative", "value_m": 0.45},
+        )
+        self.assertEqual(
+            resolved["vehicles"][0]["spawn_enu"],
+            {
+                "frame": "city_origin_local_enu",
+                "east_m": 45.0,
+                "north_m": 7.5,
+                "ground_clearance_m": 0.45,
+                "yaw_deg": -117.76,
+            },
+        )
         self.assertEqual(resolved["mirrors"], [])
         self.assertTrue(resolved["visualization"]["enabled"])
         self.assertEqual(
@@ -201,6 +216,47 @@ class ControlModeTest(unittest.TestCase):
                 self.assertIn(f'name="{prefix}base_freejoint"', text)
                 self.assertIn(f'name="{prefix}wheel_motor"', text)
                 self.assertIn(f'joint="{prefix}wheel_joint"', text)
+            root = multi_car.ET.parse(fleet).getroot()
+            self.assertIsNone(
+                root.find("./worldbody/body[@name='car_1_vehicle']").get("pos")
+            )
+
+    def test_runtime_initial_pose_uses_mujoco_terrain_triangle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            terrain = root / "terrain"
+            terrain.mkdir()
+            samples = [10.0, 10.0, 10.0, 14.0]
+            (terrain / "terrain.hf").write_bytes(
+                struct.pack("<ii4f", 2, 2, *samples)
+            )
+            (terrain / "terrain-receipt.json").write_text(
+                json.dumps({"hfield": {"path": str(terrain / "terrain.hf")}}),
+                encoding="utf-8",
+            )
+            (terrain / "terrain.xml").write_text("<mujoco/>", encoding="utf-8")
+            receipt = {
+                "coordinate_frame": {
+                    "origin": {"altitude_offset_m": 10.0},
+                    "half_extent_m": {"north_south": 1.0, "east_west": 1.0},
+                },
+                "components": {"terrain_xml": str(terrain / "terrain.xml")},
+            }
+            resolved = {
+                "vehicles": [{
+                    "name": "Car-1",
+                    "prefix": "car_1_",
+                    "type_definition": {"interface": {"base_freejoint": "base_freejoint"}},
+                    "spawn_mjcf": (0.0, 0.0, 0.45, 0.0, 0.0, 0.25),
+                    "spawn_height": {"mode": "terrain_relative", "value_m": 0.45},
+                }],
+            }
+            poses = multi_car.initial_body_poses(resolved, receipt)
+            self.assertEqual(len(poses), 1)
+            # MuJoCo's BL--TR diagonal gives 2.0 m at the cell center.
+            self.assertAlmostEqual(poses[0]["terrain_height_m"], 2.0)
+            self.assertAlmostEqual(poses[0]["position_m"][2], 2.45)
+            self.assertEqual(poses[0]["mjcf_freejoint"], "car_1_base_freejoint")
 
     def test_drone_mirror_uses_standard_quad_geometry(self):
         with tempfile.TemporaryDirectory() as directory:
