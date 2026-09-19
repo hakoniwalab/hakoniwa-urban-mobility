@@ -17,6 +17,8 @@ browser visualization and safety-aware interaction.
 The step-by-step migration to the managed Business Pack Recipe/Foundation
 contract is tracked in
 [`docs/foundation-task.md`](docs/foundation-task.md).
+The target ownership and lifecycle contract is defined in
+[`docs/foundation-contract.md`](docs/foundation-contract.md).
 
 ## Recipe-selected one-Drone checkpoint
 

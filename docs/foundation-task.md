@@ -83,13 +83,13 @@ hakoniwa-urban-mobility: b396d93
 
 実装前に、入力、生成物、共有物、runtime ownerを表にして固定する。
 
-- [ ] Urbanの最終Recipe IDを決める
-- [ ] 単体回帰用Recipeと統合デモRecipeの関係を決める
-- [ ] 追跡対象の正本と`work/`生成物を分類する
-- [ ] Foundation requirementsとRecipe固有configureを分離する
-- [ ] Launcher owner、Conductor owner、Car plant owner、Drone physics ownerを明記する
-- [ ] HTTP、WebSocket、Core、PDU、Viewerのport・接続所有者を明記する
-- [ ] `plan / doctor / configure / start / status / stop / open-viewer`の責務を定義する
+- [x] Urbanの最終Recipe IDを決める（`urban-mobility-shizuoka-rc`）
+- [x] 単体回帰用Recipeと統合デモRecipeの関係を決める
+- [x] 追跡対象の正本と`work/`生成物を分類する
+- [x] Foundation requirementsとRecipe固有configureを分離する
+- [x] Launcher owner、Conductor owner、Car plant owner、Drone physics ownerを明記する
+- [x] HTTP、WebSocket、Core、PDU、Viewerのport・接続所有者を明記する
+- [x] `plan / doctor / configure / start / status / stop / open-viewer`の責務を定義する
 
 暫定的なRecipe構成案:
 
