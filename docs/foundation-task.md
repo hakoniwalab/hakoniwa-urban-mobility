@@ -267,22 +267,76 @@ work/recipes/urban-mobility-rc/
 
 ## 12. Step 8: 1 Drone＋複数Carの統合Recipeを作る
 
-- [ ] 静岡City Receiptを1個だけ選択する
-- [ ] EAMS Hexa Drone 1台をPS4 RC構成で生成する
-- [ ] Golf Cart台数をRecipeから指定できるようにする
-- [ ] Carの走行内容をRecipe本体ではなくscenario fileから読み込む
-- [ ] 静岡の道路上に往路・復路と安全な折返し点を定義する
-- [ ] 複数Carの開始位置と開始時刻をずらし、初期重なりを防ぐ
+### 8.1 静岡の道路ルートを確定する
+
+- [x] 静岡City Receiptを1個だけ選択する
+- [x] PLATEAU由来の道路面と同じ座標源から、広い道路上の閉ループ基準軌道を定義する
+- [x] 基準軌道とCar初期位置をThree.jsのデバッグoverlayで事前表示する
+- [x] 全車両の初期footprintと走行目標が道路面内に収まることを検証する
+- [x] 建物Collider、道路外形、急旋回、狭窄部との干渉を起動前に検出する
+
+進捗（2026-09-19）:
+
+- 静岡専用候補`recipes/scenarios/shizuoka-five-car-formation-loop.yaml`を追加した
+- PLATEAUの`roadway / lane / intersection`を正本として、5台それぞれの全周swept footprintと初期footprintを検証する`tools/route_surface_preview.py`を追加した
+- 中央交差点内に長さ95.47 m、最小旋回半径3.35 mの候補ループを生成し、全5台が道路面内に収まることを自動確認した
+- 軌道、5台分の走行線、初期footprint、City World Colliderを重ねるThree.js用GLBを生成した
+- Three.jsで軌道とColliderの非干渉を目視確認し、`approval_status: approved`としてStep 8.1を完了した
+
+### 8.2 5台の`1 + 2 + 2`編隊制御を作る
+
+- [x] Golf Cart台数を5台としてscenario fileに宣言する
+- [x] Carの走行内容をRecipe本体ではなく静岡専用scenario fileから読み込む
+- [x] 先頭の`Car-1`と、その後方2列に左右2台ずつを配置する
+- [x] 各車両へ基準軌道に対する前後方向と横方向のoffsetを設定できるようにする
+- [x] カーブでは基準軌道の接線と法線から各車両の目標位置を計算する
+- [x] 既存10台デモと同じ`external_python`方式で、1個のscenario executorが5台を制御する
+- [x] Car用PS5 senderを統合デモのLauncherへ追加しない
+- [x] Carだけの構成で初期重なり、編隊走行、旋回、連続周回を確認する
+
+目標配置（進行方向は左）:
+
+```text
+          Car-2       Car-4
+Car-1     Car-3       Car-5
+<-- 進行方向
+```
+
+初期値は前後間隔4.5 m、左右offsetは`+1.8 m / -1.8 m`とし、道路幅と車体footprintの検証結果に応じてscenario側で調整する。
+
+進捗（2026-09-19）:
+
+- schema v3へ`lateral_offset_m`を追加し、schema v2は横offset 0 mとして互換維持した
+- `urban-car-five-formation.yaml`から静岡専用scenarioを読み、5台の初期ENU poseを生成した
+- 1個のLauncherへCar plant、1個のscenario executor、Bridge、HTTP serverを生成し、PS5 senderが含まれないことを確認した
+- 共有メモリ上で5台すべてのpose更新と編隊目標への追従を確認した
+- 自動テスト64件に成功し、Three.jsで5台の編隊表示と走行を目視確認してStep 8.2を完了した
+- Map ViewerがHTML既定のWebSocket URIをconfigより優先する問題を修正し、5台用Bridge（8766）へ自動接続することを確認した
+
+### 8.3 Droneの屋上発進を作る
+
+- [ ] 静岡モデル内から、平らで離陸余裕のある建物屋上を1か所選択する
+- [ ] 屋上中央のENU位置、屋上面高さ、yaw、脚のclearanceをscenarioに記録する
+- [ ] EAMS Hexa Drone 1台をPS4 RC構成で屋上へ配置する
+- [ ] Drone単体で屋上静止、離陸、道路上空への移動を確認する
+- [ ] プロペラ、脚、機体が屋上や周辺建物へ初期干渉しないことを確認する
+
+### 8.4 LauncherとViewerを統合する
+
 - [ ] Drone assetだけがConductorを所有し、Car asset側では起動しない
-- [ ] 1個のLauncherへDrone、Car、controller、Bridge、Viewerを統合する
-- [ ] 1個のThree.js画面で全車両とDroneを表示する
-- [ ] Drone監視カメラ、左下地図、任意のCollider表示を維持する
+- [ ] 1個のLauncherへDrone、Car plant、scenario executor、PS4 controller、Bridge、HTTP serverを統合する
+- [ ] 1個のThree.js画面でDrone 1台とCar 5台を表示する
+- [ ] メイン3D画面、右上のDrone監視カメラ、左下地図の構成にする
+- [ ] 統合デモではCar搭載カメラを生成せず、Drone搭載カメラだけを表示する
+- [ ] Colliderと基準軌道のoverlayをそれぞれオプションでON/OFFできるようにする
+- [ ] 単体`urban-car-one`の前方カメラは変更せず、既存の単体回帰を維持する
 
 完了条件:
 
-- DroneをRC操作しながら複数Carが静岡の道路を継続して往復する
+- Droneを屋上からPS4 RC操作しながら、Car 5台が静岡の道路面に沿って`1 + 2 + 2`編隊で継続周回する
 - Car同士のnamespace、command、poseが混線しない
 - exactly one Conductor ownerで共通シミュレーション時刻が進む
+- ブラウザに表示する搭載カメラはDrone監視カメラ1個だけである
 - Viewerを表示しないheadless smokeでも状態更新を検証できる
 
 ## 13. Step 9: 回帰・再現性・性能を確認する
@@ -295,7 +349,7 @@ work/recipes/urban-mobility-rc/
 - [ ] Launcher、Conductor、HTTP、WebSocketの残存processがないことを確認する
 - [ ] MJBを利用し、start時にCity XMLを再コンパイルしないことを確認する
 - [ ] configure時間、start時間、実時間係数を記録する
-- [ ] 1、2、目標台数のCarで性能を比較する
+- [ ] 1、2、5台のCarで性能を比較する
 - [ ] 失敗時のログ位置と診断コマンドを手順書へ記載する
 
 完了条件:

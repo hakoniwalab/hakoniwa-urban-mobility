@@ -106,6 +106,33 @@ vehicles:
         self.assertGreater(speed, 0.0)
         self.assertAlmostEqual(steering, 0.0, places=6)
 
+    def test_shizuoka_schema_three_loads_lateral_formation(self):
+        scenario = scenario_executor.load_scenario(
+            ROOT / "recipes/scenarios/shizuoka-five-car-formation-loop.yaml"
+        )
+        self.assertIsInstance(scenario, scenario_executor.RouteScenario)
+        self.assertEqual(len(scenario.vehicles), 5)
+        self.assertEqual(scenario.vehicles[0].lateral_offset_m, 0.0)
+        self.assertEqual(scenario.vehicles[1].lateral_offset_m, 1.8)
+        self.assertEqual(scenario.vehicles[2].lateral_offset_m, -1.8)
+
+    def test_lateral_formation_target_changes_steering(self):
+        scenario = scenario_executor.load_scenario(
+            ROOT / "recipes/scenarios/shizuoka-five-car-formation-loop.yaml"
+        )
+        geometry = scenario_executor.RouteGeometry(scenario.points)
+        cursor = scenario_executor.RouteCursor(
+            geometry, scenario.control.speed_m_s, loop_count=None
+        )
+        (east_m, north_m), yaw_rad = geometry.formation_sample(
+            0.0, scenario.vehicles[1].offset_m, 0.0
+        )
+        pose = scenario_executor.VehiclePose(east_m, north_m, 0.0, yaw_rad)
+        _speed, steering = scenario_executor.route_command(
+            geometry, cursor, scenario.vehicles[1], pose, scenario.control
+        )
+        self.assertGreater(steering, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

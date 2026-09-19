@@ -148,8 +148,31 @@ class ControlModeTest(unittest.TestCase):
         self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["east_m"], 39.5)
         self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["yaw_deg"], 180.0)
 
+    def test_shizuoka_recipe_generates_five_lateral_formation_vehicles(self):
+        resolved = multi_car.resolve_config(
+            ROOT / "recipes/experiments/urban-car-five-formation.yaml"
+        )
+        self.assertEqual(resolved["recipe_id"], "urban-car-five-formation")
+        self.assertEqual(
+            [vehicle["name"] for vehicle in resolved["vehicles"]],
+            [f"Car-{index}" for index in range(1, 6)],
+        )
+        self.assertTrue(resolved["vehicle_generation"]["auto_start_scenario"])
+        self.assertTrue(all(
+            vehicle["control_mode"] == "external_python"
+            for vehicle in resolved["vehicles"]
+        ))
+        self.assertNotEqual(
+            resolved["vehicles"][1]["spawn_enu"]["north_m"],
+            resolved["vehicles"][2]["spawn_enu"]["north_m"],
+        )
+
     def launcher(
-        self, modes: list[str], *, native_mujoco_viewer: bool = True
+        self,
+        modes: list[str],
+        *,
+        native_mujoco_viewer: bool = True,
+        vehicle_generation: dict | None = None,
     ) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
@@ -158,6 +181,7 @@ class ControlModeTest(unittest.TestCase):
                 "core_config": ROOT / "core.json",
                 "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
                 "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
+                "scenario_executor": ROOT / "apps/car/scenario_executor.py",
             }
             with (
                 patch.object(multi_car, "paths", return_value=source),
@@ -193,6 +217,7 @@ class ControlModeTest(unittest.TestCase):
                         for index, mode in enumerate(modes, start=1)
                     ],
                     native_mujoco_viewer=native_mujoco_viewer,
+                    vehicle_generation=vehicle_generation,
                 )
             return json.loads(path.read_text(encoding="utf-8"))
 
@@ -214,6 +239,24 @@ class ControlModeTest(unittest.TestCase):
         )
         robot_index = launcher["assets"][1]["args"].index("--robot") + 1
         self.assertEqual(launcher["assets"][1]["args"][robot_index], "Car-1")
+
+    def test_auto_started_scenario_uses_one_executor_and_no_ps5_sender(self):
+        scenario = ROOT / "recipes/scenarios/shizuoka-five-car-formation-loop.yaml"
+        launcher = self.launcher(
+            ["external_python"] * 5,
+            vehicle_generation={
+                "scenario": scenario,
+                "auto_start_scenario": True,
+            },
+        )
+        self.assertEqual(
+            [asset["name"] for asset in launcher["assets"]],
+            ["urban-car-fleet-plant", "urban-car-scenario-executor"],
+        )
+        self.assertEqual(
+            launcher["assets"][1]["depends_on"], ["urban-car-fleet-plant"]
+        )
+        self.assertIn(str(scenario), launcher["assets"][1]["args"])
 
     def test_vehicle_instances_are_namespaced(self):
         with tempfile.TemporaryDirectory() as directory:

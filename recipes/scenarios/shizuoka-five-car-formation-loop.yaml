@@ -1,0 +1,68 @@
+schema_version: 3
+name: Shizuoka five-car formation loop
+rate_hz: 50
+start_delay_sec: 1.0
+loop_count: forever
+
+# This scenario is intentionally City-local. The points use ENU metres relative
+# to the Shizuoka City World receipt origin (35.099382, 138.858781).
+city_world:
+  job_id: shizuoka-22203-lat35.099-lon138.859
+  origin_latitude: 35.099382
+  origin_longitude: 138.858781
+
+road_surface:
+  categories: [roadway, lane, intersection]
+  vehicle_length_m: 2.60
+  vehicle_width_m: 1.30
+  safety_margin_m: 0.20
+  minimum_turn_radius_m: 3.00
+
+# The runtime support for lateral_offset_m is implemented in Step 8.2. Step 8.1
+# consumes the same contract to validate and preview the intended formation.
+vehicles:
+  - {name: Car-1, route_offset_m: 0.0, lateral_offset_m: 0.0}
+  - {name: Car-2, route_offset_m: -4.5, lateral_offset_m: 1.8}
+  - {name: Car-3, route_offset_m: -4.5, lateral_offset_m: -1.8}
+  - {name: Car-4, route_offset_m: -9.0, lateral_offset_m: 1.8}
+  - {name: Car-5, route_offset_m: -9.0, lateral_offset_m: -1.8}
+
+control:
+  speed_m_s: 1.0
+  lookahead_m: 2.5
+  position_gain: 0.8
+  wheelbase_m: 1.55
+  max_steering_deg: 32.0
+
+# A low-speed counter-clockwise loop inside the broad central intersection.
+# It is a conservative first candidate: every planned vehicle swept footprint
+# remains inside a PLATEAU roadway/lane/intersection polygon. The route preview
+# was approved in the Three.js route preview on 2026-09-19.
+route:
+  closed: true
+  approval_status: approved
+  points:
+    - {name: loop-01, east_m: 27.000, north_m: -14.000}
+    - {name: loop-02, east_m: 26.284, north_m: -11.929}
+    - {name: loop-03, east_m: 24.187, north_m: -10.000}
+    - {name: loop-04, east_m: 20.849, north_m: -8.343}
+    - {name: loop-05, east_m: 16.500, north_m: -7.072}
+    - {name: loop-06, east_m: 11.435, north_m: -6.273}
+    - {name: loop-07, east_m: 6.000, north_m: -6.000}
+    - {name: loop-08, east_m: 0.565, north_m: -6.273}
+    - {name: loop-09, east_m: -4.500, north_m: -7.072}
+    - {name: loop-10, east_m: -8.849, north_m: -8.343}
+    - {name: loop-11, east_m: -12.187, north_m: -10.000}
+    - {name: loop-12, east_m: -14.284, north_m: -11.929}
+    - {name: loop-13, east_m: -15.000, north_m: -14.000}
+    - {name: loop-14, east_m: -14.284, north_m: -16.071}
+    - {name: loop-15, east_m: -12.187, north_m: -18.000}
+    - {name: loop-16, east_m: -8.849, north_m: -19.657}
+    - {name: loop-17, east_m: -4.500, north_m: -20.928}
+    - {name: loop-18, east_m: 0.565, north_m: -21.727}
+    - {name: loop-19, east_m: 6.000, north_m: -22.000}
+    - {name: loop-20, east_m: 11.435, north_m: -21.727}
+    - {name: loop-21, east_m: 16.500, north_m: -20.928}
+    - {name: loop-22, east_m: 20.849, north_m: -19.657}
+    - {name: loop-23, east_m: 24.187, north_m: -18.000}
+    - {name: loop-24, east_m: 26.284, north_m: -16.071}

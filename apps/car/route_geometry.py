@@ -18,6 +18,7 @@ class RoutePoint:
 class RouteVehicleSpec:
     name: str
     offset_m: float
+    lateral_offset_m: float = 0.0
 
 
 class RouteGeometry:
@@ -66,6 +67,49 @@ class RouteGeometry:
                 )
         raise AssertionError("route heading did not resolve a segment")
 
+    def smooth_heading_rad(self, distance_m: float) -> float:
+        """Interpolate vertex tangents for a continuous formation path."""
+        wrapped = distance_m % self.length
+        for index, length in enumerate(self.segment_lengths):
+            start_s = self.cumulative[index]
+            if wrapped <= start_s + length or index + 1 == len(self.segment_lengths):
+                ratio = (wrapped - start_s) / length
+                before = self.points[(index - 1) % len(self.points)]
+                after = self.points[(index + 1) % len(self.points)]
+                next_after = self.points[(index + 2) % len(self.points)]
+                start_heading = math.atan2(
+                    after.north_m - before.north_m,
+                    after.east_m - before.east_m,
+                )
+                end_heading = math.atan2(
+                    next_after.north_m - self.points[index].north_m,
+                    next_after.east_m - self.points[index].east_m,
+                )
+                delta = math.atan2(
+                    math.sin(end_heading - start_heading),
+                    math.cos(end_heading - start_heading),
+                )
+                return start_heading + ratio * delta
+        raise AssertionError("route smooth heading did not resolve a segment")
+
+    def formation_sample(
+        self,
+        distance_m: float,
+        longitudinal_offset_m: float = 0.0,
+        lateral_offset_m: float = 0.0,
+    ) -> tuple[tuple[float, float], float]:
+        """Sample a longitudinal/lateral formation target and its ENU yaw."""
+        selected = distance_m + longitudinal_offset_m
+        east_m, north_m = self.sample(selected)
+        heading = self.smooth_heading_rad(selected)
+        return (
+            (
+                east_m - math.sin(heading) * lateral_offset_m,
+                north_m + math.cos(heading) * lateral_offset_m,
+            ),
+            heading,
+        )
+
     def project(self, east_m: float, north_m: float) -> float:
         best_distance_sq = math.inf
         best_s = 0.0
@@ -106,11 +150,14 @@ def expand_route_vehicles(value: object) -> tuple[RouteVehicleSpec, ...]:
             name = str(item.get("name", "")).strip()
             try:
                 offset_m = float(item.get("route_offset_m", 0.0))
+                lateral_offset_m = float(item.get("lateral_offset_m", 0.0))
             except (TypeError, ValueError) as error:
                 raise ValueError(
-                    f"vehicles[{index}].route_offset_m must be a number"
+                    f"vehicles[{index}] route offsets must be numbers"
                 ) from error
-            result.append(RouteVehicleSpec(name, offset_m))
+            if not math.isfinite(offset_m) or not math.isfinite(lateral_offset_m):
+                raise ValueError(f"vehicles[{index}] route offsets must be finite")
+            result.append(RouteVehicleSpec(name, offset_m, lateral_offset_m))
         return tuple(result)
     if not isinstance(value, dict) or not isinstance(value.get("generate"), dict):
         raise ValueError("vehicles must be an array or contain generate")

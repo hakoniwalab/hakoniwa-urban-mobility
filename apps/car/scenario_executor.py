@@ -70,6 +70,7 @@ class RouteControl:
 class RouteVehicle:
     name: str
     offset_m: float
+    lateral_offset_m: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -183,7 +184,9 @@ def load_route_scenario(root: dict) -> RouteScenario:
         if offset_m > 0.0:
             raise ScenarioError("route_offset_m must be zero or negative")
         names.add(vehicle_name)
-        vehicles.append(RouteVehicle(vehicle_name, offset_m))
+        vehicles.append(RouteVehicle(
+            vehicle_name, offset_m, item.lateral_offset_m
+        ))
 
     route = root.get("route")
     if not isinstance(route, dict) or route.get("closed") is not True:
@@ -246,10 +249,10 @@ def load_scenario(path: Path) -> Scenario | RouteScenario:
         raise ScenarioError(f"failed to load scenario {path}: {error}") from error
     if not isinstance(root, dict):
         raise ScenarioError("scenario root must be an object")
-    if root.get("schema_version") == 2:
+    if root.get("schema_version") in (2, 3):
         return load_route_scenario(root)
     if root.get("schema_version") != 1:
-        raise ScenarioError("scenario schema_version must be 1 or 2")
+        raise ScenarioError("scenario schema_version must be 1, 2, or 3")
     name = str(root.get("name", "")).strip()
     if not name:
         raise ScenarioError("scenario name must not be empty")
@@ -392,7 +395,10 @@ def route_command(
     ))
     if speed <= 1e-3:
         return 0.0, 0.0
-    target_east, target_north = geometry.sample(target_s + control.lookahead_m)
+    (target_east, target_north), _ = geometry.formation_sample(
+        target_s + control.lookahead_m,
+        lateral_offset_m=vehicle.lateral_offset_m,
+    )
     bearing = math.atan2(target_north - pose.north_m, target_east - pose.east_m)
     heading_error = math.atan2(
         math.sin(bearing - pose.yaw_rad),

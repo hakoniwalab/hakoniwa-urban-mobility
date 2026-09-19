@@ -177,8 +177,10 @@ def expand_config_vehicle_inputs(
             generated["scenario"], "generated vehicle route scenario"
         )
         scenario = load_yaml(scenario_path)
-        if scenario.get("schema_version") != 2:
-            raise RecipeError("generated vehicle route scenario must use schema_version 2")
+        if scenario.get("schema_version") not in (2, 3):
+            raise RecipeError(
+                "generated vehicle route scenario must use schema_version 2 or 3"
+            )
         route = scenario["route"]
         if route.get("closed") is not True:
             raise RecipeError("generated vehicle route must be closed")
@@ -220,8 +222,14 @@ def expand_config_vehicle_inputs(
         )
     result = []
     for vehicle in fleet:
-        east_m, north_m = geometry.sample(vehicle.offset_m)
-        yaw_deg = math.degrees(geometry.heading_rad(vehicle.offset_m))
+        if scenario.get("schema_version") == 2:
+            east_m, north_m = geometry.sample(vehicle.offset_m)
+            yaw_rad = geometry.heading_rad(vehicle.offset_m)
+        else:
+            (east_m, north_m), yaw_rad = geometry.formation_sample(
+                0.0, vehicle.offset_m, vehicle.lateral_offset_m
+            )
+        yaw_deg = math.degrees(yaw_rad)
         result.append({
             "name": vehicle.name,
             "type": type_name,
@@ -239,6 +247,7 @@ def expand_config_vehicle_inputs(
         "route_length_m": geometry.length,
         "vehicle_count": len(result),
         "max_route_offset_m": max_offset,
+        "auto_start_scenario": bool(generated.get("auto_start_scenario", False)),
     }
 
 
@@ -1594,6 +1603,7 @@ def materialize_launcher(
     vehicles: list[dict],
     browser_files: dict[str, Path | str] | None = None,
     native_mujoco_viewer: bool = True,
+    vehicle_generation: dict | None = None,
 ) -> Path:
     source = paths()
     python = foundation_python()
@@ -1641,6 +1651,28 @@ def materialize_launcher(
                 "--max-speed", "3.5",
                 "--max-steering-angle", "0.70",
                 "--deadzone", "0.06",
+            ],
+            "depends_on": ["urban-car-fleet-plant"],
+            "delay_sec": 1,
+        })
+    # All generated vehicles share one route scenario. The opt-in keeps older
+    # external_python recipes manual while allowing exactly one executor per demo.
+    if (
+        vehicle_generation is not None
+        and vehicle_generation.get("auto_start_scenario") is True
+    ):
+        if any(vehicle["control_mode"] != "external_python" for vehicle in vehicles):
+            raise RecipeError(
+                "auto-started route scenarios require external_python for every vehicle"
+            )
+        assets.append({
+            "name": "urban-car-scenario-executor",
+            "activation_timing": "after_start",
+            "command": str(python),
+            "args": [
+                str(source["scenario_executor"]),
+                str(vehicle_generation["scenario"]),
+                "--pdu-def", str(runtime_files["pdu_def"]),
             ],
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,
@@ -1818,6 +1850,7 @@ def configure(resolved: dict) -> int:
         vehicles,
         browser_files,
         resolved["native_mujoco_viewer"],
+        resolved["vehicle_generation"],
     )
     compose_receipt = {
         "schema_version": 1,
@@ -1918,7 +1951,15 @@ def configure(resolved: dict) -> int:
     ))
     if mirrors:
         print("Drone Mirrors: " + ", ".join(mirror["name"] for mirror in mirrors))
-    if any(vehicle["control_mode"] == "external_python" for vehicle in vehicles):
+    if (
+        resolved["vehicle_generation"] is not None
+        and resolved["vehicle_generation"].get("auto_start_scenario") is True
+    ):
+        print(
+            "External control: one scenario executor starts with the Launcher: "
+            + str(resolved["vehicle_generation"]["scenario"])
+        )
+    elif any(vehicle["control_mode"] == "external_python" for vehicle in vehicles):
         print("External control: run apps/car/ackermann_command.py with --robot NAME")
     print("Use 'start' for the configured runtime, or 'view' for Viewer-only inspection.")
     return 0
