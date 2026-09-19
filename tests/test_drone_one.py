@@ -122,7 +122,11 @@ city_world:
   receipt: city.json
 drone:
   profile: eams-nominal-9kg
-  initial_altitude_m: 8.5
+  spawn_pose_enu:
+    east_m: 12.5
+    north_m: -3.0
+    up_m: 8.5
+    yaw_deg: 45.0
   launch_area:
     mode: auto
     offset_m: [1.0, 2.0, 0.0]
@@ -143,7 +147,12 @@ viewer:
             self.assertEqual(recipe.fleet_experiment, (root / "fleet.yaml").resolve())
             self.assertEqual(recipe.city_receipt, (root / "city.json").resolve())
             self.assertEqual(recipe.mission, (root / "mission.json").resolve())
-            self.assertEqual(recipe.initial_altitude_m, 8.5)
+            self.assertEqual(recipe.spawn_pose_enu, {
+                "east_m": 12.5,
+                "north_m": -3.0,
+                "up_m": 8.5,
+                "yaw_deg": 45.0,
+            })
             self.assertEqual(recipe.control_mode, "fleet-rpc")
             self.assertEqual(recipe.map_layout, "split")
             self.assertTrue(recipe.collider_overlay_default)
@@ -232,6 +241,25 @@ viewer:
         with self.assertRaises(drone_one.base.RecipeError):
             drone_one.apply_eams_city_contact_policy(body)
 
+    def test_drone_runtime_selects_validated_mjb_instead_of_source_xml(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_mjb = Path(directory) / "eams-hexa-city.mjb"
+            runtime_mjb.write_bytes(b"mjb")
+            type_config = {
+                "components": {
+                    "droneDynamics": {
+                        "mujoco": {"modelPath": "eams-hexa-city.xml"}
+                    }
+                }
+            }
+
+            drone_one.select_compiled_mujoco_model(type_config, runtime_mjb)
+
+            self.assertEqual(
+                type_config["components"]["droneDynamics"]["mujoco"]["modelPath"],
+                str(runtime_mjb),
+            )
+
     def test_eams_tuning_is_loaded_from_drone_pro_and_keeps_rpc_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -302,7 +330,7 @@ viewer:
                 1,
             )
 
-    def test_initial_drop_altitude_updates_ned_fleet_position(self):
+    def test_runtime_spawn_converts_enu_pose_to_ned_fleet_pose(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fleet_path = root / "fleet.json"
@@ -313,6 +341,7 @@ viewer:
                             {
                                 "name": "Drone-1",
                                 "position_meter": [5.0, -45.0, -2.884],
+                                "angle_degree": [0.0, 0.0, 0.0],
                             }
                         ]
                     }
@@ -326,13 +355,106 @@ viewer:
                 },
             }
 
-            drone_one.set_initial_drop_altitude(marker, 7.0)
+            drone_one.set_runtime_spawn(marker, {
+                "east_m": 45.0,
+                "north_m": 7.5,
+                "up_m": 10.3,
+                "yaw_deg": 0.0,
+            })
 
             fleet = json.loads(fleet_path.read_text(encoding="utf-8"))
-            self.assertEqual(fleet["drones"][0]["position_meter"][2], -7.0)
-            self.assertAlmostEqual(
-                marker["flight_plan"]["initial_drop"]["drop_distance_m"], 4.616
+            self.assertEqual(
+                fleet["drones"][0]["position_meter"], [7.5, 45.0, -10.3]
             )
+            self.assertEqual(
+                fleet["drones"][0]["angle_degree"], [0.0, 0.0, 90.0]
+            )
+            self.assertEqual(
+                marker["flight_plan"]["runtime_spawn"]["frame"], "ENU"
+            )
+
+    def test_runtime_recipe_accepts_pose_only_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("fleet.yaml", "city.json", "mission.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            recipe_path = root / "urban-drone-one.yaml"
+
+            def write_recipe(*, east_m: float, city: str = "city.json") -> None:
+                recipe_path.write_text(
+                    f"""version: 1
+id: test-drone
+fleet_experiment:
+  path: fleet.yaml
+city_world:
+  receipt: {city}
+drone:
+  profile: eams-nominal-9kg
+  spawn_pose_enu:
+    east_m: {east_m}
+    north_m: 2.0
+    up_m: 8.0
+    yaw_deg: 0.0
+  launch_area:
+    mode: auto
+    offset_m: [0.0, 0.0, 0.0]
+    search_radius_m: 50.0
+control:
+  mode: ps4-rc
+mission:
+  path: mission.json
+viewer:
+  map_layout: bottom-left
+  collider_overlay_default: false
+""",
+                    encoding="utf-8",
+                )
+
+            write_recipe(east_m=1.0)
+            configured = drone_one.load_urban_recipe(recipe_path)
+            write_recipe(east_m=9.0)
+
+            runtime = drone_one.load_runtime_recipe(configured)
+
+            self.assertEqual(runtime.spawn_pose_enu["east_m"], 9.0)
+
+    def test_runtime_recipe_requires_configure_after_city_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("fleet.yaml", "city-a.json", "city-b.json", "mission.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            recipe_path = root / "urban-drone-one.yaml"
+            template = """version: 1
+id: test-drone
+fleet_experiment:
+  path: fleet.yaml
+city_world:
+  receipt: {city}
+drone:
+  profile: eams-nominal-9kg
+  spawn_pose_enu:
+    east_m: 1.0
+    north_m: 2.0
+    up_m: 8.0
+    yaw_deg: 0.0
+  launch_area:
+    mode: auto
+    offset_m: [0.0, 0.0, 0.0]
+    search_radius_m: 50.0
+control:
+  mode: ps4-rc
+mission:
+  path: mission.json
+viewer:
+  map_layout: bottom-left
+  collider_overlay_default: false
+"""
+            recipe_path.write_text(template.format(city="city-a.json"), encoding="utf-8")
+            configured = drone_one.load_urban_recipe(recipe_path)
+            recipe_path.write_text(template.format(city="city-b.json"), encoding="utf-8")
+
+            with self.assertRaisesRegex(drone_one.base.RecipeError, "run configure"):
+                drone_one.load_runtime_recipe(configured)
 
     def test_native_mujoco_viewer_is_opt_in_launcher_argument(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -367,12 +489,20 @@ viewer:
             )
 
             launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                launcher["runtime"], {"cleanup_mmap_on_start": True}
+            )
             service = next(
                 asset
                 for asset in launcher["assets"]
                 if asset["name"] == "drone-service-1"
             )
             self.assertIn("--mujoco-viewer", service["args"])
+            self.assertEqual(service["readiness"], {
+                "type": "hako_asset",
+                "asset_name": "drone",
+                "timeout_sec": drone_one.DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+            })
 
     def test_city_viewer_uses_eams_hexa_and_all_six_motor_channels(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -499,6 +629,9 @@ viewer:
             )
 
             launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                launcher["runtime"], {"cleanup_mmap_on_start": True}
+            )
             controller = next(
                 asset
                 for asset in launcher["assets"]
@@ -506,6 +639,16 @@ viewer:
             )
             self.assertTrue(controller["args"][0].endswith("rc-custom.py"))
             self.assertEqual(controller["args"][-4:], ["--name", "Drone-1", "--index", "0"])
+            service = next(
+                asset
+                for asset in launcher["assets"]
+                if asset["name"] == "drone-service-1"
+            )
+            self.assertEqual(service["readiness"]["asset_name"], "drone")
+            self.assertEqual(
+                service["readiness"]["timeout_sec"],
+                drone_one.DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+            )
             publisher = next(
                 asset
                 for asset in launcher["assets"]

@@ -8,6 +8,7 @@ import copy
 from dataclasses import dataclass, replace
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -54,6 +55,7 @@ _MUJOCO_VIEWER_ENABLED = False
 _ACTIVE_RECIPE: "UrbanDroneRecipe | None" = None
 CONTROL_MODE_FILE = "urban-drone-control.json"
 SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
+DRONE_SERVICE_READINESS_TIMEOUT_SEC = 180
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ class UrbanDroneRecipe:
     city_receipt: Path
     mission: Path
     drone_profile: str
-    initial_altitude_m: float
+    spawn_pose_enu: dict[str, float]
     launch_area: dict[str, Any]
     control_mode: str
     map_layout: str
@@ -100,6 +102,9 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
     fleet = _recipe_mapping(data.get("fleet_experiment"), "fleet_experiment")
     city_world = _recipe_mapping(data.get("city_world"), "city_world")
     drone = _recipe_mapping(data.get("drone"), "drone")
+    spawn_pose = _recipe_mapping(
+        drone.get("spawn_pose_enu"), "drone.spawn_pose_enu"
+    )
     launch_area = _recipe_mapping(drone.get("launch_area"), "drone.launch_area")
     control = _recipe_mapping(data.get("control"), "control")
     mission = _recipe_mapping(data.get("mission"), "mission")
@@ -111,11 +116,14 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
     if drone_profile != "eams-nominal-9kg":
         raise base.RecipeError("drone.profile must be eams-nominal-9kg")
     try:
-        initial_altitude_m = float(drone["initial_altitude_m"])
+        spawn_pose_enu = {
+            key: float(spawn_pose[key])
+            for key in ("east_m", "north_m", "up_m", "yaw_deg")
+        }
         search_radius_m = float(launch_area["search_radius_m"])
         offset_m = [float(value) for value in launch_area["offset_m"]]
     except (KeyError, TypeError, ValueError) as exc:
-        raise base.RecipeError("drone altitude/launch_area values are invalid") from exc
+        raise base.RecipeError("drone pose/launch_area values are invalid") from exc
     if len(offset_m) != 3 or search_radius_m <= 0:
         raise base.RecipeError(
             "drone.launch_area requires three offsets and a positive radius"
@@ -141,7 +149,7 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
         ),
         mission=_recipe_path(recipe_path, mission.get("path"), "mission.path"),
         drone_profile=drone_profile,
-        initial_altitude_m=initial_altitude_m,
+        spawn_pose_enu=spawn_pose_enu,
         launch_area={
             "mode": "auto",
             "offset_m": offset_m,
@@ -172,7 +180,7 @@ def write_selected_recipe(paths: object, recipe: UrbanDroneRecipe) -> Path:
         "city_receipt": str(recipe.city_receipt),
         "mission": str(recipe.mission),
         "drone_profile": recipe.drone_profile,
-        "initial_altitude_m": recipe.initial_altitude_m,
+        "spawn_pose_enu": recipe.spawn_pose_enu,
         "launch_area": recipe.launch_area,
         "control_mode": recipe.control_mode,
         "map_layout": recipe.map_layout,
@@ -195,7 +203,10 @@ def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
             city_receipt=Path(data["city_receipt"]),
             mission=Path(data["mission"]),
             drone_profile=data["drone_profile"],
-            initial_altitude_m=float(data["initial_altitude_m"]),
+            spawn_pose_enu={
+                key: float(data["spawn_pose_enu"][key])
+                for key in ("east_m", "north_m", "up_m", "yaw_deg")
+            },
             launch_area=data["launch_area"],
             control_mode=data["control_mode"],
             map_layout=data["map_layout"],
@@ -217,7 +228,19 @@ def patch_launcher(
     mujoco_viewer: bool = False,
 ) -> Path:
     launcher = json.loads(path.read_text(encoding="utf-8"))
+    launcher["runtime"] = {"cleanup_mmap_on_start": True}
     assets = launcher.get("assets", [])
+    drone_service = next(
+        (asset for asset in assets if asset.get("name") == "drone-service-1"),
+        None,
+    )
+    if drone_service is None:
+        raise base.RecipeError("generated Launcher has no drone-service-1 asset")
+    drone_service["readiness"] = {
+        "type": "hako_asset",
+        "asset_name": "drone",
+        "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+    }
     mission_asset = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
     )
@@ -262,12 +285,6 @@ def patch_launcher(
         if asset.get("name") == "visual-state-publisher":
             asset["depends_on"] = ["drone-service-1"]
     if mujoco_viewer:
-        drone_service = next(
-            (asset for asset in assets if asset.get("name") == "drone-service-1"),
-            None,
-        )
-        if drone_service is None:
-            raise base.RecipeError("generated Launcher has no drone-service-1 asset")
         service_args = drone_service.setdefault("args", [])
         if "--mujoco-viewer" not in service_args:
             service_args.append("--mujoco-viewer")
@@ -278,7 +295,19 @@ def patch_launcher(
 def patch_rc_launcher(path: Path, *, paths: object, drone_root: Path) -> Path:
     """Replace the automatic mission with the proven PS4 RadioController client."""
     launcher = json.loads(path.read_text(encoding="utf-8"))
+    launcher["runtime"] = {"cleanup_mmap_on_start": True}
     assets = launcher.get("assets", [])
+    drone_service = next(
+        (asset for asset in assets if asset.get("name") == "drone-service-1"),
+        None,
+    )
+    if drone_service is None:
+        raise base.RecipeError("generated Launcher has no drone-service-1 asset")
+    drone_service["readiness"] = {
+        "type": "hako_asset",
+        "asset_name": "drone",
+        "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+    }
     controller = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
     )
@@ -478,31 +507,6 @@ def _paths():
     return foundation.resolve_workspace(base.ROOT, base.RECIPE_ID)
 
 
-def select_drone_core_xml_model(marker: dict) -> Path:
-    """Point the public Drone Core v4 runtime at XML while retaining MJB QA.
-
-    The City helper compiles and reload-validates an MJB, while the public
-    v4.0.0 service binary still opens its configured model through mj_loadXML.
-    """
-    type_path = Path(marker["type_config"])
-    type_config = json.loads(type_path.read_text(encoding="utf-8"))
-    model_path = Path(marker["process_models"][0]["mjb"]).with_suffix(".xml")
-    if not model_path.is_file():
-        raise base.RecipeError(f"generated MuJoCo City XML not found: {model_path}")
-    type_config["components"]["droneDynamics"]["mujoco"]["modelPath"] = str(
-        model_path
-    )
-    type_path.write_text(json.dumps(type_config, indent=2) + "\n", encoding="utf-8")
-    marker["runtime_model"] = {
-        "format": "xml",
-        "path": str(model_path),
-        "reason": "hakoniwa-drone-core v4.0.0 public service uses mj_loadXML",
-    }
-    marker_path = _paths().recipe_config / "mujoco-city-fleet.json"
-    marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
-    return model_path
-
-
 def _parameter_values(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -512,6 +516,17 @@ def _parameter_values(path: Path) -> dict[str, str]:
         key, value = line.split(None, 1)
         values[key] = value
     return values
+
+
+def select_compiled_mujoco_model(
+    type_config: dict[str, Any], runtime_mjb: Path
+) -> None:
+    """Select the configure-time compiled model for Drone PRO runtime use."""
+    if runtime_mjb.suffix.lower() != ".mjb" or not runtime_mjb.is_file():
+        raise base.RecipeError(f"validated MuJoCo MJB not found: {runtime_mjb}")
+    type_config["components"]["droneDynamics"]["mujoco"]["modelPath"] = str(
+        runtime_mjb
+    )
 
 
 def materialize_eams_controller_params(
@@ -714,7 +729,10 @@ def materialize_eams_city_model(
             eams_config["components"][name]
         )
     dynamics = type_config["components"]["droneDynamics"]
-    dynamics["mujoco"]["modelPath"] = str(runtime_xml)
+    # Drone PRO selects mj_loadModel for .mjb, avoiding XML parsing and model
+    # compilation on every start. compile_mujoco_xml above reload-validates
+    # this exact binary with the runtime's MuJoCo library.
+    select_compiled_mujoco_model(type_config, runtime_mjb)
     dynamics["collision_detection"] = True
     type_config["simulation"]["timeStep"] = eams_config["simulation"]["timeStep"]
     if rc_mode and runtime_config_dir is not None:
@@ -774,8 +792,8 @@ def materialize_eams_city_model(
     fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
 
     marker["runtime_model"] = {
-        "format": "xml",
-        "path": str(runtime_xml),
+        "format": "mjb",
+        "path": str(runtime_mjb),
         "vehicle": "EAMS E6106FLMP2-equivalent nominal 9 kg Hexa-X",
         "rotor_count": 6,
         "contact_policy": contact_policy,
@@ -784,36 +802,91 @@ def materialize_eams_city_model(
     marker["type_config"] = str(runtime_type_path)
     marker_path = _paths().recipe_config / "mujoco-city-fleet.json"
     marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
-    return runtime_xml
+    return runtime_mjb
 
 
-def set_initial_drop_altitude(marker: dict, initial_altitude_m: float) -> Path:
-    """Start above the City surface so MuJoCo settles the Drone on the DEM."""
-    spawn = marker["flight_plan"]["spawn_points"][0]
-    surface_height_m = float(spawn["surface_height_m"])
-    if initial_altitude_m <= surface_height_m + 1.0:
-        raise base.RecipeError(
-            "initial_altitude_m must be at least 1 m above the selected City surface"
-        )
+def _normalize_degrees(value: float) -> float:
+    return (value + 180.0) % 360.0 - 180.0
+
+
+def set_runtime_spawn(marker: dict, spawn_pose_enu: dict[str, float]) -> Path:
+    """Apply an ENU pose to the Drone Pro Fleet config (which uses NED)."""
+    try:
+        east_m = float(spawn_pose_enu["east_m"])
+        north_m = float(spawn_pose_enu["north_m"])
+        up_m = float(spawn_pose_enu["up_m"])
+        yaw_enu_deg = float(spawn_pose_enu["yaw_deg"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise base.RecipeError("drone.spawn_pose_enu is invalid") from exc
+    if not all(math.isfinite(value) for value in (
+        east_m, north_m, up_m, yaw_enu_deg
+    )):
+        raise base.RecipeError("drone.spawn_pose_enu must contain finite values")
+
     fleet_path = Path(marker["fleet_config"])
     fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
     drones = fleet_config.get("drones")
     if not isinstance(drones, list) or len(drones) != 1:
         raise base.RecipeError("one-Drone checkpoint Fleet config is invalid")
-    position = drones[0].get("position_meter")
-    if not isinstance(position, list) or len(position) != 3:
-        raise base.RecipeError("Drone-1 has no valid initial position_meter")
-    # Drone Core's Fleet config uses NED, hence an altitude above the local
-    # origin is represented by a negative Z value.
-    position[2] = -initial_altitude_m
+    yaw_ned_deg = _normalize_degrees(90.0 - yaw_enu_deg)
+    drones[0]["position_meter"] = [north_m, east_m, -up_m]
+    drones[0]["angle_degree"] = [0.0, 0.0, yaw_ned_deg]
     fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
-    marker["flight_plan"]["initial_drop"] = {
-        "initial_altitude_m": initial_altitude_m,
-        "surface_height_m": surface_height_m,
-        "drop_distance_m": initial_altitude_m - surface_height_m,
-        "ground": "plateau-dem",
+    marker["flight_plan"]["runtime_spawn"] = {
+        "frame": "ENU",
+        "east_m": east_m,
+        "north_m": north_m,
+        "up_m": up_m,
+        "yaw_deg": yaw_enu_deg,
+        "fleet_frame": "NED",
+        "fleet_position_meter": [north_m, east_m, -up_m],
+        "fleet_yaw_degree": yaw_ned_deg,
     }
     return fleet_path
+
+
+def refresh_runtime_spawn(paths: object, recipe: UrbanDroneRecipe) -> Path:
+    """Refresh only the generated Fleet config; no City/MJCF rebuild is needed."""
+    marker_path = paths.recipe_config / "mujoco-city-fleet.json"
+    if not marker_path.is_file():
+        raise base.RecipeError("Urban Drone is not configured; run configure first")
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    fleet_path = set_runtime_spawn(marker, recipe.spawn_pose_enu)
+    marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+    return fleet_path
+
+
+def load_runtime_recipe(configured: UrbanDroneRecipe) -> UrbanDroneRecipe:
+    """Accept pose-only source edits and reject edits that need regeneration."""
+    if not configured.source_path.is_file():
+        return configured
+    current = load_urban_recipe(configured.source_path)
+    rebuild_fields = (
+        "recipe_id",
+        "fleet_experiment",
+        "city_receipt",
+        "mission",
+        "drone_profile",
+        "launch_area",
+        "control_mode",
+        "map_layout",
+        "collider_overlay_default",
+    )
+    changed = [
+        field
+        for field in rebuild_fields
+        if getattr(current, field) != getattr(configured, field)
+    ]
+    if changed:
+        raise base.RecipeError(
+            "recipe settings requiring regeneration changed "
+            f"({', '.join(changed)}); run configure"
+        )
+    return replace(
+        configured,
+        source_sha256=current.source_sha256,
+        spawn_pose_enu=current.spawn_pose_enu,
+    )
 
 
 def configure(
@@ -839,7 +912,7 @@ def configure(
         altitude_mode="route-clearance",
         launch_area=recipe.launch_area,
     )
-    set_initial_drop_altitude(marker, recipe.initial_altitude_m)
+    set_runtime_spawn(marker, recipe.spawn_pose_enu)
     runtime_model = materialize_eams_city_model(
         marker,
         drone_root,
@@ -848,21 +921,22 @@ def configure(
     )
     write_control_mode(paths, recipe.control_mode)
     write_selected_recipe(paths, recipe)
-    spawn = marker["flight_plan"]["spawn_points"][0]
+    spawn = recipe.spawn_pose_enu
     print("Urban one-Drone checkpoint configured")
     print(f"Recipe     : {recipe.source_path}")
     print(f"City World : {recipe.city_receipt}")
-    print(f"Spawn ENU  : ({spawn['x_m']:.3f}, {spawn['y_m']:.3f})")
+    print(
+        "Spawn ENU  : "
+        f"({spawn['east_m']:.3f}, {spawn['north_m']:.3f}, "
+        f"{spawn['up_m']:.3f}), yaw={spawn['yaw_deg']:.3f} deg"
+    )
     print(
         "Flight Z  : "
         f"{marker['flight_plan']['resolved_flight_altitude_m']:.3f} m"
     )
-    print(
-        f"Initial Z : {recipe.initial_altitude_m:.3f} m "
-        "(free-fall to PLATEAU DEM)"
-    )
+    print(f"Initial Z : {spawn['up_m']:.3f} m (free-fall to PLATEAU DEM)")
     print(f"Fleet      : {marker['fleet_config']}")
-    print(f"Runtime XML: {runtime_model}")
+    print(f"Runtime MJB: {runtime_model}")
     print("Vehicle    : EAMS nominal 9 kg Hexa-X (6 rotors, Hakoniwa tuned)")
     print(
         f"Controller : "
@@ -940,6 +1014,16 @@ def main() -> int:
     if args.command == "doctor":
         return base.doctor(recipe.fleet_experiment, drone_root, viewer_root)
     if args.command == "start":
+        recipe = load_runtime_recipe(recipe)
+        _ACTIVE_RECIPE = recipe
+        fleet_path = refresh_runtime_spawn(paths, recipe)
+        pose = recipe.spawn_pose_enu
+        print(
+            "Runtime spawn ENU: "
+            f"east={pose['east_m']:.3f}, north={pose['north_m']:.3f}, "
+            f"up={pose['up_m']:.3f}, yaw={pose['yaw_deg']:.3f} deg"
+        )
+        print(f"Fleet config     : {fleet_path}")
         return base.start(recipe.fleet_experiment, drone_root, viewer_root)
     if args.command == "status":
         return base.control(recipe.fleet_experiment, drone_root, "status")

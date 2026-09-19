@@ -40,6 +40,13 @@ python3 tools/drone_one.py status
 python3 tools/drone_one.py open-viewer
 ```
 
+This one-Launcher recipe owns the Foundation runtime directory and removes
+stale Hakoniwa mmap/lock files automatically before starting its assets. A
+previously terminated Car or Drone session therefore does not require a host
+restart. The runtime loads the configure-time compiled and reload-validated
+City MJB. The Launcher waits for the Drone service to register before starting
+dependent assets.
+
 To overlay the MJCF collision geometry as green wireframes, open the optional
 Collider view instead:
 
@@ -51,11 +58,28 @@ Both modes keep Three.js as the main view and place the map in a small panel
 at the lower left. The default command displays only the City GLB; Collider
 wireframes are loaded only when `--colliders` is specified.
 
-The Drone initially falls from 7 m and settles on the PLATEAU DEM. Wait for it
-to settle before enabling RadioControl. The browser uses the EAMS body GLB and
-six independently animated propellers. The upper-right inset is the onboard
-road-monitoring camera, mounted forward and pitched 50 degrees downward. If an
-older model is cached, reload the page with `Cmd+Shift+R`.
+The Drone starts from `drone.spawn_pose_enu` in the recipe and settles on the
+PLATEAU DEM. Wait for it to settle before enabling RadioControl. The browser
+uses the EAMS body GLB and six independently animated propellers. The
+upper-right inset is the onboard road-monitoring camera, mounted forward and
+pitched 50 degrees downward. If an older model is cached, reload the page with
+`Cmd+Shift+R`.
+
+The pose uses the City World's local ENU frame: `east_m`, `north_m`, `up_m`,
+and ENU `yaw_deg` (0 degrees faces east; 90 degrees faces north). To move the
+Drone after the initial configure, stop it, edit only `spawn_pose_enu`, and
+start it again:
+
+```bash
+python3 tools/drone_one.py stop
+# edit recipes/experiments/urban-drone-one.yaml
+python3 tools/drone_one.py start
+```
+
+`start` converts ENU to the Drone Pro Fleet config's NED convention and updates
+the generated `api-current.json`; it does not rebuild City World or MJCF.
+Changing `city_world.receipt`, controller, model, or viewer settings still
+requires `configure`.
 
 ## PS4 controls
 

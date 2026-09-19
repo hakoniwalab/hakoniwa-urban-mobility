@@ -5,11 +5,17 @@ fleet_experiment:
   path: drone-one-fleet.yaml
 
 city_world:
-  receipt: ../../../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+  receipt: ../../../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
 
 drone:
   profile: eams-nominal-9kg
-  initial_altitude_m: 7.0
+  # ENU pose applied to the Drone Pro Fleet config immediately before start.
+  # Pose-only changes do not require configure.
+  spawn_pose_enu:
+    east_m: 0.0
+    north_m: 0.0
+    up_m: 10.3
+    yaw_deg: 0.0
   launch_area:
     mode: auto
     offset_m: [0.0, 0.0, 0.0]
