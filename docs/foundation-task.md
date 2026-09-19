@@ -8,7 +8,7 @@
 現在成立している1台のCarと1台のDroneを回帰基準として基盤を整備し、その基盤上で
 次のデモを構築する。
 
-- 静岡PLATEAU City Worldを使用する
+- City World ReceiptをRecipe入力とし、初回回帰では静岡PLATEAUを使用する
 - EAMS Hexa Droneを1台、PS4コントローラでRC操作する
 - Golf Cartを複数台、シナリオに従って道路上で往復させる
 - 1個のLauncherと1個のConductor ownerで全Assetを起動する
@@ -83,7 +83,7 @@ hakoniwa-urban-mobility: b396d93
 
 実装前に、入力、生成物、共有物、runtime ownerを表にして固定する。
 
-- [x] Urbanの最終Recipe IDを決める（`urban-mobility-shizuoka-rc`）
+- [x] Urbanの最終Recipe IDを決める（都市非依存の`urban-mobility-rc`）
 - [x] 単体回帰用Recipeと統合デモRecipeの関係を決める
 - [x] 追跡対象の正本と`work/`生成物を分類する
 - [x] Foundation requirementsとRecipe固有configureを分離する
@@ -95,7 +95,7 @@ hakoniwa-urban-mobility: b396d93
 
 ```text
 Business Pack Recipe
-  id: urban-mobility-shizuoka-rc
+  id: urban-mobility-rc
   Foundation要求、source要求、標準workspace、標準入口を所有
 
 Urban composition config
@@ -162,7 +162,7 @@ Urban専用workspaceを作る前に、既存Drone Fleet Recipeから必要な生
 想定レイアウト:
 
 ```text
-work/recipes/urban-mobility-shizuoka-rc/
+work/recipes/urban-mobility-rc/
   config/
     foundation-requirements.yaml
     launcher.json
@@ -194,20 +194,26 @@ work/recipes/urban-mobility-shizuoka-rc/
 
 ## 9. Step 5: Foundation要求と依存sourceをRecipeへ宣言する
 
-- [ ] Business Pack側にUrban用Recipe manifestを追加する
-- [ ] `foundation_contract.mode: required`を宣言する
-- [ ] Core PRO、PDU Python、Endpoint、Bridgeの必要Capabilityを宣言する
-- [ ] 必要なbuild limitを実測したAsset/PDU/Service数から算出する
-- [ ] Urban、Drone PRO、robot-runtime、MuJoCo robots、MBody registry、Viewer等をRecipe local requirementとして整理する
-- [ ] private repositoryやlicenseの前提をagency boundaryへ記述する
-- [ ] `recipe.py plan`が全sourceとFoundation要求を表示することを確認する
-- [ ] `recipe.py doctor`が不足・不整合を起動前に説明することを確認する
+- [x] Urban側にmanaged Recipe manifestを追加し、Business Pack Recipe engineから評価する
+- [x] `foundation_contract.mode: required`を宣言する
+- [x] Core PRO、PDU Python、Endpoint、Bridgeの必要Capabilityを宣言する
+- [x] 必要なbuild limitを実測したAsset/PDU/Service数から算出する
+- [x] Urban、Drone PRO、robot-runtime、MuJoCo robots、MBody registry、Viewer等をRecipe local requirementとして整理する
+- [x] private repositoryやlicenseの前提をagency boundaryへ記述する
+- [x] `recipe.py plan`が全sourceとFoundation要求を表示することを確認する
+- [x] `recipe.py doctor`が不足・不整合を起動前に説明することを確認する
 
 完了条件:
 
 - 正常なinstalled Foundationは再buildせず再利用される
 - 必須sourceまたはArtifactが欠けた場合、configure開始前に停止する
 - Foundation要求とUrban runtime設定が混在していない
+
+検証結果:
+
+- 都市非依存の`recipes/experiments/urban-mobility-rc.yaml`をUrban側へ追加した
+- `plan`は8個のRecipe-local sourceをすべて既存checkoutとして再利用し、Foundationを`SATISFIED`と判定した
+- `doctor`は4個のFoundation componentと8個のRecipe-local sourceをすべて`SATISFIED`と判定した
 
 ## 10. Step 6: 標準ライフサイクルとpreflightを統一する
 

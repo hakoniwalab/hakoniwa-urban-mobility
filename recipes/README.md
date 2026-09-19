@@ -3,14 +3,31 @@
 This directory contains the configuration and composition contract for the
 PLATEAU Urban Car Fleet checkpoint.
 
+## City-independent managed Recipe
+
+`recipes/experiments/urban-mobility-rc.yaml` is the managed dependency and
+Foundation contract for the integrated Drone + multi-Car demo. It does not
+select a particular city. The later composition config supplies a City World
+Receipt and a matching route/scenario; Shizuoka is the first regression input.
+
+Evaluate the contract with the Business Pack Recipe engine:
+
+```bash
+cd ../hakoniwa-business-pack
+work/foundation/install/python/bin/python3 tools/recipe.py plan \
+  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
+work/foundation/install/python/bin/python3 tools/recipe.py doctor \
+  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
+```
+
 ## Recipe-selected one Drone City World
 
 `tools/drone_one.py` materializes the first Drone-side checkpoint from
 `recipes/experiments/urban-drone-one.yaml`. The Urban recipe selects the City
 World Receipt, Fleet experiment, mission, launch area, initial altitude,
 control mode, and Viewer defaults. Its paths are resolved relative to the
-recipe file. It reuses the Business Pack
-single-host Fleet workspace and the City/MuJoCo composer from
+recipe file. It reuses the Business Pack single-host Fleet builder through an
+explicit Urban-owned workspace and the City/MuJoCo composer from
 `hakoniwa-drone-show`, but replaces the Show runner with the Urban-owned direct
 Fleet RPC mission in `apps/drone/city_fleet_mission.py`.
 

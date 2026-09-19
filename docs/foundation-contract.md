@@ -10,7 +10,7 @@ steps are complete.
 The first integrated target is:
 
 ```text
-Shizuoka City World
+Recipe-selected City World (the first regression uses Shizuoka)
   + 1 EAMS Hexa Drone controlled by PS4 RC
   + N Golf Carts controlled by a route scenario
   + 1 Launcher
@@ -32,7 +32,7 @@ but must not share generated files or Launcher sessions.
 | --- | --- | --- |
 | `urban-car-one` | One-Car regression and PS5 operation | `${HAKONIWA_WORK_DIR}/recipes/urban-car-one` |
 | `urban-drone-one` | One-Drone regression and PS4 operation | `${HAKONIWA_WORK_DIR}/recipes/urban-drone-one` |
-| `urban-mobility-shizuoka-rc` | One PS4 Drone plus scenario-driven multiple Cars | `${HAKONIWA_WORK_DIR}/recipes/urban-mobility-shizuoka-rc` |
+| `urban-mobility-rc` | One PS4 Drone plus scenario-driven multiple Cars in a selected City | `${HAKONIWA_WORK_DIR}/recipes/urban-mobility-rc` |
 
 `${HAKONIWA_WORK_DIR}` is resolved by the Business Pack workdir contract. Its
 default is `<business-pack-root>/work`. Urban code must not recreate this
@@ -43,9 +43,10 @@ The integrated Recipe is the user-facing base for the next demo.
 
 ## 3. Configuration layers
 
-### 3.1 Business Pack Recipe manifest
+### 3.1 Urban managed Recipe manifest
 
-The Business Pack manifest owns the managed execution contract:
+The Urban-owned manifest uses the Business Pack Recipe engine and owns the
+managed execution contract:
 
 - Recipe ID and human-readable goal
 - Foundation requirements
@@ -58,10 +59,10 @@ The Business Pack manifest owns the managed execution contract:
 It does not own a concrete City job, vehicle route, PID gain, or controller
 mapping.
 
-Target manifest:
+Manifest:
 
 ```text
-hakoniwa-business-pack/recipes/examples/urban-mobility-shizuoka-rc.yaml
+hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
 ```
 
 ### 3.2 Urban composition config
@@ -79,7 +80,7 @@ Target config:
 
 ```text
 hakoniwa-urban-mobility/recipes/experiments/
-  urban-mobility-shizuoka-rc.yaml
+  urban-mobility-rc.yaml
 ```
 
 ### 3.3 Urban scenario
@@ -299,11 +300,11 @@ Urban composition retains:
 
 The following decisions are fixed for the remaining task sequence:
 
-1. Use `urban-mobility-shizuoka-rc` for the first integrated Recipe ID.
+1. Use city-independent `urban-mobility-rc`; keep Shizuoka as the first example input.
 2. Keep `urban-car-one` and `urban-drone-one` as independent regression Recipes.
 3. Keep concrete composition and scenarios in the Urban repository.
-4. Add the managed Recipe manifest and Foundation/source requirements to the
-   Business Pack repository.
+4. Keep the managed Recipe manifest and Foundation/source requirements in the
+   Urban repository and evaluate it with the Business Pack Recipe engine.
 5. Use one Launcher, Drone-owned Conductor time, one Car Fleet plant, one
    WebBridge, and one HTTP server in the integrated topology.
 6. Store generated evidence by Recipe ID; do not reuse
