@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Configure and run the one-Drone Hokkaido PLATEAU checkpoint."""
+"""Configure and run a recipe-selected one-Drone PLATEAU checkpoint."""
 
 from __future__ import annotations
 
 import argparse
 import copy
+from dataclasses import dataclass, replace
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,16 +23,10 @@ BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
 DRONE_SHOW_ROOT = WORKSPACE / "hakoniwa-drone-show"
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
-EXPERIMENT = ROOT / "recipes" / "experiments" / "drone-one-hokkaido.yaml"
-MISSION = ROOT / "config" / "drone" / "city-one-mission.json"
+DEFAULT_RECIPE = ROOT / "recipes" / "experiments" / "urban-drone-one.yaml"
 EAMS_TUNED_PARAMS_RELATIVE = Path(
     "tuning/vehicle/eams/tuning/hakoniwa/nominal-9kg/"
     "param-sets/final-controller-params.txt"
-)
-CITY_RECEIPT = (
-    BUSINESS_PACK_ROOT
-    / "work/remote-operation/city-world-worker/jobs"
-    / "hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json"
 )
 
 # Urban collision policy applied only to the generated City model. The Drone
@@ -54,7 +51,161 @@ import drone_fleet_mujoco_city as city
 
 _BASE_WRITE_LAUNCHER = base.write_launcher
 _MUJOCO_VIEWER_ENABLED = False
+_ACTIVE_RECIPE: "UrbanDroneRecipe | None" = None
 CONTROL_MODE_FILE = "urban-drone-control.json"
+SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
+
+
+@dataclass(frozen=True)
+class UrbanDroneRecipe:
+    source_path: Path
+    source_sha256: str
+    recipe_id: str
+    fleet_experiment: Path
+    city_receipt: Path
+    mission: Path
+    drone_profile: str
+    initial_altitude_m: float
+    launch_area: dict[str, Any]
+    control_mode: str
+    map_layout: str
+    collider_overlay_default: bool
+
+
+def _recipe_path(recipe_path: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise base.RecipeError(f"{label} must be a non-empty path")
+    path = Path(value).expanduser()
+    return (
+        (recipe_path.parent / path).resolve()
+        if not path.is_absolute()
+        else path.resolve()
+    )
+
+
+def _recipe_mapping(value: object, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise base.RecipeError(f"{label} must be a mapping")
+    return value
+
+
+def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
+    recipe_path = path.expanduser().resolve()
+    data = base.load_simple_yaml(recipe_path)
+    if data.get("version") != 1:
+        raise base.RecipeError("Urban one-Drone recipe version must be 1")
+    recipe_id = data.get("id")
+    if not isinstance(recipe_id, str) or not recipe_id:
+        raise base.RecipeError("Urban one-Drone recipe id must be a non-empty string")
+    fleet = _recipe_mapping(data.get("fleet_experiment"), "fleet_experiment")
+    city_world = _recipe_mapping(data.get("city_world"), "city_world")
+    drone = _recipe_mapping(data.get("drone"), "drone")
+    launch_area = _recipe_mapping(drone.get("launch_area"), "drone.launch_area")
+    control = _recipe_mapping(data.get("control"), "control")
+    mission = _recipe_mapping(data.get("mission"), "mission")
+    viewer = _recipe_mapping(data.get("viewer"), "viewer")
+    control_mode = control.get("mode")
+    if control_mode not in {"fleet-rpc", "ps4-rc"}:
+        raise base.RecipeError("control.mode must be fleet-rpc or ps4-rc")
+    drone_profile = drone.get("profile")
+    if drone_profile != "eams-nominal-9kg":
+        raise base.RecipeError("drone.profile must be eams-nominal-9kg")
+    try:
+        initial_altitude_m = float(drone["initial_altitude_m"])
+        search_radius_m = float(launch_area["search_radius_m"])
+        offset_m = [float(value) for value in launch_area["offset_m"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise base.RecipeError("drone altitude/launch_area values are invalid") from exc
+    if len(offset_m) != 3 or search_radius_m <= 0:
+        raise base.RecipeError(
+            "drone.launch_area requires three offsets and a positive radius"
+        )
+    if launch_area.get("mode") != "auto":
+        raise base.RecipeError("drone.launch_area.mode must be auto")
+    map_layout = viewer.get("map_layout", "bottom-left")
+    if map_layout not in {"bottom-left", "split"}:
+        raise base.RecipeError("viewer.map_layout must be bottom-left or split")
+    collider_default = viewer.get("collider_overlay_default", False)
+    if not isinstance(collider_default, bool):
+        raise base.RecipeError("viewer.collider_overlay_default must be boolean")
+    source_bytes = recipe_path.read_bytes()
+    result = UrbanDroneRecipe(
+        source_path=recipe_path,
+        source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+        recipe_id=recipe_id,
+        fleet_experiment=_recipe_path(
+            recipe_path, fleet.get("path"), "fleet_experiment.path"
+        ),
+        city_receipt=_recipe_path(
+            recipe_path, city_world.get("receipt"), "city_world.receipt"
+        ),
+        mission=_recipe_path(recipe_path, mission.get("path"), "mission.path"),
+        drone_profile=drone_profile,
+        initial_altitude_m=initial_altitude_m,
+        launch_area={
+            "mode": "auto",
+            "offset_m": offset_m,
+            "search_radius_m": search_radius_m,
+        },
+        control_mode=control_mode,
+        map_layout=map_layout,
+        collider_overlay_default=collider_default,
+    )
+    for label, required in (
+        ("fleet_experiment.path", result.fleet_experiment),
+        ("city_world.receipt", result.city_receipt),
+        ("mission.path", result.mission),
+    ):
+        if not required.is_file():
+            raise base.RecipeError(f"{label} not found: {required}")
+    return result
+
+
+def write_selected_recipe(paths: object, recipe: UrbanDroneRecipe) -> Path:
+    output = paths.recipe_config / SELECTED_RECIPE_FILE
+    output.write_text(json.dumps({
+        "schema_version": 1,
+        "source": str(recipe.source_path),
+        "source_sha256": recipe.source_sha256,
+        "id": recipe.recipe_id,
+        "fleet_experiment": str(recipe.fleet_experiment),
+        "city_receipt": str(recipe.city_receipt),
+        "mission": str(recipe.mission),
+        "drone_profile": recipe.drone_profile,
+        "initial_altitude_m": recipe.initial_altitude_m,
+        "launch_area": recipe.launch_area,
+        "control_mode": recipe.control_mode,
+        "map_layout": recipe.map_layout,
+        "collider_overlay_default": recipe.collider_overlay_default,
+    }, indent=2) + "\n", encoding="utf-8")
+    return output
+
+
+def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
+    selected = paths.recipe_config / SELECTED_RECIPE_FILE
+    if not selected.is_file():
+        return load_urban_recipe(DEFAULT_RECIPE)
+    try:
+        data = json.loads(selected.read_text(encoding="utf-8"))
+        recipe = UrbanDroneRecipe(
+            source_path=Path(data["source"]),
+            source_sha256=data["source_sha256"],
+            recipe_id=data["id"],
+            fleet_experiment=Path(data["fleet_experiment"]),
+            city_receipt=Path(data["city_receipt"]),
+            mission=Path(data["mission"]),
+            drone_profile=data["drone_profile"],
+            initial_altitude_m=float(data["initial_altitude_m"]),
+            launch_area=data["launch_area"],
+            control_mode=data["control_mode"],
+            map_layout=data["map_layout"],
+            collider_overlay_default=data["collider_overlay_default"],
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise base.RecipeError(
+            f"invalid configured Urban Drone recipe {selected}: {exc}"
+        ) from exc
+    return recipe
 
 
 def patch_launcher(
@@ -62,6 +213,7 @@ def patch_launcher(
     *,
     paths: object,
     drone_root: Path,
+    mission_path: Path,
     mujoco_viewer: bool = False,
 ) -> Path:
     launcher = json.loads(path.read_text(encoding="utf-8"))
@@ -89,7 +241,7 @@ def patch_launcher(
                 "--city-marker",
                 str(paths.recipe_config / "mujoco-city-fleet.json"),
                 "--mission",
-                str(MISSION),
+                str(mission_path),
                 "--summary-json",
                 str(paths.recipe_validation / "urban-drone-mission.json"),
             ],
@@ -277,7 +429,9 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     return scene_path, viewer_path
 
 
-def open_viewer(*, show_colliders: bool = False) -> int:
+def open_viewer(
+    *, show_colliders: bool = False, map_layout: str = "bottom-left"
+) -> int:
     paths = _paths()
     collider_config = paths.recipe_root / (
         "web/map-viewer/thirdparty/hakoniwa-threejs-drone/"
@@ -287,7 +441,9 @@ def open_viewer(*, show_colliders: bool = False) -> int:
         raise base.RecipeError(
             "Collider viewer is not configured; run configure before open-viewer"
         )
-    url = base.viewer_url(1, map_viewer=True) + "&layout=three-main"
+    url = base.viewer_url(1, map_viewer=True)
+    if map_layout == "bottom-left":
+        url += "&layout=three-main"
     if show_colliders:
         url = url.replace(
             "viewerConfigName=viewer-config-fleets.json",
@@ -297,16 +453,19 @@ def open_viewer(*, show_colliders: bool = False) -> int:
 
 
 def _write_urban_launcher(paths, drone_root, viewer_root, experiment, system_name):
+    if _ACTIVE_RECIPE is None:
+        raise base.RecipeError("Urban Drone recipe is not active during configure")
     path = _BASE_WRITE_LAUNCHER(
         paths, drone_root, viewer_root, experiment, system_name
     )
     patch_eams_city_viewer(paths)
-    if read_control_mode(paths) == "ps4-rc":
+    if _ACTIVE_RECIPE.control_mode == "ps4-rc":
         return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
     return patch_launcher(
         path,
         paths=paths,
         drone_root=drone_root,
+        mission_path=_ACTIVE_RECIPE.mission,
         mujoco_viewer=_MUJOCO_VIEWER_ENABLED,
     )
 
@@ -660,53 +819,55 @@ def set_initial_drop_altitude(marker: dict, initial_altitude_m: float) -> Path:
 def configure(
     drone_root: Path,
     *,
-    rc_mode: bool = False,
+    recipe: UrbanDroneRecipe,
     runtime_config_dir: Path | None = None,
 ) -> int:
-    if not CITY_RECEIPT.is_file():
-        raise base.RecipeError(f"Hokkaido City World Receipt not found: {CITY_RECEIPT}")
-    rc = base.configure(EXPERIMENT, drone_root)
+    global _ACTIVE_RECIPE
+    _ACTIVE_RECIPE = recipe
+    rc = base.configure(recipe.fleet_experiment, drone_root)
     if rc != 0:
         return rc
     paths = _paths()
-    if rc_mode and runtime_config_dir is None:
+    if recipe.control_mode == "ps4-rc" and runtime_config_dir is None:
         runtime_config_dir = paths.recipe_root / "rc"
     marker = city.configure_single_host_fleet(
         drone_root=drone_root,
-        city_world_path=CITY_RECEIPT,
+        city_world_path=recipe.city_receipt,
         drone_count=1,
         process_count=1,
         recipe_config=paths.recipe_config,
         altitude_mode="route-clearance",
-        launch_area={
-            "mode": "auto",
-            "offset_m": [0.0, 0.0, 0.0],
-            "search_radius_m": 100.0,
-        },
+        launch_area=recipe.launch_area,
     )
-    mission_config = json.loads(MISSION.read_text(encoding="utf-8"))
-    initial_altitude_m = float(mission_config.get("initial_altitude_m", 7.0))
-    set_initial_drop_altitude(marker, initial_altitude_m)
+    set_initial_drop_altitude(marker, recipe.initial_altitude_m)
     runtime_model = materialize_eams_city_model(
         marker,
         drone_root,
-        rc_mode=rc_mode,
+        rc_mode=recipe.control_mode == "ps4-rc",
         runtime_config_dir=runtime_config_dir,
     )
-    write_control_mode(paths, "ps4-rc" if rc_mode else "fleet-rpc")
+    write_control_mode(paths, recipe.control_mode)
+    write_selected_recipe(paths, recipe)
     spawn = marker["flight_plan"]["spawn_points"][0]
     print("Urban one-Drone checkpoint configured")
-    print(f"City World : {CITY_RECEIPT}")
+    print(f"Recipe     : {recipe.source_path}")
+    print(f"City World : {recipe.city_receipt}")
     print(f"Spawn ENU  : ({spawn['x_m']:.3f}, {spawn['y_m']:.3f})")
     print(
         "Flight Z  : "
         f"{marker['flight_plan']['resolved_flight_altitude_m']:.3f} m"
     )
-    print(f"Initial Z : {initial_altitude_m:.3f} m (free-fall to PLATEAU DEM)")
+    print(
+        f"Initial Z : {recipe.initial_altitude_m:.3f} m "
+        "(free-fall to PLATEAU DEM)"
+    )
     print(f"Fleet      : {marker['fleet_config']}")
     print(f"Runtime XML: {runtime_model}")
     print("Vehicle    : EAMS nominal 9 kg Hexa-X (6 rotors, Hakoniwa tuned)")
-    print(f"Controller : {'PS4 RC' if rc_mode else 'Fleet RPC'}")
+    print(
+        f"Controller : "
+        f"{'PS4 RC' if recipe.control_mode == 'ps4-rc' else 'Fleet RPC'}"
+    )
     print("Browser    : EAMS Hexa GLB (6 animated propellers)")
     print("Next       : python tools/drone_one.py doctor")
     return 0
@@ -721,6 +882,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--drone-root", type=Path, default=DEFAULT_DRONE_ROOT)
     result.add_argument("--viewer-root", type=Path, default=DEFAULT_VIEWER_ROOT)
     result.add_argument(
+        "--recipe",
+        type=Path,
+        help="configure recipe; defaults to urban-drone-one.yaml",
+    )
+    result.add_argument(
         "--mujoco-viewer",
         action="store_true",
         help="open the native MuJoCo viewer while running doctor/start",
@@ -728,36 +894,66 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--rc",
         action="store_true",
-        help="configure the one-Drone checkpoint for PS4 RadioController operation",
+        help="compatibility override: configure with PS4 RadioController",
     )
-    result.add_argument(
+    collider_group = result.add_mutually_exclusive_group()
+    collider_group.add_argument(
         "--colliders",
+        dest="colliders",
         action="store_true",
         help="show green MJCF Collider wireframes with open-viewer",
     )
+    collider_group.add_argument(
+        "--no-colliders",
+        dest="colliders",
+        action="store_false",
+        help="hide MJCF Collider wireframes with open-viewer",
+    )
+    result.set_defaults(colliders=None)
     return result
 
 
 def main() -> int:
-    global _MUJOCO_VIEWER_ENABLED
+    global _MUJOCO_VIEWER_ENABLED, _ACTIVE_RECIPE
     argument_parser = parser()
     args = argument_parser.parse_args()
-    if args.colliders and args.command != "open-viewer":
-        argument_parser.error("--colliders is available only with open-viewer")
+    if args.colliders is not None and args.command != "open-viewer":
+        argument_parser.error(
+            "--colliders/--no-colliders are available only with open-viewer"
+        )
+    if args.rc and args.command != "configure":
+        argument_parser.error("--rc is available only with configure")
+    if args.recipe is not None and args.command != "configure":
+        argument_parser.error("--recipe is available only with configure")
     _MUJOCO_VIEWER_ENABLED = args.mujoco_viewer
     drone_root = args.drone_root.expanduser().resolve()
     viewer_root = args.viewer_root.expanduser().resolve()
     if args.command == "configure":
-        return configure(drone_root, rc_mode=args.rc)
+        recipe = load_urban_recipe(args.recipe or DEFAULT_RECIPE)
+        if args.rc:
+            recipe = replace(recipe, control_mode="ps4-rc")
+        _ACTIVE_RECIPE = recipe
+        return configure(drone_root, recipe=recipe)
+    paths = _paths()
+    recipe = read_selected_recipe(paths)
+    _ACTIVE_RECIPE = recipe
     if args.command == "doctor":
-        return base.doctor(EXPERIMENT, drone_root, viewer_root)
+        return base.doctor(recipe.fleet_experiment, drone_root, viewer_root)
     if args.command == "start":
-        return base.start(EXPERIMENT, drone_root, viewer_root)
+        return base.start(recipe.fleet_experiment, drone_root, viewer_root)
     if args.command == "status":
-        return base.control(EXPERIMENT, drone_root, "status")
+        return base.control(recipe.fleet_experiment, drone_root, "status")
     if args.command == "stop":
-        return base.control(EXPERIMENT, drone_root, "terminate")
-    return open_viewer(show_colliders=args.colliders)
+        return base.control(recipe.fleet_experiment, drone_root, "terminate")
+    show_colliders = (
+        recipe.collider_overlay_default
+        if args.colliders is None
+        else args.colliders
+    )
+    return open_viewer(
+        show_colliders=show_colliders,
+        map_layout=recipe.map_layout,
+    )
 
 
 if __name__ == "__main__":

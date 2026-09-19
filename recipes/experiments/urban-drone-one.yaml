@@ -1,0 +1,26 @@
+version: 1
+id: urban-drone-one
+
+fleet_experiment:
+  path: drone-one-fleet.yaml
+
+city_world:
+  receipt: ../../../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+
+drone:
+  profile: eams-nominal-9kg
+  initial_altitude_m: 7.0
+  launch_area:
+    mode: auto
+    offset_m: [0.0, 0.0, 0.0]
+    search_radius_m: 100.0
+
+control:
+  mode: ps4-rc
+
+mission:
+  path: ../../config/drone/city-one-mission.json
+
+viewer:
+  map_layout: bottom-left
+  collider_overlay_default: false

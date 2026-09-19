@@ -14,30 +14,27 @@ browser visualization and safety-aware interaction.
 > is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
 > contact handling remain under development.
 
-## One-Drone Hokkaido checkpoint
+## Recipe-selected one-Drone checkpoint
 
-The first Drone milestone runs one `hakoniwa-drone-core` Fleet vehicle in the
-same compact Hokkaido/Sapporo City World used by the Car scenario. It resolves
+The first Drone milestone runs one `hakoniwa-drone-core` Fleet vehicle in a
+City World selected by `recipes/experiments/urban-drone-one.yaml`. The checked-in
+recipe selects the compact Hokkaido/Sapporo world used by the Car scenario. It resolves
 a level launch area from the City Receipt and executes `SetReady -> TakeOff ->
 GetState -> GoTo -> Land` through `FleetRpcController`. The GoTo target is 2.5 m
 from the actual post-takeoff pose, so the mission does not duplicate the
 Drone/MuJoCo coordinate conversion.
 
 ```bash
-python3 tools/drone_one.py configure
+python3 tools/drone_one.py configure \
+  --recipe recipes/experiments/urban-drone-one.yaml
 python3 tools/drone_one.py doctor
 python3 tools/drone_one.py start
 python3 tools/drone_one.py status
 ```
 
-For the same one-Drone browser checkpoint under PS4 control, configure it in
-RC mode before running the normal doctor/start commands:
-
-```bash
-python3 tools/drone_one.py configure --rc
-python3 tools/drone_one.py doctor
-python3 tools/drone_one.py start
-```
+The checked-in recipe selects `control.mode: ps4-rc`. Change it to `fleet-rpc`
+for the automatic mission, then run configure again. `--rc` remains only as a
+compatibility override for older commands.
 
 `python3 tools/drone_one.py open-viewer` opens the 3D-first layout with the
 map at lower left. Add `--colliders` to overlay the MJCF Collider GLB as green
@@ -367,6 +364,30 @@ assumed to be a road. The complete operating guide is in
 The checked-in hotel demo generates ten Golf Carts at 4.5 m route spacing;
 changing the scenario fleet `count` regenerates both spawn poses and runtime
 contracts.
+
+For the one-Car browser checkpoint, use
+[`recipes/experiments/urban-car-one.yaml`](recipes/experiments/urban-car-one.yaml).
+The complete macOS operation guide is
+[`docs/operation-one-car-ps5-browser.md`](docs/operation-one-car-ps5-browser.md).
+The recipe selects the City World receipt, Golf Cart model, initial pose,
+PS5 RC control, browser presentation, and generated workspace. `start` brings
+up the simulator, WebBridge, HTTP server, and PS5 sender together. The native
+MuJoCo Viewer is not required for this checkpoint.
+
+```bash
+python3 tools/multi_car.py configure \
+  --config recipes/experiments/urban-car-one.yaml
+python3 tools/multi_car.py check-ps5 \
+  --config recipes/experiments/urban-car-one.yaml
+python3 tools/multi_car.py start \
+  --config recipes/experiments/urban-car-one.yaml
+
+python3 tools/multi_car.py open-viewer --colliders \
+  --config recipes/experiments/urban-car-one.yaml
+
+python3 tools/multi_car.py stop \
+  --config recipes/experiments/urban-car-one.yaml
+```
 
 ```bash
 python3 tools/multi_car.py doctor --config recipes/multi-car-viewer.yaml

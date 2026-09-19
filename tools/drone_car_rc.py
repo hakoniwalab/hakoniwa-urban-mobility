@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
@@ -182,9 +183,14 @@ def build_car_asset() -> None:
 def configure(drone_root: Path) -> int:
     build_car_asset()
     resolved = multi_car.resolve_config(CONFIG)
+    drone_recipe = replace(
+        drone_one.load_urban_recipe(drone_one.DEFAULT_RECIPE),
+        control_mode="ps4-rc",
+        city_receipt=resolved["city_receipt"],
+    )
     if drone_one.configure(
         drone_root,
-        rc_mode=True,
+        recipe=drone_recipe,
         runtime_config_dir=resolved["work"],
     ) != 0:
         return 1
@@ -195,7 +201,9 @@ def configure(drone_root: Path) -> int:
     start = configured_drone_start()
     drone_one._MUJOCO_VIEWER_ENABLED = False
     if drone_one.base.doctor(
-        drone_one.EXPERIMENT, drone_root, drone_one.DEFAULT_VIEWER_ROOT
+        drone_recipe.fleet_experiment,
+        drone_root,
+        drone_one.DEFAULT_VIEWER_ROOT,
     ) != 0:
         return 1
     if multi_car.configure(resolved) != 0:

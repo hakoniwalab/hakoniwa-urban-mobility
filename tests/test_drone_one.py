@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import types
 import unittest
@@ -15,6 +16,7 @@ def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -105,6 +107,47 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_urban_recipe_resolves_all_paths_relative_to_recipe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("fleet.yaml", "city.json", "mission.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            recipe_path = root / "urban-drone-one.yaml"
+            recipe_path.write_text(
+                """version: 1
+id: test-drone
+fleet_experiment:
+  path: fleet.yaml
+city_world:
+  receipt: city.json
+drone:
+  profile: eams-nominal-9kg
+  initial_altitude_m: 8.5
+  launch_area:
+    mode: auto
+    offset_m: [1.0, 2.0, 0.0]
+    search_radius_m: 50.0
+control:
+  mode: fleet-rpc
+mission:
+  path: mission.json
+viewer:
+  map_layout: split
+  collider_overlay_default: true
+""",
+                encoding="utf-8",
+            )
+
+            recipe = drone_one.load_urban_recipe(recipe_path)
+
+            self.assertEqual(recipe.fleet_experiment, (root / "fleet.yaml").resolve())
+            self.assertEqual(recipe.city_receipt, (root / "city.json").resolve())
+            self.assertEqual(recipe.mission, (root / "mission.json").resolve())
+            self.assertEqual(recipe.initial_altitude_m, 8.5)
+            self.assertEqual(recipe.control_mode, "fleet-rpc")
+            self.assertEqual(recipe.map_layout, "split")
+            self.assertTrue(recipe.collider_overlay_default)
+
     def test_open_viewer_colliders_are_opt_in(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -319,6 +362,7 @@ class DroneOneToolTest(unittest.TestCase):
                 launcher_path,
                 paths=paths,
                 drone_root=root / "drone-core",
+                mission_path=root / "mission.json",
                 mujoco_viewer=True,
             )
 

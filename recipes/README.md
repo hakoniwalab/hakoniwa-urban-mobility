@@ -3,19 +3,33 @@
 This directory contains the configuration and composition contract for the
 PLATEAU Urban Car Fleet checkpoint.
 
-## One Drone in the Hokkaido City World
+## Recipe-selected one Drone City World
 
 `tools/drone_one.py` materializes the first Drone-side checkpoint from
-`recipes/experiments/drone-one-hokkaido.yaml`. It reuses the Business Pack
+`recipes/experiments/urban-drone-one.yaml`. The Urban recipe selects the City
+World Receipt, Fleet experiment, mission, launch area, initial altitude,
+control mode, and Viewer defaults. Its paths are resolved relative to the
+recipe file. It reuses the Business Pack
 single-host Fleet workspace and the City/MuJoCo composer from
 `hakoniwa-drone-show`, but replaces the Show runner with the Urban-owned direct
 Fleet RPC mission in `apps/drone/city_fleet_mission.py`.
 
 ```bash
-python3 tools/drone_one.py configure
+python3 tools/drone_one.py configure \
+  --recipe recipes/experiments/urban-drone-one.yaml
 python3 tools/drone_one.py doctor
 python3 tools/drone_one.py start
 python3 tools/drone_one.py status
+```
+
+To select another City World or tune the checkpoint, copy
+`urban-drone-one.yaml` and change its `city_world.receipt`, `initial_altitude_m`,
+`launch_area`, `control.mode`, mission path, or Viewer defaults. Pass that file
+only to configure; its resolved paths and SHA-256 are saved in the generated
+workspace and reused by `doctor`, `start`, `status`, `open-viewer`, and `stop`.
+
+```bash
+python3 tools/drone_one.py configure --recipe recipes/experiments/my-drone.yaml
 ```
 
 Add `--mujoco-viewer` to `start` to display Drone Core's native MuJoCo
@@ -112,6 +126,28 @@ converted to the City World MJCF convention
 are recorded in `compose-receipt.json`.
 
 ## Configure and run
+
+For one PS5 RC-controlled Golf Cart with browser visualization, use the compact
+experiment recipe. `start` launches the PS5 sender with the Car runtime and
+browser services; the native MuJoCo Viewer is not needed:
+
+```bash
+python3 tools/multi_car.py doctor \
+  --config recipes/experiments/urban-car-one.yaml
+python3 tools/multi_car.py configure \
+  --config recipes/experiments/urban-car-one.yaml
+python3 tools/multi_car.py check-ps5 \
+  --config recipes/experiments/urban-car-one.yaml
+python3 tools/multi_car.py start \
+  --config recipes/experiments/urban-car-one.yaml
+
+python3 tools/multi_car.py open-viewer --colliders \
+  --config recipes/experiments/urban-car-one.yaml
+```
+
+Change `inputs.business_pack_city_receipt.path` to select a different generated
+City World. The route scenario remains an explicit city-local input because its
+ENU waypoints and vehicle start pose must match the selected roads.
 
 ```bash
 python3 tools/multi_car.py doctor \

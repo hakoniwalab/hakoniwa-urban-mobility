@@ -1,14 +1,15 @@
 # One EAMS Hexa Drone: PS4 control and browser visualization
 
-This procedure runs one EAMS nominal 9 kg Hexa-X Drone in the Hokkaido
-PLATEAU world, controls it with a PS4 controller, and displays it in the
+This procedure runs one EAMS nominal 9 kg Hexa-X Drone in the PLATEAU City
+World selected by `recipes/experiments/urban-drone-one.yaml`, controls it with
+a PS4 controller, and displays it in the
 Map Viewer / Three.js browser view. It does not start the Golf Cart.
 
 ## Prerequisites
 
 - Run commands from the `hakoniwa-urban-mobility` repository root.
 - Connect the PS4 controller to macOS before starting the Launcher.
-- Prepare the Hokkaido City World Receipt used by `tools/drone_one.py`.
+- Prepare the City World Receipt selected by `city_world.receipt` in the recipe.
 - Keep the sibling repositories `hakoniwa-business-pack`,
   `hakoniwa-drone-pro`, `hakoniwa-mbody-registry`, and
   `hakoniwa-threejs-drone` in the Business Pack workspace.
@@ -16,11 +17,12 @@ Map Viewer / Three.js browser view. It does not start the Golf Cart.
 ## Configure
 
 ```bash
-python3 tools/drone_one.py configure --rc
+python3 tools/drone_one.py configure \
+  --recipe recipes/experiments/urban-drone-one.yaml
 python3 tools/drone_one.py doctor
 ```
 
-`configure --rc` copies the generated RadioController configuration and tuned
+The checked-in recipe uses `control.mode: ps4-rc`. `configure` copies the generated RadioController configuration and tuned
 EAMS parameters into the Recipe workspace. It does not modify the tracked
 configuration in `hakoniwa-drone-pro`.
 
@@ -99,5 +101,5 @@ python tools/mjcf2glb.py \
 
 Copy `/tmp/eams-hexa-glb/drone_base.glb` to
 `../hakoniwa-threejs-drone/assets/models/eams-hexa-frame.glb`, then rerun
-`configure --rc` and `doctor` so the Recipe-local browser resources are
+`configure` and `doctor` so the Recipe-local browser resources are
 refreshed.

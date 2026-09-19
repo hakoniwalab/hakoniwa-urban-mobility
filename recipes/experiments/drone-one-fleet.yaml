@@ -1,7 +1,7 @@
 version: 1
 
 experiment:
-  id: urban-drone-one-hokkaido
+  id: urban-drone-one
 
 scale:
   drone_count: 1

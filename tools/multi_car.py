@@ -16,6 +16,8 @@ import math
 from pathlib import Path
 import subprocess
 import sys
+from urllib.parse import urlencode
+import webbrowser
 import xml.etree.ElementTree as ET
 
 
@@ -28,6 +30,7 @@ from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # n
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
+MAP_VIEWER = WORKSPACE / "hakoniwa-map-viewer"
 DEFAULT_CONFIG = ROOT / "recipes/multi-car-viewer.yaml"
 FLEET_ASSET_NAME = "UrbanCarFleet"
 FLEET_PDU_ROBOT = "UrbanFleet"
@@ -67,6 +70,30 @@ def workspace_url(path: Path) -> str:
     except ValueError as error:
         raise RecipeError(f"browser asset is outside the workspace: {path}") from error
     return "/" + relative.as_posix()
+
+
+def map_viewer_url(resolved: dict, viewer_config: Path) -> str:
+    receipt = load_json(resolved["city_receipt"], "City World receipt")
+    try:
+        origin = receipt["coordinate_frame"]["origin"]
+        latitude = float(origin["latitude"])
+        longitude = float(origin["longitude"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RecipeError("City World receipt has no valid map origin") from error
+    query = urlencode({
+        "threejsRoot": workspace_url(resolved["visualization"]["threejs_root"]),
+        "viewerConfigPath": workspace_url(viewer_config),
+        "layout": "three-main",
+        "originLat": latitude,
+        "originLon": longitude,
+        "autoConnect": "true",
+    })
+    return (
+        f"http://127.0.0.1:{resolved['visualization']['http_port']}"
+        + workspace_url(MAP_VIEWER / "src/client/index.html")
+        + "?"
+        + query
+    )
 
 
 def sha256(path: Path) -> str:
@@ -207,11 +234,14 @@ def resolve_config(config_path: Path) -> dict:
         vehicle_inputs, vehicle_generation = expand_config_vehicle_inputs(
             vehicle_config["vehicles"]
         )
-        realtime_sync_cycle_msec = int(config["inputs"]["ackermann_runtime"].get(
+        runtime_input = config["inputs"]["ackermann_runtime"]
+        realtime_sync_cycle_msec = int(runtime_input.get(
             "realtime_sync_cycle_msec", 2
         ))
+        native_mujoco_viewer = runtime_input.get("native_mujoco_viewer", True)
         visualization = config["inputs"].get("browser_visualization", {})
         visualization_enabled = bool(visualization.get("enabled", False))
+        front_camera = visualization.get("front_camera")
         web_bridge_port = int(visualization.get("web_bridge_port", 8765))
         http_port = int(visualization.get("http_port", 8000))
         threejs_root = resolve_path(
@@ -228,8 +258,12 @@ def resolve_config(config_path: Path) -> dict:
         raise RecipeError("drone_mirrors must be an array")
     if realtime_sync_cycle_msec < 0:
         raise RecipeError("realtime_sync_cycle_msec must be non-negative")
+    if not isinstance(native_mujoco_viewer, bool):
+        raise RecipeError("native_mujoco_viewer must be boolean")
     if not (1 <= web_bridge_port <= 65535 and 1 <= http_port <= 65535):
         raise RecipeError("browser visualization ports must be within 1..65535")
+    if front_camera is not None and not isinstance(front_camera, dict):
+        raise RecipeError("browser_visualization.front_camera must be a mapping")
 
     vehicle_types = {}
     for index, type_input in enumerate(type_inputs):
@@ -399,11 +433,13 @@ def resolve_config(config_path: Path) -> dict:
         "vehicle_types": vehicle_types,
         "vehicle_generation": vehicle_generation,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
+        "native_mujoco_viewer": native_mujoco_viewer,
         "visualization": {
             "enabled": visualization_enabled,
             "web_bridge_port": web_bridge_port,
             "http_port": http_port,
             "threejs_root": threejs_root,
+            "front_camera": front_camera,
         },
     }
 
@@ -427,6 +463,7 @@ def paths() -> dict[str, Path]:
         "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
         "web_bridge": foundation_install() / "bin/hakoniwa-pdu-web-bridge",
+        "http_server": ROOT / "tools/workspace_http_server.py",
     }
 
 
@@ -483,6 +520,18 @@ def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
     if glb_frame != "X=East,Y=Up,Z=-North":
         raise RecipeError(f"unsupported City World GLB coordinate system: {glb_frame}")
     return required(mjcf, "City World MJCF"), required(glb, "City World GLB"), receipt
+
+
+def city_collider_glb(city_receipt: Path) -> Path:
+    world_dir = city_receipt.resolve().parent
+    if world_dir.name != "world" or world_dir.parent.name != "build":
+        raise RecipeError(
+            f"City World receipt is outside a Worker job: {city_receipt}"
+        )
+    return required(
+        world_dir.parent.parent / "viewer/city-world-colliders.glb",
+        "City World Collider GLB",
+    )
 
 
 def command(command: list[str]) -> None:
@@ -1116,6 +1165,7 @@ def materialize_browser_visualization(
     city_glb: Path,
     vehicles: list[dict],
     visualization: dict,
+    collider_glb: Path | None = None,
 ) -> dict[str, Path | str]:
     """Materialize a read-only state bridge and compact Three.js configs."""
     bridge_root = work / "web-bridge"
@@ -1243,7 +1293,7 @@ def materialize_browser_visualization(
         for type_name, definition in sorted(type_definitions.items())
     })
     scene_config_path = browser_root / "scene-config.json"
-    write_json(scene_config_path, {
+    scene_config = {
         "version": "1.0",
         "format": "compact",
         "environments": [{
@@ -1260,12 +1310,21 @@ def materialize_browser_visualization(
         },
         "vehicleTypesPath": "./vehicle-types.json",
         "vehicles": [
-            {"name": vehicle["name"], "type": vehicle["type"]}
+            {
+                "name": vehicle["name"],
+                "type": vehicle["type"],
+                **(
+                    {"frontCamera": visualization["front_camera"]}
+                    if visualization.get("front_camera") is not None
+                    else {}
+                ),
+            }
             for vehicle in vehicles
         ],
-    })
+    }
+    write_json(scene_config_path, scene_config)
     viewer_config_path = browser_root / "viewer-config.json"
-    write_json(viewer_config_path, {
+    viewer_config = {
         "version": "1.0",
         "three": {
             "sceneConfigPath": workspace_url(scene_config_path),
@@ -1277,7 +1336,7 @@ def materialize_browser_visualization(
             "wireVersion": "v2",
         },
         "ui": {
-            "enableAttachedCameras": False,
+            "enableAttachedCameras": visualization.get("front_camera") is not None,
             "enableMainCameraMouseControl": True,
         },
         "stateInput": {
@@ -1287,14 +1346,15 @@ def materialize_browser_visualization(
                 "joint_states": "sensor_msgs/JointState",
             }},
         },
-    })
+    }
+    write_json(viewer_config_path, viewer_config)
     viewer_url = (
         f"http://127.0.0.1:{visualization['http_port']}"
         + workspace_url(visualization["threejs_root"] / "index.html")
         + "?viewerConfigPath="
         + workspace_url(viewer_config_path)
     )
-    return {
+    result = {
         "bridge_root": bridge_root,
         "bridge_config": bridge_config_path,
         "pdu_def": browser_pdu_def_path,
@@ -1303,6 +1363,39 @@ def materialize_browser_visualization(
         "viewer_config": viewer_config_path,
         "viewer_url": viewer_url,
     }
+    if collider_glb is not None:
+        collider_scene = copy.deepcopy(scene_config)
+        collider_scene["environments"].append({
+            "name": "city-world-colliders",
+            "model": workspace_url(collider_glb),
+            "render": {
+                "mode": "wireframe",
+                "color": "#22c55e",
+                "opacity": 0.72,
+                "depthTest": True,
+                "depthWrite": False,
+            },
+        })
+        collider_scene_path = browser_root / "scene-config-colliders.json"
+        write_json(collider_scene_path, collider_scene)
+        collider_viewer = copy.deepcopy(viewer_config)
+        collider_viewer["three"]["sceneConfigPath"] = workspace_url(
+            collider_scene_path
+        )
+        collider_viewer_path = browser_root / "viewer-config-colliders.json"
+        write_json(collider_viewer_path, collider_viewer)
+        collider_url = (
+            f"http://127.0.0.1:{visualization['http_port']}"
+            + workspace_url(visualization["threejs_root"] / "index.html")
+            + "?viewerConfigPath="
+            + workspace_url(collider_viewer_path)
+        )
+        result.update({
+            "collider_scene_config": collider_scene_path,
+            "collider_viewer_config": collider_viewer_path,
+            "collider_viewer_url": collider_url,
+        })
+    return result
 
 
 def launcher_supports_cleanup(python: Path) -> bool:
@@ -1354,6 +1447,7 @@ def materialize_launcher(
     realtime_sync_cycle_msec: int,
     vehicles: list[dict],
     browser_files: dict[str, Path | str] | None = None,
+    native_mujoco_viewer: bool = True,
 ) -> Path:
     source = paths()
     python = foundation_python()
@@ -1362,15 +1456,18 @@ def materialize_launcher(
     logs.mkdir(parents=True, exist_ok=True)
     runtime.mkdir(parents=True, exist_ok=True)
     install = foundation_install()
+    plant_args = [
+        "--manifest", str(runtime_files["manifest"]),
+        "--realtime-sync-cycle-msec", str(realtime_sync_cycle_msec),
+    ]
+    if not native_mujoco_viewer:
+        plant_args.append("--no-viewer")
     assets = [
         {
             "name": "urban-car-fleet-plant",
             "activation_timing": "before_start",
             "command": str(source["plant"]),
-            "args": [
-                "--manifest", str(runtime_files["manifest"]),
-                "--realtime-sync-cycle-msec", str(realtime_sync_cycle_msec),
-            ],
+            "args": plant_args,
             "delay_sec": 2,
             "readiness": {
                 "type": "hako_asset",
@@ -1422,9 +1519,10 @@ def materialize_launcher(
                 "activation_timing": "after_start",
                 "command": str(python),
                 "args": [
-                    "-m", "http.server",
-                    str(browser_files["http_port"]),
+                    str(source["http_server"]),
+                    "--port", str(browser_files["http_port"]),
                     "--bind", "127.0.0.1",
+                    "--directory", str(WORKSPACE),
                 ],
                 "cwd": str(WORKSPACE),
                 "depends_on": ["urban-vehicle-web-bridge"],
@@ -1495,6 +1593,7 @@ def doctor(resolved: dict) -> int:
         checks.extend([
             ("Hakoniwa PDU WebBridge", source["web_bridge"]),
             ("Three.js viewer", resolved["visualization"]["threejs_root"] / "index.html"),
+            ("Map Viewer", MAP_VIEWER / "src/client/index.html"),
         ])
     for definition in resolved["vehicle_types"].values():
         checks.extend([
@@ -1552,14 +1651,22 @@ def configure(resolved: dict) -> int:
             city_glb,
             vehicles,
             resolved["visualization"],
+            city_collider_glb(resolved["city_receipt"]),
         )
         browser_files["http_port"] = resolved["visualization"]["http_port"]
+        browser_files["viewer_url"] = map_viewer_url(
+            resolved, browser_files["viewer_config"]
+        )
+        browser_files["collider_viewer_url"] = map_viewer_url(
+            resolved, browser_files["collider_viewer_config"]
+        )
     launcher = materialize_launcher(
         runtime_files,
         work,
         resolved["realtime_sync_cycle_msec"],
         vehicles,
         browser_files,
+        resolved["native_mujoco_viewer"],
     )
     compose_receipt = {
         "schema_version": 1,
@@ -1630,6 +1737,7 @@ def configure(resolved: dict) -> int:
         "core_config": str(source["core_config"]),
         "runtime_ownership": "exclusive Foundation mmap; Launcher cleanup_mmap_on_start",
         "realtime_sync_cycle_msec": resolved["realtime_sync_cycle_msec"],
+        "native_mujoco_viewer": resolved["native_mujoco_viewer"],
         "launcher": str(launcher),
         "browser_visualization": (
             None if browser_files is None else {
@@ -1713,21 +1821,46 @@ def check_ps5(resolved: dict) -> int:
     return 0
 
 
+def open_viewer(resolved: dict, *, show_colliders: bool = False) -> int:
+    if not resolved["visualization"]["enabled"]:
+        raise RecipeError("browser visualization is disabled in this recipe")
+    config_name = (
+        "viewer-config-colliders.json" if show_colliders else "viewer-config.json"
+    )
+    viewer_config = required(
+        resolved["work"] / "threejs" / config_name,
+        "generated Three.js viewer config; run configure first",
+    )
+    url = map_viewer_url(resolved, viewer_config)
+    print(f"Opening Three.js: {url}")
+    return 0 if webbrowser.open(url) else 1
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Operate a configured Urban City World + Car Fleet recipe")
     result.add_argument(
         "command",
-        choices=("doctor", "configure", "check-ps5", "view", "start", "status", "stop"),
+        choices=(
+            "doctor", "configure", "check-ps5", "view", "open-viewer",
+            "start", "status", "stop",
+        ),
     )
     result.add_argument(
         "--config", type=Path, default=DEFAULT_CONFIG,
         help=f"configuration YAML (default: {DEFAULT_CONFIG.relative_to(ROOT)})",
+    )
+    result.add_argument(
+        "--colliders",
+        action="store_true",
+        help="show green City World Collider wireframes with open-viewer",
     )
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
+    if args.colliders and args.command != "open-viewer":
+        parser().error("--colliders is available only with open-viewer")
     resolved = resolve_config(args.config)
     if args.command == "doctor":
         return doctor(resolved)
@@ -1737,6 +1870,8 @@ def main() -> int:
         return check_ps5(resolved)
     if args.command == "view":
         return view(resolved["work"])
+    if args.command == "open-viewer":
+        return open_viewer(resolved, show_colliders=args.colliders)
     return launch(args.command, resolved["work"])
 
 

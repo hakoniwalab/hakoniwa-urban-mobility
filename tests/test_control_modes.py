@@ -54,6 +54,31 @@ class FakeTransport:
 
 
 class ControlModeTest(unittest.TestCase):
+    def test_urban_car_one_recipe_selects_one_browser_visible_golf_cart(self):
+        resolved = multi_car.resolve_config(
+            ROOT / "recipes/experiments/urban-car-one.yaml"
+        )
+
+        self.assertEqual(resolved["recipe_id"], "urban-car-one")
+        self.assertEqual(
+            [(item["name"], item["type"], item["control_mode"])
+             for item in resolved["vehicles"]],
+            [("Car-1", "golf_cart", "ps5")],
+        )
+        self.assertEqual(resolved["vehicle_generation"]["vehicle_count"], 1)
+        self.assertEqual(resolved["mirrors"], [])
+        self.assertTrue(resolved["visualization"]["enabled"])
+        self.assertEqual(
+            resolved["visualization"]["front_camera"]["position"],
+            [1.25, 0.0, 1.25],
+        )
+        self.assertFalse(resolved["native_mujoco_viewer"])
+        self.assertEqual(resolved["work"], ROOT / "work/urban-car-one")
+
+    def test_headless_launcher_disables_native_mujoco_viewer(self):
+        launcher = self.launcher(["ps5"], native_mujoco_viewer=False)
+        self.assertIn("--no-viewer", launcher["assets"][0]["args"])
+
     def test_checked_in_recipe_generates_ten_external_vehicles(self):
         resolved = multi_car.resolve_config(
             ROOT / "recipes/multi-car-viewer.yaml"
@@ -78,7 +103,9 @@ class ControlModeTest(unittest.TestCase):
         self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["east_m"], 39.5)
         self.assertAlmostEqual(resolved["vehicles"][1]["spawn_enu"]["yaw_deg"], 180.0)
 
-    def launcher(self, modes: list[str]) -> dict:
+    def launcher(
+        self, modes: list[str], *, native_mujoco_viewer: bool = True
+    ) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             source = {
@@ -120,6 +147,7 @@ class ControlModeTest(unittest.TestCase):
                         }
                         for index, mode in enumerate(modes, start=1)
                     ],
+                    native_mujoco_viewer=native_mujoco_viewer,
                 )
             return json.loads(path.read_text(encoding="utf-8"))
 
@@ -277,6 +305,7 @@ class ControlModeTest(unittest.TestCase):
         _city_mjcf, city_glb, _receipt = multi_car.city_inputs(
             resolved["city_receipt"]
         )
+        collider_glb = multi_car.city_collider_glb(resolved["city_receipt"])
         (ROOT / "work").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / "work") as directory:
             work = Path(directory)
@@ -289,11 +318,23 @@ class ControlModeTest(unittest.TestCase):
                 city_glb,
                 resolved["vehicles"],
                 resolved["visualization"],
+                collider_glb,
             )
             scene = json.loads(files["scene_config"].read_text(encoding="utf-8"))
+            collider_scene = json.loads(
+                files["collider_scene_config"].read_text(encoding="utf-8")
+            )
             viewer = json.loads(files["viewer_config"].read_text(encoding="utf-8"))
             bridge = json.loads(files["bridge_config"].read_text(encoding="utf-8"))
             self.assertEqual(len(scene["vehicles"]), 10)
+            self.assertEqual(
+                collider_scene["environments"][-1]["render"]["mode"],
+                "wireframe",
+            )
+            self.assertEqual(
+                collider_scene["environments"][-1]["render"]["color"],
+                "#22c55e",
+            )
             self.assertEqual(scene["vehicles"][0], {"name": "Car-1", "type": "golf_cart"})
             self.assertEqual(viewer["stateInput"]["mode"], "none")
             self.assertEqual(
