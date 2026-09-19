@@ -1,0 +1,41 @@
+version: 1
+id: shizuoka-rooftop-drone
+
+fleet_experiment:
+  path: ../experiments/drone-one-fleet.yaml
+
+city_world:
+  receipt: ../../../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
+
+drone:
+  profile: eams-nominal-9kg
+  spawn_pose_enu:
+    east_m: 25.39
+    north_m: -37.08
+    up_m: 35.79
+    yaw_deg: 180.0
+
+  rooftop:
+    source_component: buildings.glb
+    source_geometry: plateau-0017
+    surface_height_m: 35.29
+    base_clearance_m: 0.50
+    horizontal_surface_area_m2: 46.97
+    safe_inset_radius_m: 1.50
+    safe_inset_area_m2: 14.85
+
+  launch_area:
+    mode: auto
+    offset_m: [0.0, 0.0, 0.0]
+    search_radius_m: 100.0
+
+control:
+  mode: ps4-rc
+  controller_params: ../../config/drone/eams-rc-controller-params.txt
+
+mission:
+  path: ../../config/drone/city-one-mission.json
+
+viewer:
+  map_layout: bottom-left
+  collider_overlay_default: false

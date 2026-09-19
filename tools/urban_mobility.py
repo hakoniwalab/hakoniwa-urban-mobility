@@ -16,11 +16,14 @@ WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 RECIPE_ID = "urban-mobility-rc"
 MANAGED_RECIPE = ROOT / "recipes/experiments/urban-mobility-rc.yaml"
+COMPOSITION = ROOT / "recipes/experiments/urban-mobility-shizuoka.yaml"
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
+import drone_one  # noqa: E402
+import urban_composer  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 
 
@@ -85,6 +88,15 @@ def launcher_command(operation: str) -> int:
     if operation == "start":
         if recipe_command("doctor") != 0:
             return 1
+        paths = drone_one._paths(RECIPE_ID)
+        configured = drone_one.read_selected_recipe(paths)
+        runtime_recipe = drone_one.load_runtime_recipe(configured)
+        drone_one.refresh_runtime_spawn(paths, runtime_recipe)
+        drone_one.refresh_runtime_controller_params(
+            paths,
+            runtime_recipe,
+            runtime_config_dir=root() / "config/drone/rc",
+        )
         lifecycle = spec()
         if not lifecycle.launcher.is_file():
             raise UrbanMobilityError(
@@ -141,8 +153,12 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     command = parser().parse_args().command
-    if command in {"plan", "doctor", "configure"}:
+    if command in {"plan", "doctor"}:
         return recipe_command(command)
+    if command == "configure":
+        if recipe_command("configure") != 0:
+            return 1
+        return urban_composer.configure(COMPOSITION)
     if command == "open-viewer":
         return open_viewer()
     return launcher_command(command)

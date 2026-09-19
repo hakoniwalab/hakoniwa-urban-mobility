@@ -909,7 +909,10 @@ def refresh_runtime_spawn(paths: object, recipe: UrbanDroneRecipe) -> Path:
 
 
 def refresh_runtime_controller_params(
-    paths: object, recipe: UrbanDroneRecipe
+    paths: object,
+    recipe: UrbanDroneRecipe,
+    *,
+    runtime_config_dir: Path | None = None,
 ) -> Path | None:
     """Restore the Urban-owned RC tuning file immediately before launch."""
     if recipe.control_mode != "ps4-rc" or recipe.controller_params is None:
@@ -925,7 +928,7 @@ def refresh_runtime_controller_params(
         raise base.RecipeError(f"invalid controller parameters {source}: {exc}") from exc
     if not params:
         raise base.RecipeError(f"controller parameters are empty: {source}")
-    target = paths.recipe_root / "rc/controller-params.txt"
+    target = (runtime_config_dir or paths.recipe_root / "rc") / "controller-params.txt"
     if not target.parent.is_dir():
         raise base.RecipeError("Urban Drone is not configured; run configure first")
     shutil.copyfile(source, target)

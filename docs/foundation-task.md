@@ -315,21 +315,31 @@ Car-1     Car-3       Car-5
 
 ### 8.3 Droneの屋上発進を作る
 
-- [ ] 静岡モデル内から、平らで離陸余裕のある建物屋上を1か所選択する
-- [ ] 屋上中央のENU位置、屋上面高さ、yaw、脚のclearanceをscenarioに記録する
-- [ ] EAMS Hexa Drone 1台をPS4 RC構成で屋上へ配置する
+- [x] 静岡モデル内から、平らで離陸余裕のある建物屋上を1か所選択する
+- [x] 屋上中央のENU位置、屋上面高さ、yaw、脚のclearanceをscenarioに記録する
+- [x] EAMS Hexa Drone 1台をPS4 RC構成で屋上へ配置する
 - [ ] Drone単体で屋上静止、離陸、道路上空への移動を確認する
 - [ ] プロペラ、脚、機体が屋上や周辺建物へ初期干渉しないことを確認する
 
 ### 8.4 LauncherとViewerを統合する
 
-- [ ] Drone assetだけがConductorを所有し、Car asset側では起動しない
-- [ ] 1個のLauncherへDrone、Car plant、scenario executor、PS4 controller、Bridge、HTTP serverを統合する
+- [x] Drone assetだけがConductorを所有し、Car asset側では起動しない
+- [x] 1個のLauncherへDrone、Car plant、scenario executor、PS4 controller、Bridge、HTTP serverを統合する
 - [ ] 1個のThree.js画面でDrone 1台とCar 5台を表示する
 - [ ] メイン3D画面、右上のDrone監視カメラ、左下地図の構成にする
 - [ ] 統合デモではCar搭載カメラを生成せず、Drone搭載カメラだけを表示する
 - [ ] Colliderと基準軌道のoverlayをそれぞれオプションでON/OFFできるようにする
 - [ ] 単体`urban-car-one`の前方カメラは変更せず、既存の単体回帰を維持する
+
+進捗（2026-09-19）:
+
+- `plateau-0017`の屋上を選び、ENU `(25.39, -37.08, 35.79)`、yaw 180度、屋上面35.29 m、脚clearance 0.50 mを`shizuoka-rooftop-drone.yaml`へ記録した
+- `urban-mobility-shizuoka.yaml`と`urban_composer.py`で、実Drone 1台、Car 5台、Car側Drone Mirrorを同じRecipe workspaceへ構成した
+- 統合LauncherはDrone service、Car plant、Visual State Publisher、Car scenario executor、PS4 controller、WebBridge、HTTP serverの7 assetで構成した
+- Drone serviceだけがConductorを所有し、Car plantへ`--external-conductor`を設定した
+- Launcher RUNNING、HTTP ready、WebSocket listening、Demo Readyを確認し、Car 5台の無限loopとDrone Visual Stateの継続配信をログで確認した
+- DualSenseをPS4 RC controllerが認識した。屋上離陸と道路上空への実操縦、統合画面の最終目視は継続確認項目とする
+- 自動テスト66件に成功した
 
 完了条件:
 

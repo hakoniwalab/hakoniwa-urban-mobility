@@ -1,0 +1,49 @@
+id: urban-mobility-rc
+title: Shizuoka rooftop Drone and five-Car formation
+recipe_version: 0.1
+status: experimental
+
+scenarios:
+  car: recipes/scenarios/shizuoka-five-car-formation-loop.yaml
+  drone: recipes/scenarios/shizuoka-rooftop-drone.yaml
+
+inputs:
+  business_pack_city_receipt:
+    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
+
+  ackermann_vehicles:
+    types:
+      - type: golf_cart
+        mjcf: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
+        contract: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+        view_model: ../hakoniwa-mbody-registry/bodies/generic_ackermann_golf_cart/generated/view-model.json
+    vehicles:
+      generated_from_route:
+        scenario: recipes/scenarios/shizuoka-five-car-formation-loop.yaml
+        type: golf_cart
+        control_mode: external_python
+        auto_start_scenario: true
+        ground_clearance_m: 0.45
+
+  drone_mirrors:
+    - name: Drone-1
+      pdu_types: ../hakoniwa-drone-core/config/pdudef/drone-pdutypes.json
+      mjcf_model: ../hakoniwa-drone-pro/tuning/vehicle/eams/generated/nominal-9kg/drone.xml
+      mjcf_body: drone_base
+      restitution_coefficient: 0.3
+      relative_normal_speed_threshold_mps: 0.2
+      cooldown_sec: 0.1
+
+  ackermann_runtime:
+    realtime_sync_cycle_msec: 2
+    native_mujoco_viewer: false
+
+  browser_visualization:
+    enabled: true
+    web_bridge_port: 8765
+    http_port: 8000
+    threejs_root: ../hakoniwa-threejs-drone
+
+composition:
+  output:
+    recipe_id: urban-mobility-rc

@@ -496,6 +496,28 @@ viewer:
             self.assertEqual(result, runtime)
             self.assertEqual(runtime.read_bytes(), source.read_bytes())
 
+    def test_integrated_start_can_restore_controller_params_to_nested_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "urban-controller-params.txt"
+            source.write_text("PID_ROLL_RATE_Kp 2.7\n", encoding="utf-8")
+            runtime_dir = root / "recipe/config/drone/rc"
+            runtime_dir.mkdir(parents=True)
+            recipe = types.SimpleNamespace(
+                control_mode="ps4-rc",
+                controller_params=source,
+            )
+            paths = types.SimpleNamespace(recipe_root=root / "recipe")
+
+            result = drone_one.refresh_runtime_controller_params(
+                paths,
+                recipe,
+                runtime_config_dir=runtime_dir,
+            )
+
+            self.assertEqual(result, runtime_dir / "controller-params.txt")
+            self.assertEqual(result.read_bytes(), source.read_bytes())
+
     def test_runtime_recipe_accepts_pose_only_edit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
