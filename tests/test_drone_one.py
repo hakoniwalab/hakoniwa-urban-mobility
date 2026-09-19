@@ -256,7 +256,10 @@ viewer:
             with (
                 mock.patch.object(
                     drone_one, "_paths",
-                    return_value=types.SimpleNamespace(recipe_root=root),
+                    return_value=types.SimpleNamespace(
+                        recipe_root=root,
+                        recipe_config=root / "config",
+                    ),
                 ),
                 mock.patch.object(
                     drone_one.base, "viewer_url",
@@ -268,6 +271,10 @@ viewer:
                 mock.patch.object(
                     drone_one.base, "open_browser",
                     side_effect=lambda url: opened.append(url) or True,
+                ),
+                mock.patch.object(
+                    drone_one.urban_lifecycle,
+                    "require_viewer_ready",
                 ),
             ):
                 self.assertEqual(drone_one.open_viewer(), 0)

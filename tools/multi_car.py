@@ -26,9 +26,11 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 sys.path.insert(0, str(ROOT / "apps/car"))
+sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # noqa: E402
+import urban_lifecycle  # noqa: E402
 from workdir import foundation_install as resolve_foundation_install  # noqa: E402
 from workdir import recipe_root as resolve_recipe_root  # noqa: E402
 
@@ -1933,10 +1935,24 @@ def session_path(work: Path) -> Path:
     return work / "runtime/launcher-session.json"
 
 
+def lifecycle_spec(resolved: dict, *, viewer_url: str | None = None):
+    visualization = resolved["visualization"]
+    default_viewer = resolved["work"] / "config/threejs/viewer-config.json"
+    return urban_lifecycle.LifecycleSpec(
+        recipe_id=resolved["recipe_id"],
+        recipe_root=resolved["work"],
+        launcher=resolved["work"] / "config/launcher.json",
+        session=session_path(resolved["work"]),
+        viewer_url=viewer_url or map_viewer_url(resolved, default_viewer),
+        ports=(visualization["http_port"], visualization["web_bridge_port"], 54111),
+    )
+
+
 def launch(operation: str, resolved: dict) -> int:
     work = resolved["work"]
     python = foundation_python()
     if operation == "start":
+        urban_lifecycle.preflight_start(lifecycle_spec(resolved))
         refresh_runtime_initial_body_poses(resolved)
         command([
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher",
@@ -1947,6 +1963,8 @@ def launch(operation: str, resolved: dict) -> int:
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher_ctl",
             "status" if operation == "status" else "terminate", str(session_path(work)),
         ])
+        if operation == "stop":
+            urban_lifecycle.verify_stopped(lifecycle_spec(resolved))
     return 0
 
 
@@ -1991,6 +2009,9 @@ def open_viewer(resolved: dict, *, show_colliders: bool = False) -> int:
         "generated Three.js viewer config; run configure first",
     )
     url = map_viewer_url(resolved, viewer_config)
+    urban_lifecycle.require_viewer_ready(
+        lifecycle_spec(resolved, viewer_url=url)
+    )
     print(f"Opening Three.js: {url}")
     return 0 if webbrowser.open(url) else 1
 

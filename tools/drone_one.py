@@ -42,6 +42,7 @@ EAMS_LANDING_COLLIDER_POSITION = "0 0 -0.44"
 EAMS_LANDING_COLLIDER_SIZE = "0.31 0.29 0.04"
 
 for path in (
+    ROOT / "tools",
     BUSINESS_PACK_ROOT / "tools" / "recipe",
     BUSINESS_PACK_ROOT / "tools",
     DRONE_SHOW_ROOT / "tools" / "recipe",
@@ -50,6 +51,7 @@ for path in (
 
 import drone_fleet_single_host as base
 import drone_fleet_mujoco_city as city
+import urban_lifecycle
 
 
 CONTROL_MODE_FILE = "urban-drone-control.json"
@@ -503,6 +505,15 @@ def open_viewer(
             "viewerConfigName=viewer-config-fleets.json",
             "viewerConfigName=viewer-config-fleets-colliders.json",
         )
+    urban_lifecycle.require_viewer_ready(
+        urban_lifecycle.LifecycleSpec(
+            recipe_id=URBAN_DRONE_RECIPE_ID,
+            recipe_root=paths.recipe_root,
+            launcher=paths.recipe_config / "launcher.json",
+            session=paths.recipe_root / "runtime/launcher-session.json",
+            viewer_url=url,
+        )
+    )
     return 0 if base.open_browser(url) else 1
 
 
@@ -1090,6 +1101,15 @@ def main() -> int:
         )
     if args.command == "start":
         recipe = load_runtime_recipe(recipe)
+        urban_lifecycle.preflight_start(
+            urban_lifecycle.LifecycleSpec(
+                recipe_id=URBAN_DRONE_RECIPE_ID,
+                recipe_root=paths.recipe_root,
+                launcher=paths.recipe_config / "launcher.json",
+                session=paths.recipe_root / "runtime/launcher-session.json",
+                viewer_url=base.viewer_url(1, map_viewer=True),
+            )
+        )
         fleet_path = refresh_runtime_spawn(paths, recipe)
         parameter_path = refresh_runtime_controller_params(paths, recipe)
         pose = recipe.spawn_pose_enu
@@ -1118,12 +1138,23 @@ def main() -> int:
             workspace=paths,
         )
     if args.command == "stop":
-        return base.control(
+        rc = base.control(
             recipe.fleet_experiment,
             drone_root,
             "terminate",
             workspace=paths,
         )
+        if rc == 0:
+            urban_lifecycle.verify_stopped(
+                urban_lifecycle.LifecycleSpec(
+                    recipe_id=URBAN_DRONE_RECIPE_ID,
+                    recipe_root=paths.recipe_root,
+                    launcher=paths.recipe_config / "launcher.json",
+                    session=paths.recipe_root / "runtime/launcher-session.json",
+                    viewer_url=base.viewer_url(1, map_viewer=True),
+                )
+            )
+        return rc
     show_colliders = (
         recipe.collider_overlay_default
         if args.colliders is None
