@@ -1985,6 +1985,7 @@ def lifecycle_spec(resolved: dict, *, viewer_url: str | None = None):
         launcher=resolved["work"] / "config/launcher.json",
         session=session_path(resolved["work"]),
         viewer_url=viewer_url or map_viewer_url(resolved, default_viewer),
+        websocket_port=visualization["web_bridge_port"],
         ports=(visualization["http_port"], visualization["web_bridge_port"], 54111),
     )
 
@@ -2000,6 +2001,7 @@ def launch(operation: str, resolved: dict) -> int:
             str(launcher_path(work)), "--background", str(session_path(work)),
         ])
     else:
+        urban_lifecycle.read_session(lifecycle_spec(resolved))
         command([
             str(python), "-m", "hakoniwa_pdu.apps.launcher.hako_launcher_ctl",
             "status" if operation == "status" else "terminate", str(session_path(work)),

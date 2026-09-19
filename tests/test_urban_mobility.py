@@ -54,6 +54,28 @@ class UrbanMobilityToolTest(unittest.TestCase):
             urban_mobility.open_viewer()
         opener.assert_not_called()
 
+    def test_status_rejects_foreign_session_before_launcher_ctl(self):
+        fake = mock.Mock()
+        fake.session = mock.Mock()
+        fake.session.is_file.return_value = True
+        with (
+            mock.patch.object(urban_mobility, "spec", return_value=fake),
+            mock.patch.object(
+                urban_mobility.urban_lifecycle,
+                "read_session",
+                side_effect=urban_mobility.urban_lifecycle.LifecycleError(
+                    "foreign session"
+                ),
+            ),
+            mock.patch.object(urban_mobility.subprocess, "run") as runner,
+            self.assertRaisesRegex(
+                urban_mobility.urban_lifecycle.LifecycleError,
+                "foreign session",
+            ),
+        ):
+            urban_mobility.launcher_command("status")
+        runner.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

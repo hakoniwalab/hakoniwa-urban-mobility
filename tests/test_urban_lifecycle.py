@@ -80,6 +80,36 @@ class UrbanLifecycleTest(unittest.TestCase):
             self.assertFalse(report["websocket_listening"])
             self.assertFalse(report["demo_ready"])
 
+    def test_status_uses_recipe_websocket_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = self.spec(root)
+            spec = lifecycle.LifecycleSpec(
+                recipe_id=base.recipe_id,
+                recipe_root=base.recipe_root,
+                launcher=base.launcher,
+                session=base.session,
+                viewer_url=base.viewer_url,
+                websocket_port=8766,
+                ports=(8001, 8766, 54111),
+            )
+            self.write_session(spec)
+            checked = []
+            with (
+                mock.patch.object(lifecycle, "process_alive", return_value=True),
+                mock.patch.object(lifecycle, "http_ready", return_value=True),
+                mock.patch.object(
+                    lifecycle,
+                    "listening",
+                    side_effect=lambda port: checked.append(port) or port == 8766,
+                ),
+            ):
+                report = lifecycle.status_report(spec)
+
+            self.assertEqual(checked, [8766])
+            self.assertTrue(report["websocket_listening"])
+            self.assertTrue(report["demo_ready"])
+
     def test_verify_stopped_rejects_a_residual_listener(self):
         with tempfile.TemporaryDirectory() as directory:
             spec = self.spec(Path(directory))

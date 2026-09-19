@@ -24,9 +24,10 @@ feasibility:
 validation:
   status: partially_verified
   summary: >
-    The Shizuoka component regressions and managed workspace boundaries are
-    verified on macOS arm64. The combined one-Drone plus multi-Car topology is
-    the next delivery step and is not yet claimed as verified for any City.
+    The Shizuoka component regressions, managed workspace boundaries, and the
+    combined one-Drone plus five-Car runtime topology are verified on macOS
+    arm64. Rooftop takeoff and operator-controlled flight remain manual
+    acceptance items, so the complete demo remains partially verified.
   steps:
     - id: isolated_regressions
       status: verified
@@ -35,8 +36,16 @@ validation:
           path: docs/foundation-baseline.md
           revision: local-step-4
     - id: integrated_city_demo
-      status: not_tested
-      evidence: []
+      status: verified
+      evidence:
+        - repository: hakoniwalab/hakoniwa-urban-mobility
+          revision: 07c8756
+          composition: recipes/experiments/urban-mobility-shizuoka.yaml
+          result: one Drone, five Cars, one Conductor, one Launcher, and one Viewer reached Demo Ready
+        - command: python3 tools/urban_mobility.py status
+          result: Launcher RUNNING, HTTP ready, WebSocket listening, Demo Ready
+        - command: python3 tools/urban_mobility.py stop
+          result: Launcher TERMINATED and HTTP/WebSocket ports released
 
 constraints:
   - native-macos-first

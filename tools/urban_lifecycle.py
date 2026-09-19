@@ -22,6 +22,7 @@ class LifecycleSpec:
     launcher: Path
     session: Path
     viewer_url: str
+    websocket_port: int = 8765
     ports: tuple[int, ...] = (8000, 8765, 54111)
 
 
@@ -108,7 +109,7 @@ def status_report(spec: LifecycleSpec) -> dict:
     session = read_session(spec)
     running = launcher_running(spec) if session is not None else False
     http = http_ready(spec.viewer_url) if running else False
-    websocket = listening(8765) if running else False
+    websocket = listening(spec.websocket_port) if running else False
     return {
         "recipe_id": spec.recipe_id,
         "session": str(spec.session),

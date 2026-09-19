@@ -118,6 +118,8 @@ def launcher_command(operation: str) -> int:
                 print(json.dumps(urban_lifecycle.status_report(lifecycle), indent=2))
                 return 0
             raise UrbanMobilityError(f"Recipe is already stopped: {lifecycle.session}")
+        # Refuse to send a control command through a stale or foreign session.
+        urban_lifecycle.read_session(lifecycle)
         command = [
             str(foundation_python()),
             "-m",
