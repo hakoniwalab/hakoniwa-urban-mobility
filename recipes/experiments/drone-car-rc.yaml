@@ -41,4 +41,4 @@ inputs:
 
 composition:
   output:
-    directory: work/drone-car-rc
+    recipe_id: urban-drone-car-rc

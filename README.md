@@ -116,8 +116,9 @@ enable the latched RadioControl mode; it is not a dead-man switch.
 
 Inspect the background session with `status` and terminate it with `stop`.
 The generated RC controller configuration and
-the EAMS tuning overlay are copied to `work/drone-car-rc/drone_config_0.json`
-and `work/drone-car-rc/controller-params.txt`. The tracked Drone PRO
+the EAMS tuning overlay are copied to
+`../hakoniwa-business-pack/work/recipes/urban-drone-car-rc/config/drone/rc/`.
+The tracked Drone PRO
 configuration and controller parameter files are not edited.
 
 Drone Core v4's public service binary opens MuJoCo models through its XML path,
@@ -319,16 +320,16 @@ The application accepts a manifest-driven Runtime instance:
 
 ```bash
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/multi-car-viewer/urban-car-asset-manifest.json
+  --manifest ../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/car/urban-car-asset-manifest.json
 
 # Model inspection without registering a Hakoniwa asset
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/multi-car-viewer/urban-car-asset-manifest.json \
+  --manifest ../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/car/urban-car-asset-manifest.json \
   --view-model
 
 # Headless XML/MJB compatibility check
 build/bin/urban-car-hakoniwa-asset \
-  --manifest work/multi-car-viewer/urban-car-asset-manifest.json \
+  --manifest ../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/car/urban-car-asset-manifest.json \
   --validate-model
 ```
 
@@ -401,7 +402,8 @@ python3 tools/multi_car.py configure --config recipes/multi-car-viewer.yaml
 python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
 
 # Open the Three.js URL printed by configure (default):
-# http://127.0.0.1:8000/hakoniwa-threejs-drone/index.html?viewerConfigPath=/hakoniwa-urban-mobility/work/multi-car-viewer/threejs/viewer-config.json
+# Use the Map Viewer URL printed by configure. Its viewerConfigPath points to
+# /hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/threejs/viewer-config.json
 
 # Drive any externally controlled vehicle from another terminal:
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \

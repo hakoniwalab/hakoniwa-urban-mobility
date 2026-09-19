@@ -35,9 +35,9 @@ restores the Urban tuning source.
 
 Key generated files are:
 
-- `../hakoniwa-business-pack/work/recipes/drone-fleet-single-host/rc/drone_config_0.json`
-- `../hakoniwa-business-pack/work/recipes/drone-fleet-single-host/rc/controller-params.txt`
-- `../hakoniwa-business-pack/work/recipes/drone-fleet-single-host/config/launcher.json`
+- `../hakoniwa-business-pack/work/recipes/urban-drone-one/rc/drone_config_0.json`
+- `../hakoniwa-business-pack/work/recipes/urban-drone-one/rc/controller-params.txt`
+- `../hakoniwa-business-pack/work/recipes/urban-drone-one/config/launcher.json`
 
 ## Start and open the browser
 

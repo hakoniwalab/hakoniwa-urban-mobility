@@ -24,6 +24,7 @@ BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
 DRONE_SHOW_ROOT = WORKSPACE / "hakoniwa-drone-show"
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
+URBAN_DRONE_RECIPE_ID = "urban-drone-one"
 DEFAULT_RECIPE = ROOT / "recipes" / "experiments" / "urban-drone-one.yaml"
 EAMS_TUNED_PARAMS_RELATIVE = Path(
     "tuning/vehicle/eams/tuning/hakoniwa/nominal-9kg/"
@@ -528,11 +529,9 @@ def urban_launcher_writer(
     return write
 
 
-def _paths():
+def _paths(recipe_id: str = URBAN_DRONE_RECIPE_ID):
     foundation = base.load_foundation_module()
-    return foundation.resolve_workspace(
-        BUSINESS_PACK_ROOT, "drone-fleet-single-host"
-    )
+    return foundation.resolve_workspace(BUSINESS_PACK_ROOT, recipe_id)
 
 
 def _parameter_values(path: Path) -> dict[str, str]:
@@ -705,6 +704,7 @@ def materialize_eams_city_model(
     marker: dict,
     drone_root: Path,
     *,
+    paths=None,
     rc_mode: bool = False,
     runtime_config_dir: Path | None = None,
 ) -> Path:
@@ -715,7 +715,8 @@ def materialize_eams_city_model(
     if not model_source.is_file() or not config_source.is_file():
         raise base.RecipeError(f"EAMS nominal 9 kg golden package is missing: {eams_root}")
 
-    process_dir = _paths().recipe_config / "drone/mujoco-city-fleet/process-01"
+    paths = paths or _paths()
+    process_dir = paths.recipe_config / "drone/mujoco-city-fleet/process-01"
     body_only = process_dir / "eams-hexa-body.xml"
     runtime_xml = process_dir / "eams-hexa-city.xml"
     runtime_mjb = runtime_xml.with_suffix(".mjb")
@@ -840,7 +841,7 @@ def materialize_eams_city_model(
         "compiled_validation": compiled,
     }
     marker["type_config"] = str(runtime_type_path)
-    marker_path = _paths().recipe_config / "mujoco-city-fleet.json"
+    marker_path = paths.recipe_config / "mujoco-city-fleet.json"
     marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
     return runtime_mjb
 
@@ -958,13 +959,15 @@ def configure(
     drone_root: Path,
     *,
     recipe: UrbanDroneRecipe,
+    workspace=None,
     runtime_config_dir: Path | None = None,
 ) -> int:
-    paths = _paths()
+    paths = workspace or _paths()
     rc = base.configure(
         recipe.fleet_experiment,
         drone_root,
         workspace=paths,
+        write_guide=False,
     )
     if rc != 0:
         return rc
@@ -983,6 +986,7 @@ def configure(
     runtime_model = materialize_eams_city_model(
         marker,
         drone_root,
+        paths=paths,
         rc_mode=recipe.control_mode == "ps4-rc",
         runtime_config_dir=runtime_config_dir,
     )

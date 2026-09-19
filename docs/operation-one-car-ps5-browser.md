@@ -51,9 +51,15 @@ python3 tools/multi_car.py configure \
   --config recipes/experiments/urban-car-one.yaml
 ```
 
-生成先は`work/urban-car-one/`です。この処理では、City WorldとGolf Cartを
+生成先は`../hakoniwa-business-pack/work/recipes/urban-car-one/`です。この処理では、City WorldとGolf Cartを
 合成したMJCF/MJB、Runtime manifest、Launcher、WebBridge設定、通常表示と
 Collider表示用のThree.js設定を生成します。
+
+- Car物理・PDU設定: `config/car/`
+- Launcher・Viewer・Bridge設定: `config/`
+- 実行ログ: `logs/`
+- Launcher session: `runtime/`
+- MJB/構成検証Receipt: `validation/`
 
 車両の初期高さにはレシピの`ground_clearance_m`を使用します。`start`のたびに
 指定した初期X・Yの物理hfieldを評価し、その地表面から指定量だけ上へ車両を配置します。

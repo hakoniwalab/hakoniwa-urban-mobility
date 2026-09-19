@@ -152,12 +152,12 @@ Urban専用workspaceを作る前に、既存Drone Fleet Recipeから必要な生
 
 ## 8. Step 4: Urban専用Recipe workspaceを導入する
 
-- [ ] Urban専用Recipe IDを`work/recipes/<recipe-id>/`へ解決する
-- [ ] DroneのFleet、PDU、Bridge、Viewer、Launcher、MJB、PID生成物を移す
-- [ ] Carの生成物も同じRecipe配下の責務別directoryへ配置する
-- [ ] 単体回帰構成と統合構成が別Recipe生成物を上書きしないようにする
-- [ ] 既存`drone-fleet-single-host` workspaceへ書き込まないことをテストする
-- [ ] logs、validation、runtime sessionの配置を揃える
+- [x] Urban専用Recipe IDを`work/recipes/<recipe-id>/`へ解決する
+- [x] DroneのFleet、PDU、Bridge、Viewer、Launcher、MJB、PID生成物を移す
+- [x] Carの生成物も同じRecipe配下の責務別directoryへ配置する
+- [x] 単体回帰構成と統合構成が別Recipe生成物を上書きしないようにする
+- [x] 既存`drone-fleet-single-host` workspaceへ書き込まないことをテストする
+- [x] logs、validation、runtime sessionの配置を揃える
 
 想定レイアウト:
 
@@ -182,6 +182,15 @@ work/recipes/urban-mobility-shizuoka-rc/
 - Urbanのconfigure後も既存Drone Fleet Recipeの生成物が変化しない
 - Urbanのstop/statusがUrban自身のsession fileだけを操作する
 - workspaceを削除してconfigureすれば追跡済み入力から再生成できる
+
+検証結果:
+
+- `urban-car-one`と`urban-drone-one`を空の専用workspaceへShizuoka入力から生成した
+- 両Recipeで`doctor`と`start -> status -> stop`が成功した
+- 両sessionは各Recipeの`runtime/launcher-session.json`だけを使用した
+- 実行前後の`drone-fleet-single-host`全ファイル内容ハッシュは
+  `caed9cab5167e2f392d761c46c94d669966a1333`で一致した
+- stop後、HTTP 8000、WebSocket 8765、Launcher 54111にlistenerが残っていない
 
 ## 9. Step 5: Foundation要求と依存sourceをRecipeへ宣言する
 

@@ -30,6 +30,7 @@ sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # noqa: E402
 from workdir import foundation_install as resolve_foundation_install  # noqa: E402
+from workdir import recipe_root as resolve_recipe_root  # noqa: E402
 
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
@@ -110,6 +111,11 @@ def sha256(path: Path) -> str:
 def foundation_install() -> Path:
     """Resolve the active Foundation prefix through the Business Pack contract."""
     return resolve_foundation_install(BUSINESS_PACK)
+
+
+def recipe_workspace(recipe_id: str) -> Path:
+    """Resolve a Recipe output root through the Business Pack workdir contract."""
+    return resolve_recipe_root(BUSINESS_PACK, recipe_id)
 
 
 def foundation_python() -> Path:
@@ -259,12 +265,19 @@ def resolve_config(config_path: Path) -> dict:
             visualization.get("threejs_root", "../hakoniwa-threejs-drone"),
             "Three.js root",
         )
-        work = resolve_path(config["composition"]["output"]["directory"], "output directory")
+        output_recipe_id = str(
+            config["composition"]["output"].get("recipe_id", recipe_id)
+        ).strip()
         mirror_inputs = config["inputs"].get("drone_mirrors", [])
     except (KeyError, TypeError, ValueError) as error:
         raise RecipeError(f"unsupported Urban Car Fleet configuration schema: {config_path}") from error
     if not isinstance(type_inputs, list) or not type_inputs:
         raise RecipeError("ackermann_vehicles.types must be a non-empty array")
+    if not output_recipe_id or output_recipe_id != recipe_id:
+        raise RecipeError(
+            "composition.output.recipe_id must match the top-level recipe id"
+        )
+    work = recipe_workspace(output_recipe_id)
     if not isinstance(mirror_inputs, list):
         raise RecipeError("drone_mirrors must be an array")
     if realtime_sync_cycle_msec < 0:
@@ -628,7 +641,7 @@ def initial_body_poses(resolved: dict, receipt: dict | None = None) -> list[dict
 
 def refresh_runtime_initial_body_poses(resolved: dict) -> list[dict]:
     runtime_path = required(
-        resolved["work"] / "urban-car-runtime.json",
+        resolved["work"] / "config/car/urban-car-runtime.json",
         "generated Runtime configuration; run configure first",
     )
     runtime = load_json(runtime_path, "Runtime configuration")
@@ -1690,7 +1703,7 @@ def materialize_launcher(
             "upgrade hakoniwa-pdu before running this exclusive runtime Recipe"
         )
     launcher["runtime"] = {"cleanup_mmap_on_start": True}
-    launcher_path = work / "launcher.json"
+    launcher_path = work / "config/launcher.json"
     write_json(launcher_path, launcher)
     return launcher_path
 
@@ -1751,6 +1764,7 @@ def doctor(resolved: dict) -> int:
 def configure(resolved: dict) -> int:
     source = paths()
     work = resolved["work"]
+    config_root = work / "config/car"
     vehicles = resolved["vehicles"]
     mirrors = resolved["mirrors"]
     city_mjcf, city_glb, receipt = city_inputs(resolved["city_receipt"])
@@ -1759,21 +1773,21 @@ def configure(resolved: dict) -> int:
             required(path, label)
     required(foundation_install() / "python/bin/python3", "Foundation Python")
     required(source["core_config"], "Foundation Core config")
-    work.mkdir(parents=True, exist_ok=True)
-    fleet_model = work / "urban-car-fleet.xml"
+    config_root.mkdir(parents=True, exist_ok=True)
+    fleet_model = config_root / "urban-car-fleet.xml"
     materialize_vehicle_fleet_model(fleet_model, vehicles, mirrors)
-    output = work / "urban-cars-city.xml"
+    output = config_root / "urban-cars-city.xml"
     command([
         str(foundation_python()), str(source["compose_tool"]),
         str(fleet_model), str(city_mjcf),
         "--output", str(output),
     ])
 
-    mjb = work / "urban-cars-city.mjb"
-    mjb_receipt = work / "mujoco-materialization.json"
+    mjb = config_root / "urban-cars-city.mjb"
+    mjb_receipt = work / "validation/mujoco-materialization.json"
     materialization = materialize_mjb(output, mjb, mjb_receipt)
 
-    runtime_files = materialize_runtime(mjb, work, vehicles, mirrors)
+    runtime_files = materialize_runtime(mjb, config_root, vehicles, mirrors)
     configured_initial_poses = refresh_runtime_initial_body_poses(resolved)
     initial_pose_by_name = {
         pose["name"]: pose for pose in configured_initial_poses
@@ -1782,7 +1796,7 @@ def configure(resolved: dict) -> int:
     if resolved["visualization"]["enabled"]:
         browser_files = materialize_browser_visualization(
             runtime_files,
-            work,
+            work / "config",
             city_glb,
             vehicles,
             resolved["visualization"],
@@ -1889,7 +1903,7 @@ def configure(resolved: dict) -> int:
             }
         ),
     }
-    write_json(work / "compose-receipt.json", compose_receipt)
+    write_json(work / "validation/compose-receipt.json", compose_receipt)
     print(f"Composed MJCF : {output}")
     print(f"Runtime MJB   : {mjb}")
     print(f"Manifest      : {runtime_files['manifest']}")
@@ -1909,7 +1923,10 @@ def configure(resolved: dict) -> int:
 
 
 def launcher_path(work: Path) -> Path:
-    return required(work / "launcher.json", "generated Launcher; run configure first")
+    return required(
+        work / "config/launcher.json",
+        "generated Launcher; run configure first",
+    )
 
 
 def session_path(work: Path) -> Path:
@@ -1935,7 +1952,7 @@ def launch(operation: str, resolved: dict) -> int:
 
 def view(work: Path) -> int:
     manifest = required(
-        work / "urban-car-asset-manifest.json",
+        work / "config/car/urban-car-asset-manifest.json",
         "generated manifest; run configure first",
     )
     command([str(paths()["plant"]), "--manifest", str(manifest), "--view-model"])
@@ -1953,7 +1970,7 @@ def check_ps5(resolved: dict) -> int:
         str(foundation_python()),
         str(required(source["ps5_sender"], "PS5 sender")),
         "--pdu-def", str(required(
-            resolved["work"] / "urban-car-pdudef.json",
+            resolved["work"] / "config/car/urban-car-pdudef.json",
             "generated PDU definition",
         )),
         "--check-controller",
@@ -1970,7 +1987,7 @@ def open_viewer(resolved: dict, *, show_colliders: bool = False) -> int:
         "viewer-config-colliders.json" if show_colliders else "viewer-config.json"
     )
     viewer_config = required(
-        resolved["work"] / "threejs" / config_name,
+        resolved["work"] / "config/threejs" / config_name,
         "generated Three.js viewer config; run configure first",
     )
     url = map_viewer_url(resolved, viewer_config)

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
 CONFIG = ROOT / "recipes/experiments/drone-car-rc.yaml"
+RECIPE_ID = "urban-drone-car-rc"
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "apps/car"))
@@ -38,7 +39,7 @@ def work() -> Path:
 
 
 def drone_paths():
-    return drone_one._paths()
+    return drone_one._paths(RECIPE_ID)
 
 
 def car_scenario_path() -> Path:
@@ -103,7 +104,8 @@ def merge_launchers(
     if drone_service is None or car_plant is None:
         raise RcDemoError("source Launcher is missing a required asset")
 
-    logs = output.parent / "logs"
+    recipe_root = output.parent.parent
+    logs = recipe_root / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     defaults = copy.deepcopy(drone_launcher["defaults"])
     defaults["cwd"] = str(ROOT)
@@ -120,7 +122,7 @@ def merge_launchers(
         value for value in drone_service.get("args", [])
         if value != "--mujoco-viewer"
     ]
-    unified_pdu_definition = output.parent / "urban-car-pdudef.json"
+    unified_pdu_definition = recipe_root / "config/car/urban-car-pdudef.json"
     if len(drone_service["args"]) < 2:
         raise RcDemoError("Drone service has no PDU definition argument")
     drone_service["args"][1] = str(unified_pdu_definition)
@@ -191,7 +193,8 @@ def configure(drone_root: Path) -> int:
     if drone_one.configure(
         drone_root,
         recipe=drone_recipe,
-        runtime_config_dir=resolved["work"],
+        workspace=drone_paths(),
+        runtime_config_dir=resolved["work"] / "config/drone/rc",
     ) != 0:
         return 1
     use_generated_drone_body_for_mirrors(resolved)
@@ -199,18 +202,19 @@ def configure(drone_root: Path) -> int:
     # physical Drone to the Car route caused the EAMS vehicle to settle on a
     # different surface and prevented the previously verified takeoff.
     start = configured_drone_start()
-    drone_one._MUJOCO_VIEWER_ENABLED = False
     if drone_one.base.doctor(
         drone_recipe.fleet_experiment,
         drone_root,
         drone_one.DEFAULT_VIEWER_ROOT,
+        workspace=drone_paths(),
+        launcher_writer=drone_one.urban_launcher_writer(drone_recipe),
     ) != 0:
         return 1
     if multi_car.configure(resolved) != 0:
         return 1
     launcher = merge_launchers(
-        resolved["work"] / "launcher.json",
-        resolved["work"] / "launcher-two-assets.json",
+        resolved["work"] / "config/launcher.json",
+        resolved["work"] / "config/launcher-two-assets.json",
         drone_root,
     )
     print("Golf Cart + PS4-controlled Drone demo configured")
@@ -233,7 +237,7 @@ def doctor(drone_root: Path) -> int:
         ("Car scenario", car_scenario_path()),
         ("PS4 RC program", drone_root / "drone_api/rc/rc-custom.py"),
         ("PS4 mapping", drone_root / "drone_api/rc/rc_config/ps4-control.json"),
-        ("Combined Launcher", resolved["work"] / "launcher-two-assets.json"),
+        ("Combined Launcher", resolved["work"] / "config/launcher-two-assets.json"),
     ]
     failed = False
     for label, path in checks:
@@ -245,7 +249,7 @@ def doctor(drone_root: Path) -> int:
 
 def control(operation: str) -> int:
     experiment_work = work()
-    launcher = experiment_work / "launcher-two-assets.json"
+    launcher = experiment_work / "config/launcher-two-assets.json"
     session = experiment_work / "runtime/launcher-session.json"
     session.parent.mkdir(parents=True, exist_ok=True)
     if operation != "start" and not session.is_file():
@@ -289,7 +293,7 @@ def start_car() -> int:
         str(ROOT / "apps/car/scenario_executor.py"),
         str(car_scenario_path()),
         "--pdu-def",
-        str(experiment_work / "urban-car-pdudef.json"),
+        str(experiment_work / "config/car/urban-car-pdudef.json"),
     ]
     subprocess.run(command, cwd=ROOT, check=True)
     return 0

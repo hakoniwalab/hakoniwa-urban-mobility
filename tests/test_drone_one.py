@@ -161,6 +161,37 @@ class DroneOneToolTest(unittest.TestCase):
                 paths.install_prefix,
                 selected_workdir.resolve() / "foundation/install",
             )
+            self.assertEqual(
+                paths.recipe_root,
+                selected_workdir.resolve() / "recipes/urban-drone-one",
+            )
+
+    def test_integrated_drone_workspace_is_separate_from_single_drone(self):
+        single = drone_one._paths()
+        integrated = drone_one._paths("urban-drone-car-rc")
+
+        self.assertEqual(single.recipe_root.name, "urban-drone-one")
+        self.assertEqual(integrated.recipe_root.name, "urban-drone-car-rc")
+        self.assertNotEqual(single.recipe_root, integrated.recipe_root)
+        self.assertNotEqual(single.recipe_root.name, "drone-fleet-single-host")
+
+    def test_configure_passes_the_urban_workspace_to_the_fleet_builder(self):
+        paths = types.SimpleNamespace(recipe_root=Path("urban-drone-one"))
+        recipe = types.SimpleNamespace(fleet_experiment=Path("fleet.yaml"))
+        with (
+            mock.patch.object(drone_one, "_paths", return_value=paths),
+            mock.patch.object(drone_one.base, "configure", return_value=1) as configure,
+        ):
+            self.assertEqual(
+                drone_one.configure(Path("drone-pro"), recipe=recipe),
+                1,
+            )
+        configure.assert_called_once_with(
+            Path("fleet.yaml"),
+            Path("drone-pro"),
+            workspace=paths,
+            write_guide=False,
+        )
 
     def test_urban_recipe_resolves_all_paths_relative_to_recipe(self):
         with tempfile.TemporaryDirectory() as directory:

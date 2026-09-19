@@ -77,6 +77,10 @@ class ControlModeTest(unittest.TestCase):
                     selected_workdir.resolve()
                     / "foundation/install/bin/hakoniwa-pdu-web-bridge",
                 )
+                self.assertEqual(
+                    multi_car.recipe_workspace("urban-car-one"),
+                    selected_workdir.resolve() / "recipes/urban-car-one",
+                )
 
     def test_urban_car_one_recipe_selects_one_browser_visible_golf_cart(self):
         resolved = multi_car.resolve_config(
@@ -111,7 +115,10 @@ class ControlModeTest(unittest.TestCase):
             [1.25, 0.0, 1.25],
         )
         self.assertFalse(resolved["native_mujoco_viewer"])
-        self.assertEqual(resolved["work"], ROOT / "work/urban-car-one")
+        self.assertEqual(
+            resolved["work"],
+            ROOT.parent / "hakoniwa-business-pack/work/recipes/urban-car-one",
+        )
 
     def test_headless_launcher_disables_native_mujoco_viewer(self):
         launcher = self.launcher(["ps5"], native_mujoco_viewer=False)

@@ -77,14 +77,14 @@ composition:
   owner: hakoniwa-mbody-registry
   tool: ../hakoniwa-mbody-registry/tools/compose_mujoco_world.py
   output:
-    directory: work/multi-car-viewer
-    mjcf: work/multi-car-viewer/urban-cars-city.xml
-    mjb: work/multi-car-viewer/urban-cars-city.mjb
-    mujoco_materialization_receipt: work/multi-car-viewer/mujoco-materialization.json
-    compose_receipt: work/multi-car-viewer/compose-receipt.json
-    runtime_manifest: work/multi-car-viewer/urban-car-asset-manifest.json
-    runtime_config: work/multi-car-viewer/urban-car-runtime.json
-    launcher: work/multi-car-viewer/launcher.json
+    recipe_id: urban-multi-car-viewer
+    mjcf: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/config/car/urban-cars-city.xml
+    mjb: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/config/car/urban-cars-city.mjb
+    mujoco_materialization_receipt: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/validation/mujoco-materialization.json
+    compose_receipt: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/validation/compose-receipt.json
+    runtime_manifest: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/config/car/urban-car-asset-manifest.json
+    runtime_config: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/config/car/urban-car-runtime.json
+    launcher: ${HAKONIWA_WORK_DIR}/recipes/urban-multi-car-viewer/config/launcher.json
     core_config: ../hakoniwa-business-pack/work/foundation/config/cpp_core_config.json
   rules:
     - Remove each vehicle type's standalone ground plane during composition.

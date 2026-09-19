@@ -55,9 +55,10 @@ actual post-takeoff pose and is limited to the launch area's verified 3 m
 safety margin. The current `[2.5, 0.0]` mission takes off 2 m above the resolved
 surface, moves 2.5 m on the first RPC horizontal axis, and lands.
 
-This Recipe and the Virtual Drone Show share the Business Pack
-`work/recipes/drone-fleet-single-host` workspace. Stop any active owner before
-reconfiguring it.
+This Recipe owns the Business Pack `work/recipes/urban-drone-one` workspace.
+It no longer writes into the `drone-fleet-single-host` workspace. The shared
+Foundation Core runtime remains exclusive, so stop any active Recipe before
+starting another one.
 
 ## Prerequisites
 
@@ -164,7 +165,8 @@ python3 tools/multi_car.py start \
 namespaces their bodies, joints, geoms, and actuators, compiles and validates
 a MuJoCo-version-bound MJB, and generates one fleet Runtime and Launcher. With
 `browser_visualization.enabled: true`, it also generates the WebBridge and
-Three.js configuration under `work/multi-car-viewer/`. It does not download or
+Three.js configuration under
+`../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/`. It does not download or
 regenerate the city or vehicle GLBs.
 
 ### Browser visualization
@@ -174,7 +176,7 @@ server. `configure` prints the complete browser URL; with the checked-in ports
 it is:
 
 ```text
-http://127.0.0.1:8000/hakoniwa-threejs-drone/index.html?viewerConfigPath=/hakoniwa-urban-mobility/work/multi-car-viewer/threejs/viewer-config.json
+http://127.0.0.1:8000/hakoniwa-map-viewer/src/client/index.html?threejsRoot=%2Fhakoniwa-threejs-drone&viewerConfigPath=%2Fhakoniwa-business-pack%2Fwork%2Frecipes%2Furban-multi-car-viewer%2Fconfig%2Fthreejs%2Fviewer-config.json&layout=three-main
 ```
 
 The browser loads the City World GLB and each vehicle type's standard
@@ -255,7 +257,7 @@ sys.path.insert(0, str(Path("apps/car").resolve()))
 from urban_car import AckermannClient
 
 with AckermannClient(
-    pdu_def="work/multi-car-viewer/urban-car-pdudef.json",
+    pdu_def="../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/car/urban-car-pdudef.json",
     robot="Car-1",
 ) as car:
     car.drive(speed_m_s=1.0, steering_rad=0.2, duration_sec=3.0)
@@ -381,7 +383,8 @@ mapping and observed vehicle direction must remain stable.
 7. Stop the recipe normally; `status` reports `TERMINATED` and no controller
    sender remains active.
 
-Retain the generated Launcher logs under `work/multi-car-viewer/logs/` when
+Retain the generated Launcher logs under
+`../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/logs/` when
 investigating a regression.
 
 Inspect or stop the background session from another terminal:
@@ -404,15 +407,15 @@ python3 tools/multi_car.py view \
 ## Generated files
 
 The checked-in configuration writes generated artifacts beneath
-`work/multi-car-viewer/`:
+`../hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/`:
 
-- `urban-cars-city.xml`: composed canonical multi-Car MJCF
-- `urban-cars-city.mjb`: validated runtime model
-- `mujoco-materialization.json`: MuJoCo version and MJB provenance
-- `compose-receipt.json`: city source, hashes, ENU spawn, and MJCF conversion
-- `urban-car-asset-manifest.json`: multi-Car Ackermann runtime manifest
-- `urban-car-pdudef.json`: per-Car commands plus shared fleet-state PDU definitions
-- `launcher.json`: Foundation Launcher configuration
+- `config/car/urban-cars-city.xml`: composed canonical multi-Car MJCF
+- `config/car/urban-cars-city.mjb`: validated runtime model
+- `validation/mujoco-materialization.json`: MuJoCo version and MJB provenance
+- `validation/compose-receipt.json`: city source, hashes, ENU spawn, and MJCF conversion
+- `config/car/urban-car-asset-manifest.json`: multi-Car Ackermann runtime manifest
+- `config/car/urban-car-pdudef.json`: per-Car commands plus shared fleet-state PDU definitions
+- `config/launcher.json`: Foundation Launcher configuration
 - `runtime/launcher-session.json`: background-session state
 
 These files are generated and are not committed.
