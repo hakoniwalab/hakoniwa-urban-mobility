@@ -217,14 +217,14 @@ work/recipes/urban-mobility-rc/
 
 ## 10. Step 6: 標準ライフサイクルとpreflightを統一する
 
-- [ ] Business Packの標準入口からplan、doctor、configureへ到達できる
-- [ ] Urbanの薄いwrapperからstart、status、stop、open-viewerへ到達できる
-- [ ] `start`前にFoundation SATISFIEDを確認する
-- [ ] Launcher session RUNNINGとDemo Readyを別々に判定する
-- [ ] 使用port、既存session、残存process、HTTP、WebSocketをpreflightする
-- [ ] 別Recipeがportを所有している場合、誤ったURLを開かず明示的に停止する
-- [ ] `open-viewer`は対象RecipeがRUNNINGかつHTTP応答可能な場合だけURLを開く
-- [ ] `stop`後に子processとportが残らないことを確認する
+- [x] Business Packの標準入口からplan、doctor、configureへ到達できる
+- [x] Urbanの薄いwrapperからstart、status、stop、open-viewerへ到達できる
+- [x] `start`前にFoundation SATISFIEDを確認する
+- [x] Launcher session RUNNINGとDemo Readyを別々に判定する
+- [x] 使用port、既存session、残存process、HTTP、WebSocketをpreflightする
+- [x] 別Recipeがportを所有している場合、誤ったURLを開かず明示的に停止する
+- [x] `open-viewer`は対象RecipeがRUNNINGかつHTTP応答可能な場合だけURLを開く
+- [x] `stop`後に子processとportが残らないことを確認する
 
 完了条件:
 
@@ -232,22 +232,38 @@ work/recipes/urban-mobility-rc/
 - startを二重実行した場合、対象sessionを示す明確なエラーになる
 - stop、再start、ブラウザ再接続が同じ手順で成功する
 
+検証結果:
+
+- `tools/urban_mobility.py`を都市非依存Recipeの標準入口として追加し、`plan / doctor / configure`がBusiness Pack Recipe engineへ委譲されることを確認した
+- Launcher session、HTTP、WebSocketを別々に判定し、`demo_ready`は3条件が揃った場合だけ真になる
+- 二重start、別Launcherのsession、占有port、HTTP未準備、stop後の残存portを単体テストで固定した
+- 統合Launcherの実生成とstartはStep 8で行う。Step 6では入口と失敗時の安全性を先に確立した
+
 ## 11. Step 7: 1 Carと1 Droneの回帰を新基盤へ移す
 
 機能追加の前に、現在の単体構成を新しいRecipe/workspaceで再現する。
 
-- [ ] 1 Carのconfigure、doctor、start、操作、Viewer、stopを確認する
-- [ ] 1 Droneのconfigure、doctor、start、操作、Viewer、stopを確認する
-- [ ] Carの起動時ENU pose変更がCity再構築なしで反映される
-- [ ] Droneの起動時ENU pose変更がCity再構築なしで反映される
-- [ ] Urban管理PIDの変更が`stop -> start`で反映される
-- [ ] `configure -> start`でもUrban管理PIDが復元される
-- [ ] Collider、地図、搭載カメラのUIが両方で同じ操作感になる
+- [x] 1 Carのconfigure、doctor、start、操作、Viewer、stopを確認する
+- [x] 1 Droneのconfigure、doctor、start、操作、Viewer、stopを確認する
+- [x] Carの起動時ENU pose変更がCity再構築なしで反映される
+- [x] Droneの起動時ENU pose変更がCity再構築なしで反映される
+- [x] Urban管理PIDの変更が`stop -> start`で反映される
+- [x] `configure -> start`でもUrban管理PIDが復元される
+- [x] Collider、地図、搭載カメラのUIが両方で同じ操作感になる
 
 完了条件:
 
 - Step 0の回帰項目をすべて満たす
 - 旧workspace共有や関数差し替えへ戻す互換経路を必要としない
+
+検証結果（2026-09-19、macOS、静岡City World）:
+
+- Carは専用`work/recipes/urban-car-one` sessionで起動し、DualSense認識、HTTP 200、WebSocket 101と`UrbanFleet`配信を確認した
+- Droneは専用`work/recipes/urban-drone-one` sessionで起動し、HTTP 200、WebSocket 101と`DroneVisualStatePublisher`配信を確認した
+- Droneの実行用PIDファイルはUrban正本`config/drone/eams-rc-controller-params.txt`とSHA-1が一致した
+- 6ローター、監視カメラ、左下地図、任意Colliderの生成設定を確認した。Car側も前方カメラ、左下地図、任意Colliderを維持している
+- 両構成ともstop後はLauncherが`TERMINATED`となり、8000、8765、54111にlistenerが残らないことを確認した
+- PS5/PS4の実操作と画面上の操作感はStep 0で確認済みであり、Step 7では同じ生成契約とデータ経路が新workspaceで維持されることを再確認した
 
 ## 12. Step 8: 1 Drone＋複数Carの統合Recipeを作る
 
