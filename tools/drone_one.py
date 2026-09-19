@@ -51,9 +51,6 @@ import drone_fleet_single_host as base
 import drone_fleet_mujoco_city as city
 
 
-_BASE_WRITE_LAUNCHER = base.write_launcher
-_MUJOCO_VIEWER_ENABLED = False
-_ACTIVE_RECIPE: "UrbanDroneRecipe | None" = None
 CONTROL_MODE_FILE = "urban-drone-control.json"
 SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
 DRONE_SERVICE_READINESS_TIMEOUT_SEC = 180
@@ -508,30 +505,34 @@ def open_viewer(
     return 0 if base.open_browser(url) else 1
 
 
-def _write_urban_launcher(paths, drone_root, viewer_root, experiment, system_name):
-    if _ACTIVE_RECIPE is None:
-        raise base.RecipeError("Urban Drone recipe is not active during configure")
-    path = _BASE_WRITE_LAUNCHER(
-        paths, drone_root, viewer_root, experiment, system_name
-    )
-    patch_eams_city_viewer(paths)
-    if _ACTIVE_RECIPE.control_mode == "ps4-rc":
-        return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
-    return patch_launcher(
-        path,
-        paths=paths,
-        drone_root=drone_root,
-        mission_path=_ACTIVE_RECIPE.mission,
-        mujoco_viewer=_MUJOCO_VIEWER_ENABLED,
-    )
+def urban_launcher_writer(
+    recipe: UrbanDroneRecipe, *, mujoco_viewer: bool = False
+):
+    """Return an explicit Urban launcher hook without mutating the base module."""
 
+    def write(paths, drone_root, viewer_root, experiment, system_name):
+        path = base.write_launcher(
+            paths, drone_root, viewer_root, experiment, system_name
+        )
+        patch_eams_city_viewer(paths)
+        if recipe.control_mode == "ps4-rc":
+            return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
+        return patch_launcher(
+            path,
+            paths=paths,
+            drone_root=drone_root,
+            mission_path=recipe.mission,
+            mujoco_viewer=mujoco_viewer,
+        )
 
-base.write_launcher = _write_urban_launcher
+    return write
 
 
 def _paths():
     foundation = base.load_foundation_module()
-    return foundation.resolve_workspace(base.ROOT, base.RECIPE_ID)
+    return foundation.resolve_workspace(
+        BUSINESS_PACK_ROOT, "drone-fleet-single-host"
+    )
 
 
 def _parameter_values(path: Path) -> dict[str, str]:
@@ -959,12 +960,14 @@ def configure(
     recipe: UrbanDroneRecipe,
     runtime_config_dir: Path | None = None,
 ) -> int:
-    global _ACTIVE_RECIPE
-    _ACTIVE_RECIPE = recipe
-    rc = base.configure(recipe.fleet_experiment, drone_root)
+    paths = _paths()
+    rc = base.configure(
+        recipe.fleet_experiment,
+        drone_root,
+        workspace=paths,
+    )
     if rc != 0:
         return rc
-    paths = _paths()
     if recipe.control_mode == "ps4-rc" and runtime_config_dir is None:
         runtime_config_dir = paths.recipe_root / "rc"
     marker = city.configure_single_host_fleet(
@@ -1052,7 +1055,6 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    global _MUJOCO_VIEWER_ENABLED, _ACTIVE_RECIPE
     argument_parser = parser()
     args = argument_parser.parse_args()
     if args.colliders is not None and args.command != "open-viewer":
@@ -1063,23 +1065,27 @@ def main() -> int:
         argument_parser.error("--rc is available only with configure")
     if args.recipe is not None and args.command != "configure":
         argument_parser.error("--recipe is available only with configure")
-    _MUJOCO_VIEWER_ENABLED = args.mujoco_viewer
     drone_root = args.drone_root.expanduser().resolve()
     viewer_root = args.viewer_root.expanduser().resolve()
     if args.command == "configure":
         recipe = load_urban_recipe(args.recipe or DEFAULT_RECIPE)
         if args.rc:
             recipe = replace(recipe, control_mode="ps4-rc")
-        _ACTIVE_RECIPE = recipe
         return configure(drone_root, recipe=recipe)
     paths = _paths()
     recipe = read_selected_recipe(paths)
-    _ACTIVE_RECIPE = recipe
     if args.command == "doctor":
-        return base.doctor(recipe.fleet_experiment, drone_root, viewer_root)
+        return base.doctor(
+            recipe.fleet_experiment,
+            drone_root,
+            viewer_root,
+            workspace=paths,
+            launcher_writer=urban_launcher_writer(
+                recipe, mujoco_viewer=args.mujoco_viewer
+            ),
+        )
     if args.command == "start":
         recipe = load_runtime_recipe(recipe)
-        _ACTIVE_RECIPE = recipe
         fleet_path = refresh_runtime_spawn(paths, recipe)
         parameter_path = refresh_runtime_controller_params(paths, recipe)
         pose = recipe.spawn_pose_enu
@@ -1091,11 +1097,29 @@ def main() -> int:
         print(f"Fleet config     : {fleet_path}")
         if parameter_path is not None:
             print(f"Controller params: {parameter_path}")
-        return base.start(recipe.fleet_experiment, drone_root, viewer_root)
+        return base.start(
+            recipe.fleet_experiment,
+            drone_root,
+            viewer_root,
+            workspace=paths,
+            launcher_writer=urban_launcher_writer(
+                recipe, mujoco_viewer=args.mujoco_viewer
+            ),
+        )
     if args.command == "status":
-        return base.control(recipe.fleet_experiment, drone_root, "status")
+        return base.control(
+            recipe.fleet_experiment,
+            drone_root,
+            "status",
+            workspace=paths,
+        )
     if args.command == "stop":
-        return base.control(recipe.fleet_experiment, drone_root, "terminate")
+        return base.control(
+            recipe.fleet_experiment,
+            drone_root,
+            "terminate",
+            workspace=paths,
+        )
     show_colliders = (
         recipe.collider_overlay_default
         if args.colliders is None

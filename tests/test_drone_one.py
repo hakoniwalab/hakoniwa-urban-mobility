@@ -108,6 +108,45 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_urban_launcher_composition_is_explicit(self):
+        original_writer = drone_one.base.write_launcher
+        recipe = types.SimpleNamespace(
+            control_mode="ps4-rc",
+            mission=Path("mission.json"),
+        )
+        writer = drone_one.urban_launcher_writer(recipe)
+        paths = types.SimpleNamespace()
+        launcher_path = Path("launcher.json")
+
+        with (
+            mock.patch.object(
+                drone_one.base,
+                "write_launcher",
+                return_value=launcher_path,
+            ) as base_writer,
+            mock.patch.object(drone_one, "patch_eams_city_viewer") as patch_viewer,
+            mock.patch.object(
+                drone_one,
+                "patch_rc_launcher",
+                return_value=launcher_path,
+            ) as patch_rc,
+            mock.patch.object(drone_one, "patch_launcher") as patch_mission,
+        ):
+            self.assertEqual(
+                writer(paths, Path("drone"), Path("viewer"), object(), "Darwin"),
+                launcher_path,
+            )
+
+        base_writer.assert_called_once()
+        patch_viewer.assert_called_once_with(paths)
+        patch_rc.assert_called_once_with(
+            launcher_path,
+            paths=paths,
+            drone_root=Path("drone"),
+        )
+        patch_mission.assert_not_called()
+        self.assertIs(drone_one.base.write_launcher, original_writer)
+
     def test_drone_workspace_follows_business_pack_workdir_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             selected_workdir = Path(directory) / "alternate-work"

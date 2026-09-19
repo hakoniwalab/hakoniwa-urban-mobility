@@ -133,12 +133,16 @@ Urban scenario
 Urban専用workspaceを作る前に、既存Drone Fleet Recipeから必要な生成処理を安全に
 再利用できるようにする。
 
-- [ ] `drone_fleet_single_host`の再利用対象処理を列挙する
-- [ ] workspace、experiment、出力先、Launcher hookを明示的な引数にする
-- [ ] module globalの`RECIPE_ID`へ依存しない生成APIを用意する
-- [ ] `base.write_launcher = ...`による関数差し替えを不要にする
-- [ ] 既存Drone Fleet Recipeが同じAPIで従来動作することを確認する
-- [ ] Urban側が公開API以外のprivate/global状態へ依存しないことを確認する
+再利用する公開入口は`configure`、`doctor`、`start`、`control`とし、標準Launcher生成は
+`write_launcher`を使用する。Urbanは明示的な`workspace`と`launcher_writer`を渡し、
+標準Recipeは両引数を省略して従来の`ROOT` / `RECIPE_ID`と標準Launcherを使用する。
+
+- [x] `drone_fleet_single_host`の再利用対象処理を列挙する
+- [x] workspace、experiment、出力先、Launcher hookを明示的な引数にする
+- [x] module globalの`RECIPE_ID`へ依存しない生成APIを用意する
+- [x] `base.write_launcher = ...`による関数差し替えを不要にする
+- [x] 既存Drone Fleet Recipeが同じAPIで従来動作することを確認する
+- [x] Urban側が公開API以外のprivate/global状態へ依存しないことを確認する
 
 完了条件:
 
