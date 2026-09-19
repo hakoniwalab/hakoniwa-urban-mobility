@@ -209,17 +209,24 @@ viewer:
 
         chassis = body.find(".//geom[@name='frame_chassis_contact']")
         self.assertEqual(chassis.get("friction"), drone_one.EAMS_CHASSIS_FRICTION)
+        self.assertEqual(chassis.get("priority"), drone_one.EAMS_CONTACT_PRIORITY)
         for side in ("left", "right"):
             skid = body.find(
                 f".//geom[@name='landing_gear_{side}_skid_contact']"
             )
             self.assertEqual(skid.get("friction"), drone_one.EAMS_SKID_FRICTION)
+            self.assertEqual(skid.get("priority"), drone_one.EAMS_CONTACT_PRIORITY)
         for index in range(1, 7):
             propeller = body.find(f".//geom[@name='prop{index}_geom']")
             self.assertEqual(propeller.get("contype"), "1")
             self.assertEqual(propeller.get("conaffinity"), "1")
             self.assertEqual(propeller.get("condim"), "1")
+            self.assertEqual(
+                propeller.get("priority"),
+                drone_one.EAMS_CONTACT_PRIORITY,
+            )
         self.assertEqual(policy["propeller_collision_geoms"], 6)
+        self.assertEqual(policy["contact_priority"], 1)
         landing = body.find(
             f".//geom[@name='{drone_one.EAMS_LANDING_COLLIDER_NAME}']"
         )
@@ -229,6 +236,7 @@ viewer:
         self.assertEqual(landing.get("size"), "0.31 0.29 0.04")
         self.assertEqual(landing.get("contype"), "1")
         self.assertEqual(landing.get("conaffinity"), "1")
+        self.assertEqual(landing.get("priority"), drone_one.EAMS_CONTACT_PRIORITY)
 
     def test_city_contact_policy_rejects_incomplete_propeller_set(self):
         body = ET.fromstring(

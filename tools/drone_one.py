@@ -35,6 +35,7 @@ EAMS_TUNED_PARAMS_RELATIVE = Path(
 EAMS_CHASSIS_FRICTION = "0.05 0.001 0.0001"
 EAMS_SKID_FRICTION = "0.2 0.005 0.0001"
 EAMS_PROPELLER_FRICTION = "0.01 0.001 0.0001"
+EAMS_CONTACT_PRIORITY = "1"
 EAMS_LANDING_COLLIDER_NAME = "landing_gear_support_contact"
 EAMS_LANDING_COLLIDER_POSITION = "0 0 -0.44"
 EAMS_LANDING_COLLIDER_SIZE = "0.31 0.29 0.04"
@@ -612,6 +613,10 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         if geom is None:
             raise base.RecipeError(f"EAMS model has no required contact geom: {name}")
         geom.set("friction", friction)
+        # City geoms use MuJoCo's default priority=0. At equal priority,
+        # friction is combined by taking the larger value, which defeats the
+        # deliberately low Urban friction and can hold the body on a wall.
+        geom.set("priority", EAMS_CONTACT_PRIORITY)
 
     propeller_names = [f"prop{index}_geom" for index in range(1, 7)]
     for name in propeller_names:
@@ -625,6 +630,12 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         geom.set("conaffinity", "1")
         geom.set("condim", "1")
         geom.set("friction", EAMS_PROPELLER_FRICTION)
+        # City geoms use MuJoCo's default priority=0 and condim=3. Without a
+        # higher priority here, MuJoCo combines equal-priority contacts using
+        # max(condim) and element-wise max(friction), effectively restoring
+        # the City's high tangential friction and making a propeller stick to
+        # a wall. Give the swept disc authority over its contact parameters.
+        geom.set("priority", EAMS_CONTACT_PRIORITY)
 
     if hexa_body.find(
         f".//geom[@name='{EAMS_LANDING_COLLIDER_NAME}']"
@@ -644,6 +655,7 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         "conaffinity": "1",
         "condim": "3",
         "friction": EAMS_SKID_FRICTION,
+        "priority": EAMS_CONTACT_PRIORITY,
         "margin": "0.005",
     })
 
@@ -653,6 +665,7 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         "propeller_friction": EAMS_PROPELLER_FRICTION,
         "propeller_collision_geoms": len(propeller_names),
         "propeller_contact_dimension": 1,
+        "contact_priority": int(EAMS_CONTACT_PRIORITY),
         "landing_collider": {
             "name": EAMS_LANDING_COLLIDER_NAME,
             "position": EAMS_LANDING_COLLIDER_POSITION,

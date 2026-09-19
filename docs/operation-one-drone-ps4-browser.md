@@ -65,6 +65,13 @@ upper-right inset is the onboard road-monitoring camera, mounted forward and
 pitched 50 degrees downward. If an older model is cached, reload the page with
 `Cmd+Shift+R`.
 
+The generated Urban physics model enables collision for all six swept
+propeller discs. All Drone contact geoms use `priority=1`, so their tuned
+friction overrides the City geom defaults. The propellers additionally use
+`condim=1`, removing tangential wall friction; the chassis remains
+low-friction while the skids and landing support retain moderate friction for
+stable ground contact.
+
 The pose uses the City World's local ENU frame: `east_m`, `north_m`, `up_m`,
 and ENU `yaw_deg` (0 degrees faces east; 90 degrees faces north). To move the
 Drone after the initial configure, stop it, edit only `spawn_pose_enu`, and
