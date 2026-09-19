@@ -71,6 +71,7 @@ class UrbanDroneRecipe:
     spawn_pose_enu: dict[str, float]
     launch_area: dict[str, Any]
     control_mode: str
+    controller_params: Path | None
     map_layout: str
     collider_overlay_default: bool
 
@@ -113,6 +114,16 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
     control_mode = control.get("mode")
     if control_mode not in {"fleet-rpc", "ps4-rc"}:
         raise base.RecipeError("control.mode must be fleet-rpc or ps4-rc")
+    controller_params_value = control.get("controller_params")
+    controller_params = (
+        _recipe_path(
+            recipe_path,
+            controller_params_value,
+            "control.controller_params",
+        )
+        if controller_params_value is not None
+        else None
+    )
     drone_profile = drone.get("profile")
     if drone_profile != "eams-nominal-9kg":
         raise base.RecipeError("drone.profile must be eams-nominal-9kg")
@@ -157,6 +168,7 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
             "search_radius_m": search_radius_m,
         },
         control_mode=control_mode,
+        controller_params=controller_params,
         map_layout=map_layout,
         collider_overlay_default=collider_default,
     )
@@ -167,6 +179,10 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
     ):
         if not required.is_file():
             raise base.RecipeError(f"{label} not found: {required}")
+    if result.controller_params is not None and not result.controller_params.is_file():
+        raise base.RecipeError(
+            f"control.controller_params not found: {result.controller_params}"
+        )
     return result
 
 
@@ -184,6 +200,11 @@ def write_selected_recipe(paths: object, recipe: UrbanDroneRecipe) -> Path:
         "spawn_pose_enu": recipe.spawn_pose_enu,
         "launch_area": recipe.launch_area,
         "control_mode": recipe.control_mode,
+        "controller_params": (
+            str(recipe.controller_params)
+            if recipe.controller_params is not None
+            else None
+        ),
         "map_layout": recipe.map_layout,
         "collider_overlay_default": recipe.collider_overlay_default,
     }, indent=2) + "\n", encoding="utf-8")
@@ -210,6 +231,11 @@ def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
             },
             launch_area=data["launch_area"],
             control_mode=data["control_mode"],
+            controller_params=(
+                Path(data["controller_params"])
+                if data.get("controller_params")
+                else None
+            ),
             map_layout=data["map_layout"],
             collider_overlay_default=data["collider_overlay_default"],
         )
@@ -869,6 +895,30 @@ def refresh_runtime_spawn(paths: object, recipe: UrbanDroneRecipe) -> Path:
     return fleet_path
 
 
+def refresh_runtime_controller_params(
+    paths: object, recipe: UrbanDroneRecipe
+) -> Path | None:
+    """Restore the Urban-owned RC tuning file immediately before launch."""
+    if recipe.control_mode != "ps4-rc" or recipe.controller_params is None:
+        return None
+    source = recipe.controller_params
+    if not source.is_file():
+        raise base.RecipeError(f"controller parameters not found: {source}")
+    # Parse before copying so a malformed tuning edit cannot replace the last
+    # usable runtime file and fail later inside the native Drone service.
+    try:
+        params = _parameter_values(source)
+    except (OSError, ValueError) as exc:
+        raise base.RecipeError(f"invalid controller parameters {source}: {exc}") from exc
+    if not params:
+        raise base.RecipeError(f"controller parameters are empty: {source}")
+    target = paths.recipe_root / "rc/controller-params.txt"
+    if not target.parent.is_dir():
+        raise base.RecipeError("Urban Drone is not configured; run configure first")
+    shutil.copyfile(source, target)
+    return target
+
+
 def load_runtime_recipe(configured: UrbanDroneRecipe) -> UrbanDroneRecipe:
     """Accept pose-only source edits and reject edits that need regeneration."""
     if not configured.source_path.is_file():
@@ -899,6 +949,7 @@ def load_runtime_recipe(configured: UrbanDroneRecipe) -> UrbanDroneRecipe:
         configured,
         source_sha256=current.source_sha256,
         spawn_pose_enu=current.spawn_pose_enu,
+        controller_params=current.controller_params,
     )
 
 
@@ -1030,6 +1081,7 @@ def main() -> int:
         recipe = load_runtime_recipe(recipe)
         _ACTIVE_RECIPE = recipe
         fleet_path = refresh_runtime_spawn(paths, recipe)
+        parameter_path = refresh_runtime_controller_params(paths, recipe)
         pose = recipe.spawn_pose_enu
         print(
             "Runtime spawn ENU: "
@@ -1037,6 +1089,8 @@ def main() -> int:
             f"up={pose['up_m']:.3f}, yaw={pose['yaw_deg']:.3f} deg"
         )
         print(f"Fleet config     : {fleet_path}")
+        if parameter_path is not None:
+            print(f"Controller params: {parameter_path}")
         return base.start(recipe.fleet_experiment, drone_root, viewer_root)
     if args.command == "status":
         return base.control(recipe.fleet_experiment, drone_root, "status")

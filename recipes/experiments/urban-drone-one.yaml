@@ -23,6 +23,9 @@ drone:
 
 control:
   mode: ps4-rc
+  # Urban-owned tuning source. start copies this over the generated work file,
+  # so PID edits survive a configure followed by start.
+  controller_params: ../../config/drone/eams-rc-controller-params.txt
 
 mission:
   path: ../../config/drone/city-one-mission.json

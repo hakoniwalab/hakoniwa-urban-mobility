@@ -381,6 +381,28 @@ viewer:
                 marker["flight_plan"]["runtime_spawn"]["frame"], "ENU"
             )
 
+    def test_start_restores_urban_controller_params_to_recipe_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "urban-controller-params.txt"
+            source.write_text(
+                "PID_ROLL_RATE_Kp 2.7\nPID_PITCH_RATE_Kp 2.7\n",
+                encoding="utf-8",
+            )
+            runtime = root / "recipe/rc/controller-params.txt"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_text("PID_ROLL_RATE_Kp 3.0\n", encoding="utf-8")
+            recipe = types.SimpleNamespace(
+                control_mode="ps4-rc",
+                controller_params=source,
+            )
+            paths = types.SimpleNamespace(recipe_root=root / "recipe")
+
+            result = drone_one.refresh_runtime_controller_params(paths, recipe)
+
+            self.assertEqual(result, runtime)
+            self.assertEqual(runtime.read_bytes(), source.read_bytes())
+
     def test_runtime_recipe_accepts_pose_only_edit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

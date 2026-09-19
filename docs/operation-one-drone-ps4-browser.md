@@ -26,6 +26,13 @@ The checked-in recipe uses `control.mode: ps4-rc`. `configure` copies the genera
 EAMS parameters into the Recipe workspace. It does not modify the tracked
 configuration in `hakoniwa-drone-pro`.
 
+For quick PID iteration, edit the Urban-owned source file
+`config/drone/eams-rc-controller-params.txt`. Every `start` copies this file
+over the generated `rc/controller-params.txt` before launching the Drone
+service. Therefore PID changes need only `stop`, edit, and `start`; running
+`configure` may temporarily regenerate the work file, but the next `start`
+restores the Urban tuning source.
+
 Key generated files are:
 
 - `../hakoniwa-business-pack/work/recipes/drone-fleet-single-host/rc/drone_config_0.json`
