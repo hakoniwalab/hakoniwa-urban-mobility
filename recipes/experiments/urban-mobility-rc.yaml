@@ -3,9 +3,9 @@ title: City-independent Urban Mobility RC Demo
 recipe_version: 0.1
 
 goal:
-  user_request: Recipeで選択した都市上でPS4操作のEAMS Hexa Drone 1台とシナリオ走行する複数Golf Cartを1画面で動かしたい
+  user_request: Recipeで選択した都市上でPS4操作のDrone Core 1台とシナリオ走行する複数Golf Cartを1画面で動かしたい
   description: >
-    Materialize one city-independent managed native Recipe with one Drone PRO physics owner,
+    Materialize one city-independent managed native Recipe with one public Drone Core physics owner,
     one Urban Car Fleet plant, one Drone RC controller, one multi-Car scenario
     controller, and one browser visualization path. The Drone service owns the
     only Conductor. A City World Receipt is an explicit Urban composition input;
@@ -48,8 +48,8 @@ validation:
           result: Launcher TERMINATED and HTTP/WebSocket ports released
 
 constraints:
-  - native-macos-first
-  - private-drone-pro-source-required
+  - native-cross-platform
+  - public-drone-core-v4.1.1
   - one-launcher
   - exactly-one-conductor-owner
   - one-drone
@@ -60,7 +60,7 @@ constraints:
 target_environment:
   required_for: executable-demo
   status: specified
-  os: macOS
+  os: host-native
   os_version: current-supported-host
   architecture: arm64
   execution_mode: native
@@ -71,8 +71,8 @@ target_environment:
       path: work/foundation/install/python
     - name: MuJoCo
       required: true
-      version: "3.9.0"
-      path: hakoniwa-mujoco-robots/MUJOCO_VERSION.txt
+      version: "3.13.0"
+      path: hakoniwa-drone-core/MUJOCO_VERSION.txt
   hakoniwa:
     install_prefix: work/foundation/install
     components_built:
@@ -86,8 +86,8 @@ execution_environment:
     mode: managed
   required_for: executable-demo
   status: specified
-  os: macOS
-  architecture: arm64
+  os: host-native
+  architecture: host-native
   execution_mode: native
   gui:
     required: true
@@ -108,6 +108,14 @@ execution_environment:
     - The Recipe exclusively owns the shared Foundation mmap runtime while running.
     - HTTP 8000, WebSocket 8765, and Launcher control 54111 must be available before start.
     - A human operator connects and operates the PS4 controller after Demo Ready.
+
+native_runtime_requirements:
+  schema_version: 1
+  components:
+    hakoniwa-drone-core:
+      profile: public-v4.1.1
+      required_roles: ["drone_service", "visual_state_publisher"]
+      optional_roles: []
 
 foundation_contract:
   mode: required
@@ -171,18 +179,11 @@ recipe_local_requirements:
       - {path: tools/multi_car.py, kind: file}
       - {path: build/bin/urban-car-hakoniwa-asset, kind: executable}
       - {path: recipes/experiments/urban-drone-one.yaml, kind: file}
-  hakoniwa-drone-pro:
-    root:
-      default_path: ../hakoniwa-drone-pro
-      override_env: HAKONIWA_DRONE_PRO_ROOT
-      relative_to: recipe_repository
-    source:
-      type: local
-    required_artifacts:
-      - {path: tuning/vehicle/eams/generated/nominal-9kg/drone.xml, kind: file}
-      - {path: tuning/vehicle/eams/config/drone_config_0.json, kind: file}
-      - {path: drone_api/rc/rc-custom.py, kind: file}
-      - {path: drone_api/rc/rc_config/ps4-control.json, kind: file}
+      - {path: config/drone/hexa/drone.xml, kind: file}
+      - {path: config/drone/hexa/drone_config_0.json, kind: file}
+      - {path: config/drone/hexa/controller-params.txt, kind: file}
+      - {path: config/drone/hexa/controller-tuning.txt, kind: file}
+      - {path: config/drone/hexa/README.md, kind: file}
   hakoniwa-drone-core:
     root:
       default_path: ../hakoniwa-drone-core
@@ -191,7 +192,13 @@ recipe_local_requirements:
     source:
       type: local
     required_artifacts:
+      - {path: NATIVE_RUNTIME_REQUIREMENTS.yaml, kind: file}
+      - {path: MUJOCO_VERSION.txt, kind: file}
       - {path: config/pdudef/drone-pdutypes.json, kind: file}
+      - {path: config/drone/fleets/types/api-mujoco.json, kind: file}
+      - {path: config/controller/param-api-mixer-mujoco.txt, kind: file}
+      - {path: drone_api/rc/rc-custom.py, kind: file}
+      - {path: drone_api/rc/rc_config/ps4-control.json, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
@@ -281,8 +288,8 @@ agency_boundary:
       description: Connect the controller and fly the Drone after Demo Ready.
       status: required
   required_permissions:
-    - id: drone_pro_entitlement
-      description: Access to and permission to use the private Hakoniwa Drone PRO package is required.
+    - id: drone_core_license
+      description: Use must comply with the public Hakoniwa Drone Core non-commercial license or a separate commercial license.
       status: required
       required_before: [integrated_configure, simulation_execution]
     - id: plateau_data_terms
@@ -293,7 +300,7 @@ agency_boundary:
 components:
   - id: hakoniwa-urban-mobility
     roles: [recipe_composer, car_physics, scenario_controller]
-  - id: hakoniwa-drone-pro
+  - id: hakoniwa-drone-core
     roles: [drone_physics, conductor_owner, rc_controller]
   - id: hakoniwa-robot-runtime
     roles: [robot_runtime]
@@ -319,17 +326,17 @@ source_artifacts:
     path: recipes/experiments/urban-mobility-rc.yaml
     revision: local-step-5
     description: Urban-owned managed Recipe and dependency contract.
-  - repository: private/hakoniwa-drone-pro
-    path: tuning/vehicle/eams/generated/nominal-9kg/drone.xml
-    revision: operator-managed
-    description: Private tuned EAMS Hexa physics source consumed without redistribution.
+  - repository: toppers/hakoniwa-drone-core
+    path: NATIVE_RUNTIME_REQUIREMENTS.yaml
+    revision: v4.1.1
+    description: Public native binary and MuJoCo runtime contract.
 
 missing_pieces:
   - Add the tracked city-independent composition and a Shizuoka example scenario in Step 8.
   - Verify the combined topology and browser state in Step 9.
 
 expected_result: >
-  One PS4-controlled EAMS Hexa Drone observes multiple scenario-driven Golf
+  One PS4-controlled Urban EAMS Hexa observes multiple scenario-driven Golf
   Carts moving in a Recipe-selected City World in one synchronized browser demo.
 
 tags:

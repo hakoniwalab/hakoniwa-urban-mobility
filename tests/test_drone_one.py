@@ -183,12 +183,12 @@ class DroneOneToolTest(unittest.TestCase):
             mock.patch.object(drone_one.base, "configure", return_value=1) as configure,
         ):
             self.assertEqual(
-                drone_one.configure(Path("drone-pro"), recipe=recipe),
+                drone_one.configure(Path("drone-core"), recipe=recipe),
                 1,
             )
         configure.assert_called_once_with(
             Path("fleet.yaml"),
-            Path("drone-pro"),
+            Path("drone-core"),
             workspace=paths,
             write_guide=False,
         )
@@ -361,11 +361,12 @@ viewer:
                 str(runtime_mjb),
             )
 
-    def test_eams_tuning_is_loaded_from_drone_pro_and_keeps_rpc_parameters(self):
+    def test_eams_tuning_is_loaded_from_urban_and_keeps_rpc_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base_path = root / "config/controller/param-api-mixer-mujoco.txt"
-            tuned_path = root / drone_one.EAMS_TUNED_PARAMS_RELATIVE
+            hexa_root = root / "urban-hexa"
+            tuned_path = hexa_root / "controller-tuning.txt"
             base_path.parent.mkdir(parents=True)
             tuned_path.parent.mkdir(parents=True)
             base_path.write_text(
@@ -378,7 +379,8 @@ viewer:
             )
 
             output = root / "runtime/controller-params.txt"
-            drone_one.materialize_eams_controller_params(root, output)
+            with mock.patch.object(drone_one, "URBAN_HEXA_ROOT", hexa_root):
+                drone_one.materialize_eams_controller_params(root, output)
             params = drone_one._parameter_values(output)
 
             self.assertEqual(params["PID_ALT_Kp"], "11.0")
@@ -388,10 +390,11 @@ viewer:
     def test_rc_parameters_keep_tuning_and_enable_angle_control(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            base_path = root / "tuning/vehicle/eams/config/controller-params.txt"
-            tuned_path = root / drone_one.EAMS_TUNED_PARAMS_RELATIVE
+            hexa_root = root / "urban-hexa"
+            base_path = hexa_root / "controller-params.txt"
+            tuned_path = hexa_root / "controller-tuning.txt"
             base_path.parent.mkdir(parents=True)
-            tuned_path.parent.mkdir(parents=True)
+            tuned_path.parent.mkdir(parents=True, exist_ok=True)
             base_path.write_text(
                 "ANGLE_CONTROL_ENABLE 0\n"
                 "ANGLE_CONTROL_ENABLE 0.0\n"
@@ -407,9 +410,10 @@ viewer:
             )
 
             output = root / "runtime/controller-params.txt"
-            drone_one.materialize_eams_controller_params(
-                root, output, rc_mode=True
-            )
+            with mock.patch.object(drone_one, "URBAN_HEXA_ROOT", hexa_root):
+                drone_one.materialize_eams_controller_params(
+                    root, output, rc_mode=True
+                )
             params = drone_one._parameter_values(output)
 
             self.assertEqual(params["ANGLE_CONTROL_ENABLE"], "0")
@@ -770,7 +774,7 @@ viewer:
             paths = types.SimpleNamespace(recipe_config=root / "config")
 
             drone_one.patch_rc_launcher(
-                launcher_path, paths=paths, drone_root=root / "drone-pro"
+                launcher_path, paths=paths, drone_root=root / "drone-core"
             )
 
             launcher = json.loads(launcher_path.read_text(encoding="utf-8"))

@@ -11,7 +11,7 @@ The first integrated target is:
 
 ```text
 Recipe-selected City World (the first regression uses Shizuoka)
-  + 1 EAMS Hexa Drone controlled by PS4 RC
+  + 1 Urban-managed EAMS Hexa controlled by PS4 RC
   + N Golf Carts controlled by a route scenario
   + 1 Launcher
   + 1 Conductor owner
@@ -70,7 +70,7 @@ hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
 The Urban config owns the concrete system composition:
 
 - City World Receipt
-- Drone type, count, spawn pose, control mode, and PID source
+- Drone type, count, spawn pose, control mode, and optional PID override
 - Car types, count, spawn policy, and control mode
 - selected Car scenario
 - simulation cycle settings
@@ -111,9 +111,10 @@ models, browser ports, or Launcher ownership.
 | Foundation capabilities and limits | Business Pack Recipe manifest | generated `foundation-requirements.yaml` and Foundation evaluator |
 | installed Foundation state | installed Component Receipts | `plan` and `doctor` evaluation |
 | City coordinate and artifact contract | City World Receipt | Car and Drone composers, Viewer config |
-| Drone vehicle and physics | Drone PRO EAMS source model/config | Recipe-local Drone MJCF/MJB and type config |
-| Drone PID tuning | Urban tracked PID file selected by composition config | Recipe-local `controller-params.txt` at `start` |
-| Drone RC mapping | Drone PRO tracked RC mapping selected by composition config | PS4 controller asset arguments |
+| Drone executable and MuJoCo runtime | Drone Core v4.1.1 public native release | Recipe-local launcher and runtime environment |
+| Drone vehicle and physics configuration | Urban `config/drone/hexa` | Recipe-local Hexa MJCF/MJB and type config |
+| Drone PID tuning | Urban `config/drone/hexa/controller-params.txt` and `controller-tuning.txt` | Recipe-local `controller-params.txt` at `configure` or `start` |
+| Drone RC mapping | Drone Core tracked RC mapping selected by composition config | PS4 controller asset arguments |
 | Car physical/view model | MBody registry tracked model contract | Recipe-local Car MJCF/MJB and Viewer asset |
 | Car count and type selection | Urban composition config | manifest, PDU definition, Launcher assets |
 | Car routes and timing | Urban scenario file | scenario executor runtime input |
@@ -163,7 +164,7 @@ a supported isolation mechanism.
 ```text
 Business Pack PDU Python Launcher
   |
-  +-- Drone PRO service (Drone-1 physics + built-in Conductor owner)
+  +-- Drone Core service (Drone-1 physics + built-in Conductor owner)
   |
   +-- PS4 RC controller (Drone-1 command producer)
   |
@@ -183,8 +184,8 @@ Ownership table:
 | Concern | Owner | Required rule |
 | --- | --- | --- |
 | Launcher process lifecycle | Foundation-installed PDU Python Launcher | exactly one Launcher session per Recipe execution |
-| simulation time / Conductor | first Drone PRO service process | exactly one Conductor owner |
-| Drone physics | Drone PRO service | one real Drone in the first integrated target |
+| simulation time / Conductor | first Drone Core service process | exactly one Conductor owner |
+| Drone physics | Drone Core service | one real Drone in the first integrated target |
 | Drone RC command | PS4 RC controller asset | targets only `Drone-1` |
 | Car physics | one Urban Car Fleet plant | one MuJoCo model and step for every real Car |
 | Car commands | one scenario executor or explicit controller per Car | unique robot/PDU namespaces |
@@ -244,7 +245,7 @@ Urban does not maintain a forked copy.
 | `plan` | resolve sources, Foundation requirements, workdir, and intended actions | build, configure, or start assets |
 | `doctor` | inspect installed Receipts, required artifacts, generated config, ports, and compatibility | silently rebuild Foundation |
 | `configure` | materialize Recipe-local PDU, physics, Bridge, Viewer, Launcher, guide, and validation inputs | start runtime or edit tracked source |
-| `start` | runtime preflight, apply start-time pose/PID values, clean permitted stale state, launch assets, wait for Launcher RUNNING and required readiness | recompile City models or launch another Recipe's session |
+| `start` | runtime preflight, apply start-time pose and any optional PID override, clean permitted stale state, launch assets, wait for Launcher RUNNING and required readiness | recompile City models or launch another Recipe's session |
 | `status` | report selected Recipe session, asset/readiness summary, and paths | fall back to a different Recipe's session file |
 | `stop` | terminate only the selected Recipe session and verify child/port cleanup | terminate unrelated processes by broad pattern |
 | `open-viewer` | verify selected Recipe HTTP readiness and open its generated URL | open a URL merely because port 8000 responds |

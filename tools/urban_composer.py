@@ -16,7 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 DEFAULT_CONFIG = ROOT / "recipes/experiments/urban-mobility-shizuoka.yaml"
-DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
+DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 
 sys.path.insert(0, str(ROOT / "tools"))
 
@@ -94,7 +94,6 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
     source_drones = drone_scene.get("drones")
     if not isinstance(source_drones, list) or len(source_drones) != 1:
         raise UrbanComposeError("generated Drone scene must contain one template")
-    drone_types_path = embedded / "config/drone_types-hexa-eams.json"
 
     scene_paths = [three / "scene-config.json"]
     collider_scene = three / "scene-config-colliders.json"
@@ -102,7 +101,6 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
         scene_paths.append(collider_scene)
     for scene_path in scene_paths:
         scene = multi_car.load_json(scene_path, "integrated scene")
-        scene["droneTypesPath"] = multi_car.workspace_url(drone_types_path)
         scene["drones"] = copy.deepcopy(source_drones)
         scene["main_camera"]["target"] = "Drone"
         multi_car.write_json(scene_path, scene)
@@ -302,9 +300,9 @@ def configure(
 
     generated_body = (
         paths.recipe_config
-        / "drone/mujoco-city-fleet/process-01/eams-hexa-body.xml"
+        / "drone/mujoco-city-fleet/process-01/hexa-body.xml"
     )
-    multi_car.required(generated_body, "generated EAMS mirror body")
+    multi_car.required(generated_body, "generated Urban Hexa mirror model")
     if len(resolved["mirrors"]) != 1:
         raise UrbanComposeError("integrated demo requires one Drone Mirror")
     spawn = drone_scenario["spawn"]

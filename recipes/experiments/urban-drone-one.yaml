@@ -9,7 +9,7 @@ city_world:
 
 drone:
   profile: eams-nominal-9kg
-  # ENU pose applied to the Drone Pro Fleet config immediately before start.
+  # ENU pose applied to the Drone Core Fleet config immediately before start.
   # Pose-only changes do not require configure.
   spawn_pose_enu:
     east_m: 0.0
@@ -23,9 +23,6 @@ drone:
 
 control:
   mode: ps4-rc
-  # Urban-owned tuning source. start copies this over the generated work file,
-  # so PID edits survive a configure followed by start.
-  controller_params: ../../config/drone/eams-rc-controller-params.txt
 
 mission:
   path: ../../config/drone/city-one-mission.json

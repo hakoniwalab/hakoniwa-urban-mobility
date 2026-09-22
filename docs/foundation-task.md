@@ -9,7 +9,7 @@
 次のデモを構築する。
 
 - City World ReceiptをRecipe入力とし、初回回帰では静岡PLATEAUを使用する
-- EAMS Hexa Droneを1台、PS4コントローラでRC操作する
+- Urban管理EAMS Hexaを1台、Drone Core v4.1.1バイナリでPS4 RC操作する
 - Golf Cartを複数台、シナリオに従って道路上で往復させる
 - 1個のLauncherと1個のConductor ownerで全Assetを起動する
 - 1個のThree.js画面でCity、Drone、Car、地図、搭載カメラを確認する
@@ -49,10 +49,10 @@ hakoniwa-urban-mobility: b396d93
   - Three.js、左下地図、前方カメラ、Collider表示
 - `urban-drone-one.yaml`
   - 静岡City World
-  - EAMS Hexa Drone 1台
+  - Urban管理EAMS Hexa 1台
   - PS4 RC操作
   - 起動時のENU初期位置反映
-  - Urban管理のPID正本を`start`時に再適用
+  - Drone Core公開PID baselineを使用し、指定時のみUrban管理overrideを`start`時に再適用
   - Three.js、左下地図、監視カメラ、Collider表示
 - 共通制約
   - CarとDroneの単体Recipeは同じHTTP/WebSocket portを使用するため同時起動しない
@@ -198,7 +198,7 @@ work/recipes/urban-mobility-rc/
 - [x] `foundation_contract.mode: required`を宣言する
 - [x] Core PRO、PDU Python、Endpoint、Bridgeの必要Capabilityを宣言する
 - [x] 必要なbuild limitを実測したAsset/PDU/Service数から算出する
-- [x] Urban、Drone PRO、robot-runtime、MuJoCo robots、MBody registry、Viewer等をRecipe local requirementとして整理する
+- [x] Urban、Drone Core、robot-runtime、MuJoCo robots、MBody registry、Viewer等をRecipe local requirementとして整理する
 - [x] private repositoryやlicenseの前提をagency boundaryへ記述する
 - [x] `recipe.py plan`が全sourceとFoundation要求を表示することを確認する
 - [x] `recipe.py doctor`が不足・不整合を起動前に説明することを確認する
@@ -247,8 +247,8 @@ work/recipes/urban-mobility-rc/
 - [x] 1 Droneのconfigure、doctor、start、操作、Viewer、stopを確認する
 - [x] Carの起動時ENU pose変更がCity再構築なしで反映される
 - [x] Droneの起動時ENU pose変更がCity再構築なしで反映される
-- [x] Urban管理PIDの変更が`stop -> start`で反映される
-- [x] `configure -> start`でもUrban管理PIDが復元される
+- [x] 任意のUrban管理PID overrideが`stop -> start`で反映される
+- [x] `configure -> start`でも指定済みUrban管理PID overrideが復元される
 - [x] Collider、地図、搭載カメラのUIが両方で同じ操作感になる
 
 完了条件:
@@ -260,8 +260,8 @@ work/recipes/urban-mobility-rc/
 
 - Carは専用`work/recipes/urban-car-one` sessionで起動し、DualSense認識、HTTP 200、WebSocket 101と`UrbanFleet`配信を確認した
 - Droneは専用`work/recipes/urban-drone-one` sessionで起動し、HTTP 200、WebSocket 101と`DroneVisualStatePublisher`配信を確認した
-- Droneの実行用PIDファイルはUrban正本`config/drone/eams-rc-controller-params.txt`とSHA-1が一致した
-- 6ローター、監視カメラ、左下地図、任意Colliderの生成設定を確認した。Car側も前方カメラ、左下地図、任意Colliderを維持している
+- Droneの実行用PIDファイルはDrone Coreの公開controller baselineから生成する
+- 6ローター、監視カメラ、左下地図、任意Colliderの生成設定を確認する。Car側も前方カメラ、左下地図、任意Colliderを維持する
 - 両構成ともstop後はLauncherが`TERMINATED`となり、8000、8765、54111にlistenerが残らないことを確認した
 - PS5/PS4の実操作と画面上の操作感はStep 0で確認済みであり、Step 7では同じ生成契約とデータ経路が新workspaceで維持されることを再確認した
 
@@ -317,7 +317,7 @@ Car-1     Car-3       Car-5
 
 - [x] 静岡モデル内から、平らで離陸余裕のある建物屋上を1か所選択する
 - [x] 屋上中央のENU位置、屋上面高さ、yaw、脚のclearanceをscenarioに記録する
-- [x] EAMS Hexa Drone 1台をPS4 RC構成で屋上へ配置する
+- [x] Urban管理EAMS Hexa 1台をDrone Core v4.1.1＋PS4 RC構成で屋上へ配置する
 - [ ] Drone単体で屋上静止、離陸、道路上空への移動を確認する
 - [ ] プロペラ、脚、機体が屋上や周辺建物へ初期干渉しないことを確認する
 

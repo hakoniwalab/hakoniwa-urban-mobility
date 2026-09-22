@@ -1,5 +1,5 @@
 id: urban-drone-car-rc
-title: One Golf Cart loop with one PS4-controlled EAMS Hexa Drone
+title: One Golf Cart loop with one PS4-controlled Urban EAMS Hexa
 recipe_version: 0.1
 status: experimental
 
@@ -26,7 +26,7 @@ inputs:
   drone_mirrors:
     - name: Drone-1
       pdu_types: ../hakoniwa-drone-core/config/pdudef/drone-pdutypes.json
-      mjcf_model: ../hakoniwa-drone-pro/tuning/vehicle/eams/generated/nominal-9kg/drone.xml
+      mjcf_model: config/drone/hexa/drone.xml
       mjcf_body: drone_base
       initial_position_mjcf: [5.0, -45.0, 7.0]
       restitution_coefficient: 0.3

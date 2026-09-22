@@ -8,13 +8,14 @@ import copy
 from dataclasses import replace
 import json
 from pathlib import Path
+import platform
 import subprocess
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
+DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 CONFIG = ROOT / "recipes/experiments/drone-car-rc.yaml"
 RECIPE_ID = "urban-drone-car-rc"
 
@@ -66,13 +67,13 @@ def configured_drone_start() -> tuple[float, float, float]:
 
 
 def use_generated_drone_body_for_mirrors(resolved: dict) -> Path:
-    """Use the Urban-patched Drone body for the Car-side visual/physics Mirror."""
+    """Use the generated Urban Hexa model for the Car-side Mirror."""
     body = (
         drone_paths().recipe_config
-        / "drone/mujoco-city-fleet/process-01/eams-hexa-body.xml"
+        / "drone/mujoco-city-fleet/process-01/hexa-body.xml"
     )
     if not body.is_file():
-        raise RcDemoError(f"generated EAMS body is missing: {body}")
+        raise RcDemoError(f"generated Drone Core model is missing: {body}")
     mirrors = resolved.get("mirrors")
     if not isinstance(mirrors, list) or len(mirrors) != 1:
         raise RcDemoError("RC demo requires exactly one Drone Mirror")
@@ -199,7 +200,7 @@ def configure(drone_root: Path) -> int:
         return 1
     use_generated_drone_body_for_mirrors(resolved)
     # Keep the safe launch point selected by drone_one.configure(). Moving the
-    # physical Drone to the Car route caused the EAMS vehicle to settle on a
+    # physical Drone to the Car route caused the vehicle to settle on a
     # different surface and prevented the previously verified takeoff.
     start = configured_drone_start()
     if drone_one.base.doctor(
@@ -232,7 +233,10 @@ def configure(drone_root: Path) -> int:
 def doctor(drone_root: Path) -> int:
     resolved = multi_car.resolve_config(CONFIG)
     checks = [
-        ("Drone PRO service", drone_root / "mac/mac-main_hako_drone_service"),
+        (
+            "Drone Core service",
+            drone_one.base.resolve_drone_binary(drone_root, platform.system()),
+        ),
         ("Car Mirror asset", ROOT / "build/bin/urban-car-hakoniwa-asset"),
         ("Car scenario", car_scenario_path()),
         ("PS4 RC program", drone_root / "drone_api/rc/rc-custom.py"),

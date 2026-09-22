@@ -1,6 +1,7 @@
-# One EAMS Hexa Drone: PS4 control and browser visualization
+# One Urban EAMS Hexa: PS4 control and browser visualization
 
-This procedure runs one EAMS nominal 9 kg Hexa-X Drone in the PLATEAU City
+This procedure runs one Urban-managed EAMS six-rotor Drone with the public
+Hakoniwa Drone Core v4.1.1 service binary in the PLATEAU City
 World selected by `recipes/experiments/urban-drone-one.yaml`, controls it with
 a PS4 controller, and displays it in the
 Map Viewer / Three.js browser view. It does not start the Golf Cart.
@@ -8,30 +9,35 @@ Map Viewer / Three.js browser view. It does not start the Golf Cart.
 ## Prerequisites
 
 - Run commands from the `hakoniwa-urban-mobility` repository root.
-- Connect the PS4 controller to macOS before starting the Launcher.
+- Connect the PS4 controller to the host before starting the Launcher.
 - Prepare the City World Receipt selected by `city_world.receipt` in the recipe.
 - Keep the sibling repositories `hakoniwa-business-pack`,
-  `hakoniwa-drone-pro`, `hakoniwa-mbody-registry`, and
+  `hakoniwa-drone-core`, `hakoniwa-mbody-registry`, and
   `hakoniwa-threejs-drone` in the Business Pack workspace.
 
 ## Configure
 
 ```bash
+python3 tools/drone_one.py prepare-native
 python3 tools/drone_one.py configure \
   --recipe recipes/experiments/urban-drone-one.yaml
 python3 tools/drone_one.py doctor
 ```
 
-The checked-in recipe uses `control.mode: ps4-rc`. `configure` copies the generated RadioController configuration and tuned
-EAMS parameters into the Recipe workspace. It does not modify the tracked
-configuration in `hakoniwa-drone-pro`.
+`prepare-native` selects the host's v4.1.1 release archive, verifies its
+SHA-256, and installs the MuJoCo 3.13.0 runtime declared by Drone Core. The
+checked-in recipe uses `control.mode: ps4-rc`; `configure` materializes the
+RadioController configuration and Urban-owned Hexa model/PID set into the
+Recipe workspace without editing the Core checkout.
 
-For quick PID iteration, edit the Urban-owned source file
-`config/drone/eams-rc-controller-params.txt`. Every `start` copies this file
-over the generated `rc/controller-params.txt` before launching the Drone
-service. Therefore PID changes need only `stop`, edit, and `start`; running
-`configure` may temporarily regenerate the work file, but the next `start`
-restores the Urban tuning source.
+MuJoCo version ownership is aligned as follows:
+
+- `hakoniwa-drone-core/MUJOCO_VERSION.txt` is the native Drone runtime authority.
+- `hakoniwa-mujoco-robots` builds its Viewer/backend against 3.13.0.
+- `hakoniwa-mbody-registry` pins 3.13.0 for the Ackermann tooling that imports
+  the Python MuJoCo package.
+- `hakoniwa-envsim` only emits MJCF/XML and does not pin or link a MuJoCo
+  runtime, so it requires no version change.
 
 Key generated files are:
 
@@ -67,17 +73,14 @@ wireframes are loaded only when `--colliders` is specified.
 
 The Drone starts from `drone.spawn_pose_enu` in the recipe and settles on the
 PLATEAU DEM. Wait for it to settle before enabling RadioControl. The browser
-uses the EAMS body GLB and six independently animated propellers. The
+uses the EAMS Hexa model and six independently animated propellers. The
 upper-right inset is the onboard road-monitoring camera, mounted forward and
 pitched 50 degrees downward. If an older model is cached, reload the page with
 `Cmd+Shift+R`.
 
-The generated Urban physics model enables collision for all six swept
-propeller discs. All Drone contact geoms use `priority=1`, so their tuned
-friction overrides the City geom defaults. The propellers additionally use
-`condim=1`, removing tangential wall friction; the chassis remains
-low-friction while the skids and landing support retain moderate friction for
-stable ground contact.
+The City MJB is generated from Urban's `config/drone/hexa` model and the
+selected City Receipt. The same generated Hexa model is used for the
+Car-side Mirror in the integrated demo.
 
 The pose uses the City World's local ENU frame: `east_m`, `north_m`, `up_m`,
 and ENU `yaw_deg` (0 degrees faces east; 90 degrees faces north). To move the
@@ -90,7 +93,7 @@ python3 tools/drone_one.py stop
 python3 tools/drone_one.py start
 ```
 
-`start` converts ENU to the Drone Pro Fleet config's NED convention and updates
+`start` converts ENU to the Drone Core Fleet config's NED convention and updates
 the generated `api-current.json`; it does not rebuild City World or MJCF.
 Changing `city_world.receipt`, controller, model, or viewer settings still
 requires `configure`.
@@ -119,25 +122,3 @@ must be configured again without `--rc`:
 ```bash
 python3 tools/drone_one.py configure
 ```
-
-## Browser model regeneration
-
-The checked-in EAMS GLB is generated from the Drone PRO MJCF with the existing
-`hakoniwa-mbody-registry` converter. `--visible-only` removes transparent
-physics-only geoms, and `--target-frame threejs` converts MJCF/ROS FLU axes to
-Three.js right/up/back axes.
-
-```bash
-cd ../hakoniwa-mbody-registry
-python tools/mjcf2glb.py \
-  ../hakoniwa-drone-pro/tuning/vehicle/eams/generated/nominal-9kg/drone.xml \
-  --output-dir /tmp/eams-hexa-glb \
-  --split-by body \
-  --visible-only \
-  --target-frame threejs
-```
-
-Copy `/tmp/eams-hexa-glb/drone_base.glb` to
-`../hakoniwa-threejs-drone/assets/models/eams-hexa-frame.glb`, then rerun
-`configure` and `doctor` so the Recipe-local browser resources are
-refreshed.

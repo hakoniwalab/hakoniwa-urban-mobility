@@ -1,5 +1,5 @@
 id: urban-mobility-rc
-title: Shizuoka rooftop Drone and five-Car formation
+title: Shizuoka rooftop EAMS Hexa and five-Car formation
 recipe_version: 0.1
 status: experimental
 
@@ -28,7 +28,7 @@ inputs:
   drone_mirrors:
     - name: Drone-1
       pdu_types: ../hakoniwa-drone-core/config/pdudef/drone-pdutypes.json
-      mjcf_model: ../hakoniwa-drone-pro/tuning/vehicle/eams/generated/nominal-9kg/drone.xml
+      mjcf_model: config/drone/hexa/drone.xml
       mjcf_body: drone_base
       restitution_coefficient: 0.3
       relative_normal_speed_threshold_mps: 0.2

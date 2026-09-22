@@ -1,0 +1,155 @@
+{
+  "name": "Drone",
+  "simulation": {
+    "lockstep": true,
+    "timeStep": 0.001,
+    "logging": {
+      "mode": "csv"
+    },
+    "logOutputDirectory": ".",
+    "location": {
+      "latitude": 35.681236,
+      "longitude": 139.767125,
+      "altitude": 0.0,
+      "magneticField": {
+        "intensity_nT": 0.0,
+        "declination_deg": 0.0,
+        "inclination_deg": 0.0
+      }
+    }
+  },
+  "components": {
+    "droneDynamics": {
+      "physicsEquation": "MuJoCo",
+      "mujoco": {
+        "modelName": "drone_base",
+        "propNames": [
+          "prop1",
+          "prop2",
+          "prop3",
+          "prop4",
+          "prop5",
+          "prop6"
+        ],
+        "modelPath": "../generated/nominal-9kg/drone.xml"
+      },
+      "useQuaternion": true,
+      "collision_detection": true,
+      "enable_disturbance": true,
+      "manual_control": false,
+      "airFrictionCoefficient": [
+        0.5,
+        0.0
+      ],
+      "inertia": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 9.0,
+      "body_size": [
+        0.38,
+        0.32,
+        0.18
+      ],
+      "position_meter": [
+        0.0,
+        0.0,
+        -0.4845000000000001
+      ],
+      "angle_degree": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "body_boundary_disturbance_power": 1.0
+    },
+    "battery": {
+      "vendor": "None",
+      "model": "constant",
+      "BatteryModelCsvFilePath": "battery-model.csv",
+      "VoltageLevelGreen": 19.98,
+      "VoltageLevelYellow": 17.76,
+      "CapacityLevelYellow": 6.4,
+      "NominalVoltage": 22.2,
+      "NominalCapacity": 32.0,
+      "EODVoltage": 18.0
+    },
+    "rotor": {
+      "vendor": "BatteryModel",
+      "max_rad_per_sec": 470.0,
+      "dynamics_constants": {
+        "R": 0.12,
+        "Ct": 0.0002146,
+        "Cq": 0.000008585,
+        "K": 0.03183,
+        "D": 0.00001,
+        "J": 0.0022
+      },
+      "radius": 0.254
+    },
+    "thruster": {
+      "vendor": "MuJoCo",
+      "rotorPositions": [
+        {
+          "position": [0.458993, -0.265, 0.0],
+          "rotationDirection": -1.0
+        },
+        {
+          "position": [0.0, -0.53, 0.0],
+          "rotationDirection": 1.0
+        },
+        {
+          "position": [-0.458993, -0.265, 0.0],
+          "rotationDirection": -1.0
+        },
+        {
+          "position": [-0.458993, 0.265, 0.0],
+          "rotationDirection": 1.0
+        },
+        {
+          "position": [0.0, 0.53, 0.0],
+          "rotationDirection": -1.0
+        },
+        {
+          "position": [0.458993, 0.265, 0.0],
+          "rotationDirection": 1.0
+        }
+      ],
+      "Ct": 0.0002146
+    },
+    "sensors": {
+      "acc": {"sampleCount": 1, "noise": 0.03},
+      "gyro": {"sampleCount": 1, "noise": 0.0},
+      "mag": {"sampleCount": 1, "noise": 0.03},
+      "baro": {"sampleCount": 1, "noise": 0.01},
+      "gps": {"sampleCount": 1, "noise": 0.0}
+    }
+  },
+  "controller": {
+    "moduleName": "TuningController",
+    "moduleDirectory": "../drone_control/cmake-build/workspace/TuningController",
+    "paramText": "",
+    "paramFilePath": "controller-params.txt",
+    "backendType": "adapter-hakoniwa",
+    "direct_rotor_control": false,
+    "mixer": {
+      "vendor": "None",
+      "enable": true,
+      "enableDebugLog": false,
+      "enableErrorLog": false
+    }
+  },
+  "fpv": {
+    "controllerMode": "angle",
+    "camera": {
+      "catalogId": "eams_e6106flmp2_equivalent_camera",
+      "fov_deg": 90.0,
+      "position_m": [0.185, 0.0, 0.015]
+    },
+    "viewer": {
+      "backend": "hakoniwa-threejs-drone",
+      "status": "metadata-only-in-mvp"
+    }
+  }
+}

@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -22,17 +23,12 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
 DRONE_SHOW_ROOT = WORKSPACE / "hakoniwa-drone-show"
-DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-pro"
+DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
 URBAN_DRONE_RECIPE_ID = "urban-drone-one"
 DEFAULT_RECIPE = ROOT / "recipes" / "experiments" / "urban-drone-one.yaml"
-EAMS_TUNED_PARAMS_RELATIVE = Path(
-    "tuning/vehicle/eams/tuning/hakoniwa/nominal-9kg/"
-    "param-sets/final-controller-params.txt"
-)
+URBAN_HEXA_ROOT = ROOT / "config" / "drone" / "hexa"
 
-# Urban collision policy applied only to the generated City model. The Drone
-# PRO golden model remains the tuning authority and is never rewritten here.
 EAMS_CHASSIS_FRICTION = "0.05 0.001 0.0001"
 EAMS_SKID_FRICTION = "0.2 0.005 0.0001"
 EAMS_PROPELLER_FRICTION = "0.01 0.001 0.0001"
@@ -390,7 +386,7 @@ def read_control_mode(paths: object) -> str:
 
 
 def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
-    """Prepare normal and optional Collider-overlay EAMS City viewers."""
+    """Prepare normal and optional Collider-overlay Urban Hexa viewers."""
     embedded = (
         paths.recipe_root
         / "web/map-viewer/thirdparty/hakoniwa-threejs-drone"
@@ -402,7 +398,7 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     for required in (scene_path, viewer_path, type_path, model_path):
         if not required.is_file():
             raise base.RecipeError(
-                f"EAMS Three.js viewer resource not found: {required}"
+                f"Urban Hexa Three.js viewer resource not found: {required}"
             )
 
     marker_path = paths.recipe_config / "mujoco-city-fleet.json"
@@ -559,7 +555,7 @@ def _parameter_values(path: Path) -> dict[str, str]:
 def select_compiled_mujoco_model(
     type_config: dict[str, Any], runtime_mjb: Path
 ) -> None:
-    """Select the configure-time compiled model for Drone PRO runtime use."""
+    """Select the configure-time compiled model for Drone Core runtime use."""
     if runtime_mjb.suffix.lower() != ".mjb" or not runtime_mjb.is_file():
         raise base.RecipeError(f"validated MuJoCo MJB not found: {runtime_mjb}")
     type_config["components"]["droneDynamics"]["mujoco"]["modelPath"] = str(
@@ -570,25 +566,20 @@ def select_compiled_mujoco_model(
 def materialize_eams_controller_params(
     drone_root: Path, output: Path, *, rc_mode: bool = False
 ) -> Path:
-    """Overlay the completed EAMS tuning result on the selected controller baseline."""
+    """Materialize Urban-owned Hexa tuning over the selected Core baseline."""
     base_path = (
-        drone_root / "tuning/vehicle/eams/config/controller-params.txt"
+        URBAN_HEXA_ROOT / "controller-params.txt"
         if rc_mode
         else drone_root / "config/controller/param-api-mixer-mujoco.txt"
     )
-    tuned_path = drone_root / EAMS_TUNED_PARAMS_RELATIVE
-    if not base_path.is_file() or not tuned_path.is_file():
-        raise base.RecipeError("EAMS controller parameter inputs are incomplete")
-    tuned = _parameter_values(tuned_path)
+    tuning_path = URBAN_HEXA_ROOT / "controller-tuning.txt"
+    if not base_path.is_file() or not tuning_path.is_file():
+        raise base.RecipeError(
+            f"Urban Hexa controller inputs are incomplete: {URBAN_HEXA_ROOT}"
+        )
+    tuned = _parameter_values(tuning_path)
     if rc_mode:
-        # RC supplies angle and throttle commands directly. Keep the completed
-        # EAMS gains, but select the control stages and explicit ground-start
-        # state machine required by RadioController. Without the landing
-        # thresholds, their zero defaults make RC-safe input enter Landing.
         tuned.update({
-            # RadioOperation starts in GPS mode. ANGLE_CONTROL_ENABLE=1 with
-            # GPS resolves to the Unknown profile and drops thrust after the
-            # takeoff phase completes.
             "ANGLE_CONTROL_ENABLE": "0",
             "ANGLE_RATE_CONTROL_ENABLE": "0",
             "ALT_SPD_CONTROL_ENABLE": "0",
@@ -610,10 +601,8 @@ def materialize_eams_controller_params(
             "CTRLMODE_LANDING_COMPLETION_STABLE_ANGLE_DEG": "1.0",
             "CTRLMODE_LANDING_COMPLETION_STABLE_DURATION_SEC": "1.0",
         })
-    baseline = "EAMS RC" if rc_mode else "Fleet RPC"
-    lines: list[str] = [
-        f"# {baseline} baseline with completed nominal 9 kg tuning overlay."
-    ]
+    baseline = "Urban Hexa RC" if rc_mode else "Urban Hexa Fleet RPC"
+    lines: list[str] = [f"# {baseline} nominal 9 kg parameter set."]
     seen: set[str] = set()
     for raw_line in base_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -638,8 +627,7 @@ def materialize_eams_controller_params(
     return output
 
 
-def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
-    """Make the generated Hexa model slide off walls and collide at its rotors."""
+def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict[str, Any]:
     contact_friction = {
         "frame_chassis_contact": EAMS_CHASSIS_FRICTION,
         "landing_gear_left_skid_contact": EAMS_SKID_FRICTION,
@@ -648,38 +636,19 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
     for name, friction in contact_friction.items():
         geom = hexa_body.find(f".//geom[@name='{name}']")
         if geom is None:
-            raise base.RecipeError(f"EAMS model has no required contact geom: {name}")
+            raise base.RecipeError(f"Urban Hexa model has no contact geom: {name}")
         geom.set("friction", friction)
-        # City geoms use MuJoCo's default priority=0. At equal priority,
-        # friction is combined by taking the larger value, which defeats the
-        # deliberately low Urban friction and can hold the body on a wall.
         geom.set("priority", EAMS_CONTACT_PRIORITY)
-
     propeller_names = [f"prop{index}_geom" for index in range(1, 7)]
     for name in propeller_names:
         geom = hexa_body.find(f".//geom[@name='{name}']")
         if geom is None:
-            raise base.RecipeError(f"EAMS model has no required propeller geom: {name}")
-        # PLATEAU City geoms use contype=1. The source visual masks (2/4)
-        # intentionally do not meet that mask, so enable the swept propeller
-        # discs as low-friction collision envelopes in the generated copy.
+            raise base.RecipeError(f"Urban Hexa model has no propeller geom: {name}")
         geom.set("contype", "1")
         geom.set("conaffinity", "1")
         geom.set("condim", "1")
         geom.set("friction", EAMS_PROPELLER_FRICTION)
-        # City geoms use MuJoCo's default priority=0 and condim=3. Without a
-        # higher priority here, MuJoCo combines equal-priority contacts using
-        # max(condim) and element-wise max(friction), effectively restoring
-        # the City's high tangential friction and making a propeller stick to
-        # a wall. Give the swept disc authority over its contact parameters.
         geom.set("priority", EAMS_CONTACT_PRIORITY)
-
-    if hexa_body.find(
-        f".//geom[@name='{EAMS_LANDING_COLLIDER_NAME}']"
-    ) is not None:
-        raise base.RecipeError(
-            f"EAMS model already has landing collider: {EAMS_LANDING_COLLIDER_NAME}"
-        )
     ET.SubElement(hexa_body, "geom", {
         "name": EAMS_LANDING_COLLIDER_NAME,
         "type": "box",
@@ -695,19 +664,10 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict:
         "priority": EAMS_CONTACT_PRIORITY,
         "margin": "0.005",
     })
-
     return {
-        "chassis_friction": EAMS_CHASSIS_FRICTION,
-        "skid_friction": EAMS_SKID_FRICTION,
-        "propeller_friction": EAMS_PROPELLER_FRICTION,
-        "propeller_collision_geoms": len(propeller_names),
-        "propeller_contact_dimension": 1,
+        "propeller_collision_geoms": 6,
         "contact_priority": int(EAMS_CONTACT_PRIORITY),
-        "landing_collider": {
-            "name": EAMS_LANDING_COLLIDER_NAME,
-            "position": EAMS_LANDING_COLLIDER_POSITION,
-            "size": EAMS_LANDING_COLLIDER_SIZE,
-        },
+        "landing_collider": EAMS_LANDING_COLLIDER_NAME,
     }
 
 
@@ -719,123 +679,72 @@ def materialize_eams_city_model(
     rc_mode: bool = False,
     runtime_config_dir: Path | None = None,
 ) -> Path:
-    """Compose the tuned EAMS Hexa body with the configured PLATEAU City."""
-    eams_root = drone_root / "tuning/vehicle/eams"
-    model_source = eams_root / "generated/nominal-9kg/drone.xml"
-    config_source = eams_root / "config/drone_config_0.json"
-    if not model_source.is_file() or not config_source.is_file():
-        raise base.RecipeError(f"EAMS nominal 9 kg golden package is missing: {eams_root}")
-
+    """Compose the Urban-owned six-rotor model with the configured City."""
     paths = paths or _paths()
+    model_source = URBAN_HEXA_ROOT / "drone.xml"
+    config_source = URBAN_HEXA_ROOT / "drone_config_0.json"
+    if not model_source.is_file() or not config_source.is_file():
+        raise base.RecipeError(f"Urban Hexa package is incomplete: {URBAN_HEXA_ROOT}")
     process_dir = paths.recipe_config / "drone/mujoco-city-fleet/process-01"
-    body_only = process_dir / "eams-hexa-body.xml"
-    runtime_xml = process_dir / "eams-hexa-city.xml"
+    body_only = process_dir / "hexa-body.xml"
+    runtime_xml = process_dir / "hexa-city.xml"
     runtime_mjb = runtime_xml.with_suffix(".mjb")
-
     tree = ET.parse(model_source)
-    root = tree.getroot()
-    worldbody = root.find("worldbody")
-    if worldbody is None:
-        raise base.RecipeError(f"EAMS model has no worldbody: {model_source}")
-    hexa_body = next(
-        (
-            item for item in list(worldbody)
-            if item.tag == "body" and item.get("name") == "drone_base"
-        ),
-        None,
-    )
+    worldbody = tree.getroot().find("worldbody")
+    hexa_body = worldbody.find("./body[@name='drone_base']") if worldbody is not None else None
     if hexa_body is None:
-        raise base.RecipeError(f"EAMS model has no drone_base body: {model_source}")
+        raise base.RecipeError(f"Urban Hexa model has no drone_base: {model_source}")
     for item in list(worldbody):
-        is_composition_ground = item.tag == "geom" and item.get("name") == "ground"
-        if item is not hexa_body and not is_composition_ground:
+        if item is not hexa_body:
             worldbody.remove(item)
     hexa_body.set("pos", "0 0 0")
     contact_policy = apply_eams_city_contact_policy(hexa_body)
     ET.indent(tree, space="  ")
     tree.write(body_only, encoding="utf-8", xml_declaration=True)
-
-    city_mjcf = Path(marker["city_world"]["mjcf"])
     compose_tool = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
-    subprocess.run(
-        [
-            sys.executable,
-            str(compose_tool),
-            str(body_only),
-            str(city_mjcf),
-            "--output",
-            str(runtime_xml),
-        ],
-        cwd=ROOT,
-        check=True,
-    )
+    subprocess.run([
+        sys.executable, str(compose_tool), str(body_only),
+        str(Path(marker["city_world"]["mjcf"])), "--output", str(runtime_xml),
+        "--no-validate",
+    ], cwd=ROOT, check=True)
     compiled = city.compile_mujoco_xml(
         runtime_xml, runtime_mjb, city.find_mujoco_library(drone_root)
     )
 
-    eams_config = json.loads(config_source.read_text(encoding="utf-8"))
+    hexa_config = json.loads(config_source.read_text(encoding="utf-8"))
     type_path = Path(marker["type_config"])
     type_config = json.loads(type_path.read_text(encoding="utf-8"))
     for name in ("droneDynamics", "battery", "rotor", "thruster", "sensors"):
-        type_config["components"][name] = copy.deepcopy(
-            eams_config["components"][name]
-        )
-    dynamics = type_config["components"]["droneDynamics"]
-    # Drone PRO selects mj_loadModel for .mjb, avoiding XML parsing and model
-    # compilation on every start. compile_mujoco_xml above reload-validates
-    # this exact binary with the runtime's MuJoCo library.
+        type_config["components"][name] = copy.deepcopy(hexa_config["components"][name])
     select_compiled_mujoco_model(type_config, runtime_mjb)
-    dynamics["collision_detection"] = True
-    type_config["simulation"]["timeStep"] = eams_config["simulation"]["timeStep"]
-    if rc_mode and runtime_config_dir is not None:
-        runtime_config_dir.mkdir(parents=True, exist_ok=True)
-        parameter_path = runtime_config_dir / "controller-params.txt"
-        runtime_type_path = runtime_config_dir / "drone_config_0.json"
-    else:
-        parameter_name = (
-            "eams-rc-controller-params.txt" if rc_mode
-            else "eams-controller-params.txt"
-        )
-        parameter_path = process_dir / parameter_name
-        runtime_type_path = type_path
+    type_config["simulation"]["timeStep"] = hexa_config["simulation"]["timeStep"]
+    target_dir = runtime_config_dir or process_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    runtime_type_path = target_dir / "drone_config_0.json"
     parameter_path = materialize_eams_controller_params(
-        drone_root,
-        parameter_path,
-        rc_mode=rc_mode,
+        drone_root, target_dir / "controller-params.txt", rc_mode=rc_mode
     )
-    if rc_mode:
-        # Preserve the EAMS controller contract (including mixer.enable) and
-        # change only the implementation/mode needed for gamepad operation.
-        type_config["controller"] = copy.deepcopy(eams_config["controller"])
-        if runtime_config_dir is not None:
-            log_directory = runtime_config_dir / "logs/drone"
-            log_directory.mkdir(parents=True, exist_ok=True)
-            type_config["simulation"].setdefault("logging", {})["mode"] = "csv"
-            type_config["simulation"]["logOutputDirectory"] = str(log_directory)
     controller = type_config["controller"]
-    controller["paramFilePath"] = (
-        "controller-params.txt"
-        if runtime_type_path.parent == parameter_path.parent
-        else str(parameter_path)
-    )
+    controller["paramFilePath"] = parameter_path.name
     if rc_mode:
-        type_config.pop("serviceConfigPath", None)
+        type_config["controller"] = copy.deepcopy(hexa_config["controller"])
+        controller = type_config["controller"]
         controller.pop("apiServiceMode", None)
+        controller.pop("backendConfig", None)
         controller.update({
             "serviceMode": "rc",
             "moduleDirectory": "../drone_control/cmake-build/workspace/RadioController",
             "moduleName": "RadioController",
             "backendType": "adapter-hakoniwa",
+            "paramFilePath": parameter_path.name,
         })
-    runtime_type_path.write_text(
-        json.dumps(type_config, indent=2) + "\n", encoding="utf-8"
-    )
+    runtime_type_path.write_text(json.dumps(type_config, indent=2) + "\n", encoding="utf-8")
 
     fleet_path = Path(marker["fleet_config"])
     fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
     drones = fleet_config.get("drones")
     if not isinstance(drones, list) or len(drones) != 1:
-        raise base.RecipeError("EAMS Hexa checkpoint requires exactly one Drone")
+        raise base.RecipeError("Urban Hexa checkpoint requires exactly one Drone")
     drones[0]["mujoco"] = {
         "modelName": "drone_base",
         "propNames": [f"prop{index}" for index in range(1, 7)],
@@ -846,8 +755,10 @@ def materialize_eams_city_model(
     marker["runtime_model"] = {
         "format": "mjb",
         "path": str(runtime_mjb),
-        "vehicle": "EAMS E6106FLMP2-equivalent nominal 9 kg Hexa-X",
+        "vehicle": "Urban EAMS nominal 9 kg Hexa-X",
         "rotor_count": 6,
+        "distribution_release": base.PUBLIC_DRONE_RELEASE,
+        "mirror_model": str(body_only),
         "contact_policy": contact_policy,
         "compiled_validation": compiled,
     }
@@ -862,7 +773,7 @@ def _normalize_degrees(value: float) -> float:
 
 
 def set_runtime_spawn(marker: dict, spawn_pose_enu: dict[str, float]) -> Path:
-    """Apply an ENU pose to the Drone Pro Fleet config (which uses NED)."""
+    """Apply an ENU pose to the Drone Core Fleet config (which uses NED)."""
     try:
         east_m = float(spawn_pose_enu["east_m"])
         north_m = float(spawn_pose_enu["north_m"])
@@ -914,7 +825,7 @@ def refresh_runtime_controller_params(
     *,
     runtime_config_dir: Path | None = None,
 ) -> Path | None:
-    """Restore the Urban-owned RC tuning file immediately before launch."""
+    """Apply an optional Urban-owned RC override immediately before launch."""
     if recipe.control_mode != "ps4-rc" or recipe.controller_params is None:
         return None
     source = recipe.controller_params
@@ -1022,7 +933,7 @@ def configure(
     print(f"Initial Z : {spawn['up_m']:.3f} m (free-fall to PLATEAU DEM)")
     print(f"Fleet      : {marker['fleet_config']}")
     print(f"Runtime MJB: {runtime_model}")
-    print("Vehicle    : EAMS nominal 9 kg Hexa-X (6 rotors, Hakoniwa tuned)")
+    print("Vehicle    : Urban EAMS nominal 9 kg Hexa-X (6 rotors)")
     print(
         f"Controller : "
         f"{'PS4 RC' if recipe.control_mode == 'ps4-rc' else 'Fleet RPC'}"
@@ -1036,7 +947,10 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
         "command",
-        choices=["configure", "doctor", "start", "status", "open-viewer", "stop"],
+        choices=[
+            "prepare-native", "configure", "doctor", "start", "status",
+            "open-viewer", "stop",
+        ],
     )
     result.add_argument("--drone-root", type=Path, default=DEFAULT_DRONE_ROOT)
     result.add_argument("--viewer-root", type=Path, default=DEFAULT_VIEWER_ROOT)
@@ -1085,6 +999,14 @@ def main() -> int:
         argument_parser.error("--recipe is available only with configure")
     drone_root = args.drone_root.expanduser().resolve()
     viewer_root = args.viewer_root.expanduser().resolve()
+    if args.command == "prepare-native":
+        paths = _paths()
+        return base.prepare_native_distribution(
+            drone_root,
+            platform.system(),
+            cache_root=paths.recipe_root / "downloads",
+            evidence_path=paths.recipe_validation / "native-distribution.json",
+        )
     if args.command == "configure":
         recipe = load_urban_recipe(args.recipe or DEFAULT_RECIPE)
         if args.rc:

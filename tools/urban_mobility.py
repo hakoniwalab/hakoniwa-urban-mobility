@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import platform
 import subprocess
 import sys
 import webbrowser
@@ -148,13 +149,24 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument(
         "command",
-        choices=("plan", "doctor", "configure", "start", "status", "stop", "open-viewer"),
+        choices=(
+            "prepare-native", "plan", "doctor", "configure", "start",
+            "status", "stop", "open-viewer",
+        ),
     )
     return result
 
 
 def main() -> int:
     command = parser().parse_args().command
+    if command == "prepare-native":
+        paths = drone_one._paths(RECIPE_ID)
+        return drone_one.base.prepare_native_distribution(
+            drone_one.DEFAULT_DRONE_ROOT,
+            platform.system(),
+            cache_root=paths.recipe_root / "downloads",
+            evidence_path=paths.recipe_validation / "native-distribution.json",
+        )
     if command in {"plan", "doctor"}:
         return recipe_command(command)
     if command == "configure":

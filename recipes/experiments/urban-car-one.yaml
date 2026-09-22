@@ -7,8 +7,8 @@ inputs:
   # Replace only this receipt to select another City World. The composer reads
   # the MJCF, GLB, origin, extent, and coordinate systems from the receipt.
   business_pack_city_receipt:
-    #path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
-    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
+    path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json
+    #path: ../hakoniwa-business-pack/work/remote-operation/city-world-worker/jobs/shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json
 
   ackermann_vehicles:
     types:
