@@ -3,52 +3,48 @@
 This directory contains the configuration and composition contract for the
 PLATEAU Urban Car Fleet checkpoint.
 
-## City-independent managed Recipe
+## Managed use-case Recipes
 
-`recipes/experiments/urban-mobility-rc.yaml` is the managed dependency and
-Foundation contract for the integrated Drone + multi-Car demo. It does not
-select a particular city. The later composition config supplies a City World
-Receipt and a matching route/scenario; Shizuoka is the first regression input.
+Managed Recipes describe the simulation topology and its reusable dependencies.
+User-selected City World artifacts are configure-time inputs instead of being
+hard-coded into the Python entrypoint.
 
-Use `tools/urban_mobility.py` as the standard lifecycle entrypoint. Its
-`plan`, `doctor`, and `configure` commands delegate to the Business Pack
-Recipe engine with `urban-mobility-rc.yaml`; the lower-level Car and Drone
-tools remain regression and composition helpers.
+The first template-backed use case is:
 
-```bash
-python tools/urban_mobility.py plan
-python tools/urban_mobility.py doctor
-python tools/urban_mobility.py configure
+```text
+recipes/usecases/urban-car-rc.yaml
 ```
 
-The managed Recipe declares its Python dependencies in
-`recipes/requirements/urban-mobility-rc.txt`. Business Pack installs them
-into Foundation Python during `configure`; manual `pip install` is not part
-of the normal setup path.
-
-External Urban dependencies are declared as Git sources. Missing sibling
-repositories are cloned by Business Pack during `configure`; existing
-checkouts are reused.
-
-After configuration, use the same entrypoint for runtime lifecycle operations:
+It describes one Golf Cart with RC control and reuses
+`recipes/experiments/urban-car-one.yaml` as the tracked Car composition
+template. The managed Recipe declares how `--city-receipt` fills
+`inputs.business_pack_city_receipt.path`.
 
 ```bash
-python tools/urban_mobility.py start
-python tools/urban_mobility.py status
-python tools/urban_mobility.py open-viewer
-python tools/urban_mobility.py stop
+python tools/urban_mobility.py plan \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py doctor \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py configure \
+  --recipe recipes/usecases/urban-car-rc.yaml \
+  --city-receipt /path/to/city-world-receipt.json
 ```
 
-On Windows, enter the Business Pack workspace first with
-`python tools\workspace.py enter` from the Business Pack repository, then
-return to this repository and run the commands above. Do not hard-code
-`work/foundation/install/python/bin/python3`; the Business Pack workspace
-contract resolves `Scripts/python.exe` on Windows and the POSIX layout on
-macOS/Linux.
+Business Pack owns dependency materialization, Foundation evaluation/build, and
+Recipe Python requirements. The Urban entrypoint then copies the tracked
+template into the Recipe workspace, fills the declared user parameters, builds
+the Car plant, and materializes the runtime/Viewer configuration.
 
-See
-[`docs/operation-managed-recipe.md`](../docs/operation-managed-recipe.md)
-for the Windows-first operating procedure.
+The generated effective composition is stored under:
+
+```text
+hakoniwa-business-pack/work/recipes/urban-car-rc/config/urban-composition.json
+```
+
+The existing `recipes/experiments/urban-mobility-rc.yaml` remains the managed
+Drone + multi-Car distributed use case. Future managed Recipes can add other
+topologies without changing the meaning of the Car RC Recipe.
+
 
 ## Recipe-selected one Drone City World
 
