@@ -56,10 +56,11 @@ class UrbanMobilityToolTest(unittest.TestCase):
 
     def test_managed_recipe_uses_native_executable_suffix(self):
         recipe = urban_mobility.MANAGED_RECIPE.read_text(encoding="utf-8")
-        self.assertIn(
+        self.assertNotIn(
             "build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}",
             recipe,
         )
+        self.assertIn("apps/car/urban-car-hakoniwa-asset.cpp", recipe)
         self.assertIn("hakoniwa-drone-show:", recipe)
         self.assertIn(
             "requirements: recipes/requirements/urban-mobility-rc.txt",
