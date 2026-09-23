@@ -31,7 +31,7 @@ python tools/urban_mobility.py stop
 ```
 
 On Windows, enter the Business Pack workspace first with
-`python tools\\workspace.py enter` from the Business Pack repository, then
+`python tools\workspace.py enter` from the Business Pack repository, then
 return to this repository and run the commands above. Do not hard-code
 `work/foundation/install/python/bin/python3`; the Business Pack workspace
 contract resolves `Scripts/python.exe` on Windows and the POSIX layout on
