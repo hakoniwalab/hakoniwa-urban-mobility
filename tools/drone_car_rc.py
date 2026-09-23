@@ -237,7 +237,7 @@ def doctor(drone_root: Path) -> int:
             "Drone Core service",
             drone_one.base.resolve_drone_binary(drone_root, platform.system()),
         ),
-        ("Car Mirror asset", ROOT / "build/bin/urban-car-hakoniwa-asset"),
+        ("Car Mirror asset", multi_car.native_executable(ROOT / "build/bin/urban-car-hakoniwa-asset")),
         ("Car scenario", car_scenario_path()),
         ("PS4 RC program", drone_root / "drone_api/rc/rc-custom.py"),
         ("PS4 mapping", drone_root / "drone_api/rc/rc_config/ps4-control.json"),
