@@ -152,6 +152,26 @@ class UrbanMobilityToolTest(unittest.TestCase):
         self.assertIn("PyYAML>=6.0,<7", requirements)
         self.assertIn("pygame==2.6.1", requirements)
 
+    def test_car_asset_build_matches_release_foundation_on_multiconfig_hosts(self):
+        multi_car = urban_composer.multi_car
+        with mock.patch.object(multi_car.subprocess, "run") as runner:
+            multi_car.build_car_asset()
+
+        configure = runner.call_args_list[0].args[0]
+        build = runner.call_args_list[1].args[0]
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", configure)
+        self.assertEqual(
+            build[0:3],
+            ["cmake", "--build", str(multi_car.ROOT / "build")],
+        )
+        self.assertIn("--config", build)
+        self.assertEqual(build[build.index("--config") + 1], "Release")
+        self.assertIn("--target", build)
+        self.assertEqual(
+            build[build.index("--target") + 1],
+            "urban-car-hakoniwa-asset",
+        )
+
     def test_multi_car_native_executable_uses_windows_suffix(self):
         multi_car = urban_composer.multi_car
         with mock.patch.object(multi_car.sys, "platform", "win32"):
