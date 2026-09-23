@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import http.client
 import json
 import os
 from pathlib import Path
 import socket
-from urllib.request import urlopen
+from urllib.parse import urlsplit
 
 
 class LifecycleError(RuntimeError):
@@ -72,10 +73,27 @@ def listening(port: int, *, host: str = "127.0.0.1", timeout: float = 0.2) -> bo
 
 
 def http_ready(url: str, *, timeout: float = 1.0) -> bool:
+    """Probe the local HTTP Viewer without initializing HTTPS/certificate state."""
     try:
-        with urlopen(url, timeout=timeout) as response:
+        parsed = urlsplit(url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            return False
+        port = parsed.port or 80
+        target = parsed.path or "/"
+        if parsed.query:
+            target += "?" + parsed.query
+        connection = http.client.HTTPConnection(
+            parsed.hostname,
+            port,
+            timeout=timeout,
+        )
+        try:
+            connection.request("GET", target)
+            response = connection.getresponse()
             return 200 <= int(response.status) < 400
-    except OSError:
+        finally:
+            connection.close()
+    except (OSError, ValueError, http.client.HTTPException):
         return False
 
 
