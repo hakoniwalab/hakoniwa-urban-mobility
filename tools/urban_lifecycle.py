@@ -5,11 +5,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import socket
 import time
 from urllib.parse import urlsplit
+
+from recipe.process_liveness import pid_alive
 
 
 class LifecycleError(RuntimeError):
@@ -45,22 +46,12 @@ def read_session(spec: LifecycleSpec) -> dict | None:
     return payload
 
 
-def process_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except (OSError, ValueError):
-        return False
-    return True
-
-
 def launcher_running(spec: LifecycleSpec) -> bool:
     session = read_session(spec)
     return bool(
         session
         and session.get("state") == "RUNNING"
-        and process_alive(session.get("pid"))
+        and pid_alive(session.get("pid"))
     )
 
 
@@ -158,7 +149,7 @@ def wait_for_demo_ready(
 
 def verify_stopped(spec: LifecycleSpec) -> None:
     session = read_session(spec)
-    if session is not None and session.get("state") == "RUNNING" and process_alive(
+    if session is not None and session.get("state") == "RUNNING" and pid_alive(
         session.get("pid")
     ):
         raise LifecycleError(

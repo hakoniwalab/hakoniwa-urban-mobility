@@ -1,13 +1,37 @@
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
+ROOT = Path(__file__).resolve().parents[1]
+BUSINESS_PACK = ROOT.parent / "hakoniwa-business-pack"
+sys.path.insert(0, str(BUSINESS_PACK / "tools"))
+
+from recipe.process_liveness import pid_alive as canonical_pid_alive
 from tools import urban_lifecycle as lifecycle
 
 
 class UrbanLifecycleTest(unittest.TestCase):
+    def test_uses_business_pack_process_liveness_source_of_truth(self):
+        self.assertIs(lifecycle.pid_alive, canonical_pid_alive)
+
+    def test_repeated_liveness_probe_does_not_terminate_live_child(self):
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"]
+        )
+        try:
+            for _ in range(20):
+                self.assertTrue(lifecycle.pid_alive(child.pid))
+                self.assertIsNone(child.poll())
+                time.sleep(0.01)
+        finally:
+            child.terminate()
+            child.wait(timeout=10)
+
     def spec(self, root: Path) -> lifecycle.LifecycleSpec:
         return lifecycle.LifecycleSpec(
             recipe_id="urban-mobility-rc",
@@ -64,7 +88,7 @@ class UrbanLifecycleTest(unittest.TestCase):
             spec = self.spec(Path(directory))
             self.write_session(spec)
             with (
-                mock.patch.object(lifecycle, "process_alive", return_value=True),
+                mock.patch.object(lifecycle, "pid_alive", return_value=True),
                 self.assertRaisesRegex(lifecycle.LifecycleError, "already RUNNING"),
             ):
                 lifecycle.preflight_start(spec)
@@ -83,7 +107,7 @@ class UrbanLifecycleTest(unittest.TestCase):
             spec = self.spec(Path(directory))
             self.write_session(spec)
             with (
-                mock.patch.object(lifecycle, "process_alive", return_value=True),
+                mock.patch.object(lifecycle, "pid_alive", return_value=True),
                 mock.patch.object(lifecycle, "http_ready", return_value=False),
                 self.assertRaisesRegex(lifecycle.LifecycleError, "not ready"),
             ):
@@ -94,7 +118,7 @@ class UrbanLifecycleTest(unittest.TestCase):
             spec = self.spec(Path(directory))
             self.write_session(spec)
             with (
-                mock.patch.object(lifecycle, "process_alive", return_value=True),
+                mock.patch.object(lifecycle, "pid_alive", return_value=True),
                 mock.patch.object(lifecycle, "http_ready", return_value=True),
                 mock.patch.object(lifecycle, "listening", return_value=False),
             ):
@@ -120,7 +144,7 @@ class UrbanLifecycleTest(unittest.TestCase):
             self.write_session(spec)
             checked = []
             with (
-                mock.patch.object(lifecycle, "process_alive", return_value=True),
+                mock.patch.object(lifecycle, "pid_alive", return_value=True),
                 mock.patch.object(lifecycle, "http_ready", return_value=True),
                 mock.patch.object(
                     lifecycle,
