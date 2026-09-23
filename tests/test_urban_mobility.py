@@ -179,6 +179,11 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "urban-car-hakoniwa-asset",
         )
 
+    def test_car_launcher_does_not_enable_ondemand_without_mux_config(self):
+        source = urban_composer.multi_car
+        text = (source.ROOT / "tools/multi_car.py").read_text(encoding="utf-8")
+        self.assertNotIn('"--enable-ondemand"', text)
+
     def test_external_browser_asset_is_copied_into_recipe_workspace(self):
         multi_car = urban_composer.multi_car
         with tempfile.TemporaryDirectory() as directory:
