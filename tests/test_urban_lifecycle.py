@@ -35,34 +35,29 @@ class UrbanLifecycleTest(unittest.TestCase):
             with self.assertRaisesRegex(lifecycle.LifecycleError, "does not belong"):
                 lifecycle.read_session(spec)
 
-    def test_http_ready_uses_plain_local_http_without_ssl_context(self):
-        response = mock.Mock(status=200)
-        connection = mock.Mock()
-        connection.getresponse.return_value = response
+    def test_http_ready_uses_bounded_local_listen_probe(self):
         with mock.patch.object(
-            lifecycle.http.client,
-            "HTTPConnection",
-            return_value=connection,
-        ) as factory:
+            lifecycle,
+            "listening",
+            return_value=True,
+        ) as probe:
             self.assertTrue(
                 lifecycle.http_ready(
                     "http://127.0.0.1:8000/viewer?autoConnect=true"
                 )
             )
 
-        factory.assert_called_once_with("127.0.0.1", 8000, timeout=1.0)
-        connection.request.assert_called_once_with(
-            "GET", "/viewer?autoConnect=true"
+        probe.assert_called_once_with(
+            8000,
+            host="127.0.0.1",
+            timeout=0.2,
         )
-        connection.close.assert_called_once()
 
     def test_http_ready_rejects_nonlocal_or_https_urls(self):
-        with mock.patch.object(
-            lifecycle.http.client, "HTTPConnection"
-        ) as factory:
+        with mock.patch.object(lifecycle, "listening") as probe:
             self.assertFalse(lifecycle.http_ready("https://127.0.0.1:8000/viewer"))
             self.assertFalse(lifecycle.http_ready("http://example.com/viewer"))
-        factory.assert_not_called()
+        probe.assert_not_called()
 
     def test_start_rejects_an_existing_running_session(self):
         with tempfile.TemporaryDirectory() as directory:
