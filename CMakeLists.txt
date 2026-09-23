@@ -127,6 +127,13 @@ endif()
 
 set_target_properties(urban-car-hakoniwa-asset PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${config}" config_upper)
+        set_target_properties(urban-car-hakoniwa-asset PROPERTIES
+            "RUNTIME_OUTPUT_DIRECTORY_${config_upper}" "${CMAKE_BINARY_DIR}/bin")
+    endforeach()
+endif()
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
@@ -153,6 +160,25 @@ target_link_libraries(urban-car-hakoniwa-asset PRIVATE
     hakoniwa-core::assets
     hakoniwa-core::conductor
     ${HAKO_PDU_ENDPOINT_LIBRARY})
+
+if(WIN32)
+    # The Launcher starts this executable from outside the build tree. Stage
+    # its runtime DLL closure next to the executable so Windows can resolve
+    # MuJoCo and any other shared runtime dependencies before main() runs.
+    file(GLOB _urban_foundation_runtime_dlls
+        "${HAKONIWA_FOUNDATION_PREFIX}/bin/*.dll")
+    add_custom_command(TARGET urban-car-hakoniwa-asset POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:urban-car-hakoniwa-asset>
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:MuJoCo::mujoco>"
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_urban_foundation_runtime_dlls}
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND_EXPAND_LISTS)
+endif()
 
 if(MSVC)
     target_compile_options(urban-car-hakoniwa-asset PRIVATE

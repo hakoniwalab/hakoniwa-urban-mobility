@@ -62,7 +62,7 @@ target_environment:
   status: specified
   os: host-native
   os_version: current-supported-host
-  architecture: arm64
+  architecture: host-native
   execution_mode: native
   runtimes:
     - name: Foundation Python
@@ -80,6 +80,11 @@ target_environment:
       - hakoniwa-pdu-python
       - hakoniwa-pdu-endpoint
       - hakoniwa-pdu-bridge-core
+
+urban_mobility:
+  use_case: drone-car-distributed
+  composition:
+    path: recipes/experiments/urban-mobility-shizuoka.yaml
 
 execution_environment:
   workspace:
@@ -109,6 +114,15 @@ execution_environment:
     - HTTP 8000, WebSocket 8765, and Launcher control 54111 must be available before start.
     - A human operator connects and operates the PS4 controller after Demo Ready.
 
+runtime_dependencies:
+  python:
+    interpreter: work/foundation/install/python
+    requirements: recipes/requirements/urban-mobility-rc.txt
+    packages:
+      - name: PyYAML
+        version: ">=6.0,<7"
+        purpose: Parse Urban composition, scenario, and vehicle YAML in Foundation Python.
+
 native_runtime_requirements:
   schema_version: 1
   components:
@@ -129,7 +143,8 @@ foundation_requirements:
       shared_memory: true
       hako_cmd: true
       python_binding: true
-    build_limits: &urban_limits
+      callback_assets_shared: true
+    build_limits:
       asset_num:
         min: 16
       pdu_channel_max:
@@ -152,18 +167,60 @@ foundation_requirements:
       launcher_background_lifecycle: true
       shm_backend: true
       external_rpc: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
   hakoniwa-pdu-endpoint:
     capabilities:
       hakoniwa_core: true
       core_callback: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
   hakoniwa-pdu-bridge-core:
     capabilities:
       hakoniwa_app: true
       web_bridge: true
       web_bridge_fleets_config_format: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
 
 recipe_local_requirements_schema_version: 1
 recipe_local_requirements:
@@ -177,8 +234,10 @@ recipe_local_requirements:
     required_artifacts:
       - {path: tools/drone_one.py, kind: file}
       - {path: tools/multi_car.py, kind: file}
-      - {path: build/bin/urban-car-hakoniwa-asset, kind: executable}
+      - {path: CMakeLists.txt, kind: file}
+      - {path: apps/car/urban-car-hakoniwa-asset.cpp, kind: file}
       - {path: recipes/experiments/urban-drone-one.yaml, kind: file}
+      - {path: recipes/experiments/urban-mobility-shizuoka.yaml, kind: file}
       - {path: config/drone/hexa/drone.xml, kind: file}
       - {path: config/drone/hexa/drone_config_0.json, kind: file}
       - {path: config/drone/hexa/controller-params.txt, kind: file}
@@ -190,7 +249,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_DRONE_CORE_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/toppers/hakoniwa-drone-core.git
     required_artifacts:
       - {path: NATIVE_RUNTIME_REQUIREMENTS.yaml, kind: file}
       - {path: MUJOCO_VERSION.txt, kind: file}
@@ -199,13 +259,34 @@ recipe_local_requirements:
       - {path: config/controller/param-api-mixer-mujoco.txt, kind: file}
       - {path: drone_api/rc/rc-custom.py, kind: file}
       - {path: drone_api/rc/rc_config/ps4-control.json, kind: file}
+  hakoniwa-drone-show:
+    root:
+      default_path: ../hakoniwa-drone-show
+      override_env: HAKONIWA_DRONE_SHOW_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-drone-show.git
+    required_artifacts:
+      - {path: tools/recipe/drone_fleet_mujoco_city.py, kind: file}
+  hakoniwa-pdu-registry:
+    root:
+      default_path: ../hakoniwa-pdu-registry
+      override_env: HAKONIWA_PDU_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-pdu-registry.git
+    required_artifacts:
+      - {path: pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
       override_env: HAKONIWA_ROBOT_RUNTIME_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-robot-runtime.git
     required_artifacts:
       - {path: include, kind: directory}
       - {path: src, kind: directory}
@@ -215,7 +296,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MUJOCO_ROBOTS_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mujoco-robots.git
     required_artifacts:
       - {path: MUJOCO_VERSION.txt, kind: file}
       - {path: src, kind: directory}
@@ -225,7 +307,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MBODY_REGISTRY_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mbody-registry.git
     required_artifacts:
       - {path: tools/compose_mujoco_world.py, kind: file}
       - {path: bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml, kind: file}
@@ -236,7 +319,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_THREEJS_DRONE_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-threejs-drone.git
     required_artifacts:
       - {path: index.html, kind: file}
       - {path: config, kind: directory}
@@ -246,7 +330,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MAP_VIEWER_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-map-viewer.git
     required_artifacts:
       - {path: src/client/index.html, kind: file}
 

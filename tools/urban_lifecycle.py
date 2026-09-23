@@ -5,10 +5,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import socket
-from urllib.request import urlopen
+import time
+from urllib.parse import urlsplit
+
+from recipe.process_liveness import pid_alive
 
 
 class LifecycleError(RuntimeError):
@@ -44,22 +46,12 @@ def read_session(spec: LifecycleSpec) -> dict | None:
     return payload
 
 
-def process_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except (OSError, ValueError):
-        return False
-    return True
-
-
 def launcher_running(spec: LifecycleSpec) -> bool:
     session = read_session(spec)
     return bool(
         session
         and session.get("state") == "RUNNING"
-        and process_alive(session.get("pid"))
+        and pid_alive(session.get("pid"))
     )
 
 
@@ -71,11 +63,24 @@ def listening(port: int, *, host: str = "127.0.0.1", timeout: float = 0.2) -> bo
         return False
 
 
-def http_ready(url: str, *, timeout: float = 1.0) -> bool:
+def http_ready(url: str, *, timeout: float = 0.2) -> bool:
+    """Check that the local HTTP Viewer has bound its TCP listening socket.
+
+    Demo readiness must not issue an HTTP request here. On Windows the managed
+    single-process HTTP server can accept the probe while still being brought
+    up by the Launcher, which makes a response-level probe unnecessarily
+    blocking. The browser performs the real HTTP request after Demo Ready.
+    """
     try:
-        with urlopen(url, timeout=timeout) as response:
-            return 200 <= int(response.status) < 400
-    except OSError:
+        parsed = urlsplit(url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            return False
+        return listening(
+            parsed.port or 80,
+            host=parsed.hostname,
+            timeout=timeout,
+        )
+    except ValueError:
         return False
 
 
@@ -121,9 +126,30 @@ def status_report(spec: LifecycleSpec) -> dict:
     }
 
 
+def wait_for_demo_ready(
+    spec: LifecycleSpec,
+    *,
+    timeout_sec: float = 15.0,
+    poll_interval_sec: float = 0.25,
+) -> dict:
+    """Wait for the selected Recipe's local HTTP and WebSocket endpoints."""
+    deadline = time.monotonic() + timeout_sec
+    last = status_report(spec)
+    while time.monotonic() < deadline:
+        if last["demo_ready"]:
+            return last
+        if not last["launcher_running"]:
+            raise LifecycleError(
+                f"Recipe {spec.recipe_id} Launcher stopped before demo readiness"
+            )
+        time.sleep(poll_interval_sec)
+        last = status_report(spec)
+    return last
+
+
 def verify_stopped(spec: LifecycleSpec) -> None:
     session = read_session(spec)
-    if session is not None and session.get("state") == "RUNNING" and process_alive(
+    if session is not None and session.get("state") == "RUNNING" and pid_alive(
         session.get("pid")
     ):
         raise LifecycleError(

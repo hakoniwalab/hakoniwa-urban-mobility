@@ -4,6 +4,12 @@
 DualSenseで操作し、Three.jsブラウザにCity GLBと緑色のColliderを表示する手順です。
 ネイティブMuJoCo Viewerは起動しません。
 
+> **位置づけ:** この文書はmacOS上の1-Car回帰確認用です。Urban Mobilityの
+> 標準ライフサイクル、とくにWindowsのセットアップ確認では
+> `tools/urban_mobility.py plan / doctor / configure` を使用してください。
+> `tools/multi_car.py` は標準のBusiness Pack Recipe入口ではなく、
+> Car構成の下位レベル診断・回帰ツールです。
+
 ## 前提
 
 - macOSホストでBusiness PackのFoundationが構築済みであること

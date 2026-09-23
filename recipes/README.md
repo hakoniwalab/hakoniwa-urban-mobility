@@ -3,22 +3,48 @@
 This directory contains the configuration and composition contract for the
 PLATEAU Urban Car Fleet checkpoint.
 
-## City-independent managed Recipe
+## Managed use-case Recipes
 
-`recipes/experiments/urban-mobility-rc.yaml` is the managed dependency and
-Foundation contract for the integrated Drone + multi-Car demo. It does not
-select a particular city. The later composition config supplies a City World
-Receipt and a matching route/scenario; Shizuoka is the first regression input.
+Managed Recipes describe the simulation topology and its reusable dependencies.
+User-selected City World artifacts are configure-time inputs instead of being
+hard-coded into the Python entrypoint.
 
-Evaluate the contract with the Business Pack Recipe engine:
+The first template-backed use case is:
+
+```text
+recipes/usecases/urban-car-rc.yaml
+```
+
+It describes one Golf Cart with RC control and reuses
+`recipes/experiments/urban-car-one.yaml` as the tracked Car composition
+template. The managed Recipe declares how `--city-receipt` fills
+`inputs.business_pack_city_receipt.path`.
 
 ```bash
-cd ../hakoniwa-business-pack
-work/foundation/install/python/bin/python3 tools/recipe.py plan \
-  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
-work/foundation/install/python/bin/python3 tools/recipe.py doctor \
-  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
+python tools/urban_mobility.py plan \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py doctor \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py configure \
+  --recipe recipes/usecases/urban-car-rc.yaml \
+  --city-receipt /path/to/city-world-receipt.json
 ```
+
+Business Pack owns dependency materialization, Foundation evaluation/build, and
+Recipe Python requirements. The Urban entrypoint then copies the tracked
+template into the Recipe workspace, fills the declared user parameters, builds
+the Car plant, and materializes the runtime/Viewer configuration.
+
+The generated effective composition is stored under:
+
+```text
+hakoniwa-business-pack/work/recipes/urban-car-rc/config/urban-composition.json
+```
+
+The existing `recipes/experiments/urban-mobility-rc.yaml` remains the managed
+Drone + multi-Car distributed use case. Future managed Recipes can add other
+topologies without changing the meaning of the Car RC Recipe.
+
 
 ## Recipe-selected one Drone City World
 

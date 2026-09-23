@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -33,6 +34,7 @@ from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # n
 import urban_lifecycle  # noqa: E402
 from workdir import foundation_install as resolve_foundation_install  # noqa: E402
 from workdir import recipe_root as resolve_recipe_root  # noqa: E402
+from workspace import foundation_python_layout  # noqa: E402
 
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
@@ -78,6 +80,16 @@ def workspace_url(path: Path) -> str:
     return "/" + relative.as_posix()
 
 
+def materialize_browser_asset(source: Path, target: Path) -> Path:
+    """Copy an external browser asset into the managed Recipe workspace."""
+    source = required(source.resolve(), "browser asset")
+    target = target.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source != target:
+        shutil.copy2(source, target)
+    return target
+
+
 def map_viewer_url(resolved: dict, viewer_config: Path) -> str:
     receipt = load_json(resolved["city_receipt"], "City World receipt")
     try:
@@ -121,7 +133,50 @@ def recipe_workspace(recipe_id: str) -> Path:
 
 
 def foundation_python() -> Path:
-    return required(foundation_install() / "python/bin/python3", "Foundation Python")
+    python_root = foundation_install() / "python"
+    python, _ = foundation_python_layout(python_root)
+    return required(python, "Foundation Python")
+
+
+def native_executable(path: Path) -> Path:
+    """Return the host-native executable path for a CMake output."""
+    if sys.platform == "win32":
+        return path.with_name(path.name + ".exe")
+    return path
+
+
+def build_car_asset(*, enable_mirror: bool = False) -> None:
+    """Build the host-native Urban Car plant from the selected sibling sources."""
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(ROOT),
+            "-B",
+            str(ROOT / "build"),
+            "-DCMAKE_BUILD_TYPE=Release",
+            f"-DHAKO_URBAN_ENABLE_MIRROR={'ON' if enable_mirror else 'OFF'}",
+            "-DHAKO_URBAN_ENABLE_VIEWER=ON",
+            "-DBUILD_TESTING=ON",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "cmake",
+            "--build",
+            str(ROOT / "build"),
+            "--config",
+            "Release",
+            "--target",
+            "urban-car-hakoniwa-asset",
+            "--parallel",
+            "4",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 def load_yaml(path: Path) -> dict:
@@ -497,7 +552,7 @@ def paths() -> dict[str, Path]:
     return {
         "compose_tool": MBODY / "tools/compose_mujoco_world.py",
         "mujoco_compiler": BUSINESS_PACK / "tools/mujoco_model_compiler.py",
-        "plant": ROOT / "build/bin/urban-car-hakoniwa-asset",
+        "plant": native_executable(ROOT / "build/bin/urban-car-hakoniwa-asset"),
         "source_runtime": ROOT / "config/car/runtime.json",
         "ackermann_controller": ROOT / "config/car/controller/ackermann.json",
         "joint_state_output": ROOT / "config/car/state/joint-state.json",
@@ -509,9 +564,9 @@ def paths() -> dict[str, Path]:
         "scenario_executor": ROOT / "apps/car/scenario_executor.py",
         "command_client": ROOT / "apps/car/urban_car.py",
         "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
-        "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
+        "ps5_mapping": ROOT / "config/car/dualsense-controller.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
-        "web_bridge": foundation_install() / "bin/hakoniwa-pdu-web-bridge",
+        "web_bridge": native_executable(foundation_install() / "bin/hakoniwa-pdu-web-bridge"),
         "http_server": ROOT / "tools/workspace_http_server.py",
     }
 
@@ -1325,6 +1380,14 @@ def materialize_browser_visualization(
     """Materialize a read-only state bridge and compact Three.js configs."""
     bridge_root = work / "web-bridge"
     browser_root = work / "threejs"
+    asset_root = browser_root / "assets"
+    city_glb = materialize_browser_asset(
+        city_glb, asset_root / "city-world.glb"
+    )
+    if collider_glb is not None:
+        collider_glb = materialize_browser_asset(
+            collider_glb, asset_root / "city-world-colliders.glb"
+        )
     state_types = json.loads(runtime_files["state_pdu_types"].read_text(encoding="utf-8"))
 
     state_types_path = bridge_root / "pdu/urban-fleet-state-pdutypes.json"
@@ -1687,7 +1750,6 @@ def materialize_launcher(
                     "--config-root", str(browser_files["bridge_root"]),
                     "--node-name", "urban_vehicle_viewer_node1",
                     "--delta-time-step-usec", "20000",
-                    "--enable-ondemand",
                 ],
                 "depends_on": ["urban-car-fleet-plant"],
                 "delay_sec": 1,
@@ -1764,7 +1826,7 @@ def doctor(resolved: dict) -> int:
         ("Ackermann scenario executor", source["scenario_executor"]),
         ("External Ackermann Python client", source["command_client"]),
         ("Urban PS5 AckermannDrive sender", source["ps5_sender"]),
-        ("Foundation Python", foundation_install() / "python/bin/python3"),
+        ("Foundation Python", foundation_python()),
         ("Foundation Core config", source["core_config"]),
     ])
     if resolved["visualization"]["enabled"]:
@@ -1805,7 +1867,7 @@ def configure(resolved: dict) -> int:
     for label, path in paths().items():
         if label != "plant":
             required(path, label)
-    required(foundation_install() / "python/bin/python3", "Foundation Python")
+    required(foundation_python(), "Foundation Python")
     required(source["core_config"], "Foundation Core config")
     config_root.mkdir(parents=True, exist_ok=True)
     fleet_model = config_root / "urban-car-fleet.xml"

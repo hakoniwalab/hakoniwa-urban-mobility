@@ -62,10 +62,16 @@ class HakoniwaPollingTransport:
         ).expanduser().resolve()
         core_config = install.parent / "config/cpp_core_config.json"
         os.environ.setdefault("HAKO_CONFIG_PATH", str(core_config))
-        if platform.system() == "Darwin":
+        system = platform.system()
+        if system == "Darwin":
             candidates = (
                 install / "lib/libshakoc.1.0.0.dylib",
                 install / "lib/libshakoc.dylib",
+            )
+        elif system == "Windows":
+            candidates = (
+                install / "bin/shakoc.dll",
+                install / "bin/libshakoc.dll",
             )
         else:
             candidates = (
@@ -74,8 +80,9 @@ class HakoniwaPollingTransport:
             )
         library = next((path for path in candidates if path.is_file()), None)
         if library is None:
+            searched = ", ".join(str(path) for path in candidates)
             raise AckermannClientError(
-                f"Hakoniwa polling library not found under {install / 'lib'}"
+                f"Hakoniwa polling library not found; searched: {searched}"
             )
         self._lib = ctypes.CDLL(str(library))
         self._lib.hakoniwa_asset_init.restype = ctypes.c_int
