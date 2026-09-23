@@ -10,15 +10,36 @@ Foundation contract for the integrated Drone + multi-Car demo. It does not
 select a particular city. The later composition config supplies a City World
 Receipt and a matching route/scenario; Shizuoka is the first regression input.
 
-Evaluate the contract with the Business Pack Recipe engine:
+Use `tools/urban_mobility.py` as the standard lifecycle entrypoint. Its
+`plan`, `doctor`, and `configure` commands delegate to the Business Pack
+Recipe engine with `urban-mobility-rc.yaml`; the lower-level Car and Drone
+tools remain regression and composition helpers.
 
 ```bash
-cd ../hakoniwa-business-pack
-work/foundation/install/python/bin/python3 tools/recipe.py plan \
-  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
-work/foundation/install/python/bin/python3 tools/recipe.py doctor \
-  --recipe ../hakoniwa-urban-mobility/recipes/experiments/urban-mobility-rc.yaml
+python tools/urban_mobility.py plan
+python tools/urban_mobility.py doctor
+python tools/urban_mobility.py configure
 ```
+
+After configuration, use the same entrypoint for runtime lifecycle operations:
+
+```bash
+python tools/urban_mobility.py start
+python tools/urban_mobility.py status
+python tools/urban_mobility.py open-viewer
+python tools/urban_mobility.py stop
+```
+
+On Windows, enter the Business Pack workspace first with
+`python tools\\workspace.py enter` from the Business Pack repository, then
+return to this repository and run the commands above. Do not hard-code
+`work/foundation/install/python/bin/python3`; the Business Pack workspace
+contract resolves `Scripts/python.exe` on Windows and the POSIX layout on
+macOS/Linux.
+
+See
+[`docs/operation-managed-recipe.md`](../docs/operation-managed-recipe.md)
+for the Windows-first operating procedure.
 
 ## Recipe-selected one Drone City World
 
