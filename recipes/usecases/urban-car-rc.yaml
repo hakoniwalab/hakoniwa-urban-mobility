@@ -1,0 +1,258 @@
+id: urban-car-rc
+title: One RC-controlled Golf Cart in a selected City World
+recipe_version: 0.1
+
+goal:
+  user_request: Select a City World receipt and drive one Golf Cart with a local RC controller.
+  description: >
+    Materialize one host-native Urban Car simulation with one Ackermann Golf
+    Cart, one RC command producer, one browser Viewer, and the Foundation
+    runtime required to run them. The selected City World is a configure-time
+    input, not a tracked city dependency.
+
+constraints:
+  - native-cross-platform
+  - one-car
+  - one-rc-controller
+  - shared-foundation-runtime-is-exclusive
+  - generated-artifacts-stay-under-recipe-workspace
+
+target_environment:
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  os_version: current-supported-host
+  architecture: host-native
+  execution_mode: native
+  runtimes:
+    - name: Foundation Python
+      required: true
+      version: "3.12"
+      path: work/foundation/install/python
+    - name: MuJoCo
+      required: true
+      version: "3.13.0"
+      path: hakoniwa-mujoco-robots/MUJOCO_VERSION.txt
+  hakoniwa:
+    install_prefix: work/foundation/install
+    components_built:
+      - hakoniwa-core-pro
+      - hakoniwa-pdu-python
+      - hakoniwa-pdu-endpoint
+      - hakoniwa-pdu-bridge-core
+
+urban_mobility:
+  use_case: car-rc
+  template:
+    path: recipes/experiments/urban-car-one.yaml
+  parameters:
+    city_receipt:
+      cli: --city-receipt
+      target: inputs.business_pack_city_receipt.path
+      type: path
+      required: true
+
+execution_environment:
+  workspace:
+    mode: managed
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  architecture: host-native
+  execution_mode: native
+  gui:
+    required: true
+    status: browser-viewer-and-rc-controller
+  shared_memory:
+    required: true
+    access: local-host
+  python:
+    environment: foundation-venv
+    path: work/foundation/install/python
+    version: "3.12"
+    hakopy_available: required
+    hakoniwa_pdu_available: required
+  hakoniwa:
+    install_prefix: work/foundation/install
+    hako_cmd_access: required
+
+runtime_dependencies:
+  python:
+    interpreter: work/foundation/install/python
+    requirements: recipes/requirements/urban-car-rc.txt
+    packages:
+      - name: PyYAML
+        version: ">=6.0,<7"
+        purpose: Parse Urban composition YAML in Foundation Python.
+      - name: pygame
+        version: "2.6.1"
+        purpose: Read the local RC controller used by the Car command sender.
+
+foundation_contract:
+  mode: required
+  reason: >
+    The Car plant, Launcher, shared-memory PDU endpoint, browser WebBridge, and
+    RC command sender consume installed and receipt-validated Foundation
+    components.
+
+foundation_requirements:
+  hakoniwa-core-pro:
+    capabilities:
+      shared_memory: true
+      hako_cmd: true
+      python_binding: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-python:
+    version:
+      min: 1.6.5
+    capabilities:
+      hako_launcher: true
+      launcher_background_lifecycle: true
+      shm_backend: true
+      external_rpc: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-endpoint:
+    capabilities:
+      hakoniwa_core: true
+      core_callback: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-bridge-core:
+    capabilities:
+      hakoniwa_app: true
+      web_bridge: true
+      web_bridge_fleets_config_format: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+
+recipe_local_requirements_schema_version: 1
+recipe_local_requirements:
+  hakoniwa-urban-mobility:
+    root:
+      default_path: .
+      override_env: HAKONIWA_URBAN_MOBILITY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: local
+    required_artifacts:
+      - {path: tools/urban_mobility.py, kind: file}
+      - {path: tools/multi_car.py, kind: file}
+      - {path: recipes/experiments/urban-car-one.yaml, kind: file}
+      - {path: apps/car/urban-car-hakoniwa-asset.cpp, kind: file}
+      - {path: apps/car/ps5_ackermann_sender.py, kind: file}
+      - {path: CMakeLists.txt, kind: file}
+      - {path: config/car/ps5-controller-macos.json, kind: file}
+  hakoniwa-robot-runtime:
+    root:
+      default_path: ../hakoniwa-robot-runtime
+      override_env: HAKONIWA_ROBOT_RUNTIME_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-robot-runtime.git
+    required_artifacts:
+      - {path: include, kind: directory}
+      - {path: src, kind: directory}
+  hakoniwa-mujoco-robots:
+    root:
+      default_path: ../hakoniwa-mujoco-robots
+      override_env: HAKONIWA_MUJOCO_ROBOTS_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mujoco-robots.git
+    required_artifacts:
+      - {path: MUJOCO_VERSION.txt, kind: file}
+      - {path: src, kind: directory}
+  hakoniwa-mbody-registry:
+    root:
+      default_path: ../hakoniwa-mbody-registry
+      override_env: HAKONIWA_MBODY_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mbody-registry.git
+    required_artifacts:
+      - {path: tools/compose_mujoco_world.py, kind: file}
+      - {path: bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml, kind: file}
+      - {path: bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml, kind: file}
+      - {path: bodies/generic_ackermann_golf_cart/generated/view-model.json, kind: file}
+  hakoniwa-threejs-drone:
+    root:
+      default_path: ../hakoniwa-threejs-drone
+      override_env: HAKONIWA_THREEJS_DRONE_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-threejs-drone.git
+    required_artifacts:
+      - {path: index.html, kind: file}
+      - {path: config, kind: directory}
+  hakoniwa-map-viewer:
+    root:
+      default_path: ../hakoniwa-map-viewer
+      override_env: HAKONIWA_MAP_VIEWER_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-map-viewer.git
+    required_artifacts:
+      - {path: src/client/index.html, kind: file}
+
+expected_result: >
+  One RC-controlled Golf Cart runs on the selected City World physics surface
+  and is visible through the generated browser Viewer.
