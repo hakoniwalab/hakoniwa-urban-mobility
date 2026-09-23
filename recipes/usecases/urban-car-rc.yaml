@@ -195,7 +195,7 @@ recipe_local_requirements:
       - {path: apps/car/urban-car-hakoniwa-asset.cpp, kind: file}
       - {path: apps/car/ps5_ackermann_sender.py, kind: file}
       - {path: CMakeLists.txt, kind: file}
-      - {path: config/car/ps5-controller-macos.json, kind: file}
+      - {path: config/car/dualsense-controller.json, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
