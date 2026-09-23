@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import time
 from urllib.parse import urlsplit
 
 
@@ -137,6 +138,27 @@ def status_report(spec: LifecycleSpec) -> dict:
         "websocket_listening": websocket,
         "demo_ready": running and http and websocket,
     }
+
+
+def wait_for_demo_ready(
+    spec: LifecycleSpec,
+    *,
+    timeout_sec: float = 15.0,
+    poll_interval_sec: float = 0.25,
+) -> dict:
+    """Wait for the selected Recipe's local HTTP and WebSocket endpoints."""
+    deadline = time.monotonic() + timeout_sec
+    last = status_report(spec)
+    while time.monotonic() < deadline:
+        if last["demo_ready"]:
+            return last
+        if not last["launcher_running"]:
+            raise LifecycleError(
+                f"Recipe {spec.recipe_id} Launcher stopped before demo readiness"
+            )
+        time.sleep(poll_interval_sec)
+        last = status_report(spec)
+    return last
 
 
 def verify_stopped(spec: LifecycleSpec) -> None:
