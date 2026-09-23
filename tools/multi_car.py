@@ -1750,7 +1750,6 @@ def materialize_launcher(
                     "--config-root", str(browser_files["bridge_root"]),
                     "--node-name", "urban_vehicle_viewer_node1",
                     "--delta-time-step-usec", "20000",
-                    "--enable-ondemand",
                 ],
                 "depends_on": ["urban-car-fleet-plant"],
                 "delay_sec": 1,
