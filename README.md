@@ -20,6 +20,33 @@ contract is tracked in
 The target ownership and lifecycle contract is defined in
 [`docs/foundation-contract.md`](docs/foundation-contract.md).
 
+## Standard managed Recipe entrypoint
+
+The integrated Urban Mobility workflow is operated through
+`tools/urban_mobility.py`. This is the supported entrypoint for
+`plan / doctor / configure / start / status / stop / open-viewer`.
+The first three commands delegate to the Business Pack Recipe engine and
+evaluate `recipes/experiments/urban-mobility-rc.yaml`.
+
+```bash
+python tools/urban_mobility.py plan
+python tools/urban_mobility.py doctor
+python tools/urban_mobility.py configure
+```
+
+On Windows, enter the Business Pack workspace first:
+
+```powershell
+PS C:\\project\\urban\\hakoniwa-business-pack> python tools\\workspace.py enter
+(hako) PS C:\\project\\urban\\hakoniwa-business-pack> cd ..\\hakoniwa-urban-mobility
+(hako) PS C:\\project\\urban\\hakoniwa-urban-mobility> python tools\\urban_mobility.py doctor
+```
+
+The lower-level `multi_car.py`, `drone_one.py`, and legacy RC tools are
+kept for component regression and composition work; they are not the primary
+Windows setup/health-check path. See
+[`docs/operation-managed-recipe.md`](docs/operation-managed-recipe.md).
+
 ## Recipe-selected one-Drone checkpoint
 
 Prepare the pinned public native distribution first. This selects `mac.zip`,
