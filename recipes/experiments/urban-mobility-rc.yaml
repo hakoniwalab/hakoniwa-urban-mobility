@@ -81,6 +81,10 @@ target_environment:
       - hakoniwa-pdu-endpoint
       - hakoniwa-pdu-bridge-core
 
+urban_mobility:
+  composition:
+    path: recipes/experiments/urban-mobility-shizuoka.yaml
+
 execution_environment:
   workspace:
     mode: managed
@@ -231,6 +235,7 @@ recipe_local_requirements:
       - {path: CMakeLists.txt, kind: file}
       - {path: apps/car/urban-car-hakoniwa-asset.cpp, kind: file}
       - {path: recipes/experiments/urban-drone-one.yaml, kind: file}
+      - {path: recipes/experiments/urban-mobility-shizuoka.yaml, kind: file}
       - {path: config/drone/hexa/drone.xml, kind: file}
       - {path: config/drone/hexa/drone_config_0.json, kind: file}
       - {path: config/drone/hexa/controller-params.txt, kind: file}
