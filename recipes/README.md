@@ -26,6 +26,10 @@ The managed Recipe declares its Python dependencies in
 into Foundation Python during `configure`; manual `pip install` is not part
 of the normal setup path.
 
+External Urban dependencies are declared as Git sources. Missing sibling
+repositories are cloned by Business Pack during `configure`; existing
+checkouts are reused.
+
 After configuration, use the same entrypoint for runtime lifecycle operations:
 
 ```bash
