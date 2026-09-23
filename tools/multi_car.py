@@ -33,6 +33,7 @@ from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # n
 import urban_lifecycle  # noqa: E402
 from workdir import foundation_install as resolve_foundation_install  # noqa: E402
 from workdir import recipe_root as resolve_recipe_root  # noqa: E402
+from workspace import foundation_python_layout  # noqa: E402
 
 MBODY = WORKSPACE / "hakoniwa-mbody-registry"
 MUJOCO_ROBOTS = WORKSPACE / "hakoniwa-mujoco-robots"
@@ -121,21 +122,28 @@ def recipe_workspace(recipe_id: str) -> Path:
 
 
 def foundation_python() -> Path:
-    return required(foundation_install() / "python/bin/python3", "Foundation Python")
+    python_root = foundation_install() / "python"
+    python, _ = foundation_python_layout(python_root)
+    return required(python, "Foundation Python")
+
+
+def native_executable(path: Path) -> Path:
+    """Return the host-native executable path for a CMake output."""
+    if sys.platform == "win32":
+        return path.with_name(path.name + ".exe")
+    return path
 
 
 def load_yaml(path: Path) -> dict:
-    """Load YAML through the dependency-pinned Foundation Python environment."""
+    """Load a YAML mapping through the Business Pack Recipe YAML exporter."""
     required(path, "Urban Car Fleet configuration")
+    exporter = required(
+        BUSINESS_PACK / "recipes/tools/export_recipe_json.rb",
+        "Business Pack Recipe YAML exporter",
+    )
     result = subprocess.run(
-        [
-            str(foundation_python()),
-            "-c",
-            "import json,sys,yaml; "
-            "print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))",
-            str(path),
-        ],
-        cwd=ROOT,
+        ["ruby", str(exporter), str(path)],
+        cwd=BUSINESS_PACK,
         text=True,
         capture_output=True,
         check=False,
@@ -497,7 +505,7 @@ def paths() -> dict[str, Path]:
     return {
         "compose_tool": MBODY / "tools/compose_mujoco_world.py",
         "mujoco_compiler": BUSINESS_PACK / "tools/mujoco_model_compiler.py",
-        "plant": ROOT / "build/bin/urban-car-hakoniwa-asset",
+        "plant": native_executable(ROOT / "build/bin/urban-car-hakoniwa-asset"),
         "source_runtime": ROOT / "config/car/runtime.json",
         "ackermann_controller": ROOT / "config/car/controller/ackermann.json",
         "joint_state_output": ROOT / "config/car/state/joint-state.json",
@@ -511,7 +519,7 @@ def paths() -> dict[str, Path]:
         "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
         "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
-        "web_bridge": foundation_install() / "bin/hakoniwa-pdu-web-bridge",
+        "web_bridge": native_executable(foundation_install() / "bin/hakoniwa-pdu-web-bridge"),
         "http_server": ROOT / "tools/workspace_http_server.py",
     }
 
@@ -1764,7 +1772,7 @@ def doctor(resolved: dict) -> int:
         ("Ackermann scenario executor", source["scenario_executor"]),
         ("External Ackermann Python client", source["command_client"]),
         ("Urban PS5 AckermannDrive sender", source["ps5_sender"]),
-        ("Foundation Python", foundation_install() / "python/bin/python3"),
+        ("Foundation Python", foundation_python()),
         ("Foundation Core config", source["core_config"]),
     ])
     if resolved["visualization"]["enabled"]:
@@ -1805,7 +1813,7 @@ def configure(resolved: dict) -> int:
     for label, path in paths().items():
         if label != "plant":
             required(path, label)
-    required(foundation_install() / "python/bin/python3", "Foundation Python")
+    required(foundation_python(), "Foundation Python")
     required(source["core_config"], "Foundation Core config")
     config_root.mkdir(parents=True, exist_ok=True)
     fleet_model = config_root / "urban-car-fleet.xml"
