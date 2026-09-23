@@ -135,15 +135,17 @@ def native_executable(path: Path) -> Path:
 
 
 def load_yaml(path: Path) -> dict:
-    """Load a YAML mapping through the Business Pack Recipe YAML exporter."""
+    """Load YAML through the dependency-pinned Foundation Python environment."""
     required(path, "Urban Car Fleet configuration")
-    exporter = required(
-        BUSINESS_PACK / "recipes/tools/export_recipe_json.rb",
-        "Business Pack Recipe YAML exporter",
-    )
     result = subprocess.run(
-        ["ruby", str(exporter), str(path)],
-        cwd=BUSINESS_PACK,
+        [
+            str(foundation_python()),
+            "-c",
+            "import json,sys,yaml; "
+            "print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))",
+            str(path),
+        ],
+        cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
