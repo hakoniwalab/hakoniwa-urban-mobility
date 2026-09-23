@@ -21,6 +21,11 @@ python tools/urban_mobility.py doctor
 python tools/urban_mobility.py configure
 ```
 
+The managed Recipe declares its Python dependencies in
+`recipes/requirements/urban-mobility-rc.txt`. Business Pack installs them
+into Foundation Python during `configure`; manual `pip install` is not part
+of the normal setup path.
+
 After configuration, use the same entrypoint for runtime lifecycle operations:
 
 ```bash
