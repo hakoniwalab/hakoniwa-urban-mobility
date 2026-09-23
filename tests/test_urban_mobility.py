@@ -1,10 +1,56 @@
+from argparse import Namespace
 from pathlib import Path
+import json
 import sys
 import tempfile
 import unittest
 from unittest import mock
 
 from tools import urban_composer, urban_mobility
+
+
+def integrated_context() -> urban_mobility.RecipeContext:
+    path = urban_mobility.ROOT / "recipes/experiments/urban-mobility-rc.yaml"
+    return urban_mobility.RecipeContext(
+        path=path,
+        data={
+            "id": "urban-mobility-rc",
+            "urban_mobility": {
+                "use_case": "drone-car-distributed",
+                "composition": {
+                    "path": "recipes/experiments/urban-mobility-shizuoka.yaml"
+                },
+            },
+        },
+        recipe_id="urban-mobility-rc",
+        use_case="drone-car-distributed",
+    )
+
+
+def car_rc_context() -> urban_mobility.RecipeContext:
+    path = urban_mobility.ROOT / "recipes/usecases/urban-car-rc.yaml"
+    return urban_mobility.RecipeContext(
+        path=path,
+        data={
+            "id": "urban-car-rc",
+            "urban_mobility": {
+                "use_case": "car-rc",
+                "template": {
+                    "path": "recipes/experiments/urban-car-one.yaml",
+                },
+                "parameters": {
+                    "city_receipt": {
+                        "cli": "--city-receipt",
+                        "target": "inputs.business_pack_city_receipt.path",
+                        "type": "path",
+                        "required": True,
+                    },
+                },
+            },
+        },
+        recipe_id="urban-car-rc",
+        use_case="car-rc",
+    )
 
 
 class UrbanMobilityToolTest(unittest.TestCase):
@@ -25,17 +71,18 @@ class UrbanMobilityToolTest(unittest.TestCase):
             + float(drone["rooftop"]["base_clearance_m"]),
         )
 
-    def test_recipe_command_delegates_with_current_python(self):
+    def test_recipe_command_delegates_selected_recipe_with_current_python(self):
+        context = car_rc_context()
         completed = mock.Mock(returncode=0)
         with mock.patch.object(
             urban_mobility.subprocess, "run", return_value=completed
         ) as runner:
-            self.assertEqual(urban_mobility.recipe_command("doctor"), 0)
+            self.assertEqual(urban_mobility.recipe_command("doctor", context), 0)
         command = runner.call_args.args[0]
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(command[2], "doctor")
         self.assertEqual(command[3], "--recipe")
-        self.assertEqual(Path(command[4]), urban_mobility.MANAGED_RECIPE)
+        self.assertEqual(Path(command[4]), context.path)
 
     def test_foundation_python_uses_workspace_platform_layout(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -44,7 +91,9 @@ class UrbanMobilityToolTest(unittest.TestCase):
             expected.parent.mkdir(parents=True)
             expected.touch()
             with (
-                mock.patch.object(urban_mobility, "foundation_install", return_value=install),
+                mock.patch.object(
+                    urban_mobility, "foundation_install", return_value=install
+                ),
                 mock.patch.object(
                     urban_mobility,
                     "foundation_python_layout",
@@ -54,14 +103,16 @@ class UrbanMobilityToolTest(unittest.TestCase):
                 self.assertEqual(urban_mobility.foundation_python(), expected)
             layout.assert_called_once_with(install / "python")
 
-    def test_managed_recipe_uses_native_executable_suffix(self):
-        recipe = urban_mobility.MANAGED_RECIPE.read_text(encoding="utf-8")
+    def test_integrated_recipe_keeps_git_materialization_contract(self):
+        recipe = (
+            urban_mobility.ROOT / "recipes/experiments/urban-mobility-rc.yaml"
+        ).read_text(encoding="utf-8")
         self.assertNotIn(
             "build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}",
             recipe,
         )
         self.assertIn("apps/car/urban-car-hakoniwa-asset.cpp", recipe)
-        self.assertIn("hakoniwa-drone-show:", recipe)
+        self.assertIn("use_case: drone-car-distributed", recipe)
         self.assertIn(
             "url: https://github.com/hakoniwalab/hakoniwa-drone-show.git",
             recipe,
@@ -74,32 +125,36 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "requirements: recipes/requirements/urban-mobility-rc.txt",
             recipe,
         )
+
+    def test_car_rc_recipe_declares_template_city_input_and_runtime_packages(self):
+        recipe = (
+            urban_mobility.ROOT / "recipes/usecases/urban-car-rc.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("use_case: car-rc", recipe)
+        self.assertIn("path: recipes/experiments/urban-car-one.yaml", recipe)
+        self.assertIn("cli: --city-receipt", recipe)
+        self.assertIn("target: inputs.business_pack_city_receipt.path", recipe)
+        self.assertNotIn("hakoniwa-drone-core:", recipe)
+        self.assertNotIn("hakoniwa-drone-show:", recipe)
+
         requirements = (
-            urban_mobility.ROOT / "recipes/requirements/urban-mobility-rc.txt"
+            urban_mobility.ROOT / "recipes/requirements/urban-car-rc.txt"
         ).read_text(encoding="utf-8")
         self.assertIn("PyYAML>=6.0,<7", requirements)
+        self.assertIn("pygame==2.6.1", requirements)
 
     def test_multi_car_native_executable_uses_windows_suffix(self):
         multi_car = urban_composer.multi_car
         with mock.patch.object(multi_car.sys, "platform", "win32"):
             self.assertEqual(
-                multi_car.native_executable(Path("build/bin/urban-car-hakoniwa-asset")),
+                multi_car.native_executable(
+                    Path("build/bin/urban-car-hakoniwa-asset")
+                ),
                 Path("build/bin/urban-car-hakoniwa-asset.exe"),
             )
 
-
-    def test_composition_path_comes_from_managed_recipe(self):
-        configured = {
-            "urban_mobility": {
-                "composition": {
-                    "path": "recipes/experiments/urban-mobility-shizuoka.yaml"
-                }
-            }
-        }
-        with mock.patch.object(
-            urban_mobility, "load_managed_recipe", return_value=configured
-        ):
-            path = urban_mobility.composition_path()
+    def test_composition_path_comes_from_selected_integrated_recipe(self):
+        path = urban_mobility.composition_path(integrated_context())
         self.assertEqual(
             path,
             (
@@ -108,37 +163,92 @@ class UrbanMobilityToolTest(unittest.TestCase):
             ).resolve(),
         )
 
-    def test_spec_is_recipe_local(self):
+    def test_car_rc_template_fills_city_receipt_from_cli(self):
+        context = car_rc_context()
+        template = {
+            "id": "urban-car-one",
+            "inputs": {
+                "business_pack_city_receipt": {"path": "tracked-default.json"},
+            },
+            "composition": {
+                "output": {"recipe_id": "urban-car-one"},
+            },
+        }
         with tempfile.TemporaryDirectory() as directory:
             selected = Path(directory) / "work"
-            with mock.patch.dict("os.environ", {"HAKONIWA_WORK_DIR": str(selected)}):
-                lifecycle = urban_mobility.spec(require_viewer=False)
-        expected = selected.resolve() / "recipes/urban-mobility-rc"
+            city_receipt = Path(directory) / "city-world-receipt.json"
+            city_receipt.write_text("{}", encoding="utf-8")
+            args = Namespace(city_receipt=city_receipt)
+            with (
+                mock.patch.dict(
+                    "os.environ", {"HAKONIWA_WORK_DIR": str(selected)}
+                ),
+                mock.patch.object(
+                    urban_composer.multi_car,
+                    "load_yaml",
+                    return_value=template,
+                ),
+            ):
+                output = urban_mobility.materialize_template(context, args)
+            generated = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(generated["id"], "urban-car-rc")
+        self.assertEqual(
+            generated["composition"]["output"]["recipe_id"],
+            "urban-car-rc",
+        )
+        self.assertEqual(
+            generated["inputs"]["business_pack_city_receipt"]["path"],
+            str(city_receipt.resolve()),
+        )
+
+    def test_spec_is_selected_recipe_local(self):
+        context = car_rc_context()
+        with tempfile.TemporaryDirectory() as directory:
+            selected = Path(directory) / "work"
+            with mock.patch.dict(
+                "os.environ", {"HAKONIWA_WORK_DIR": str(selected)}
+            ):
+                lifecycle = urban_mobility.spec(context, require_viewer=False)
+        expected = selected.resolve() / "recipes/urban-car-rc"
         self.assertEqual(lifecycle.recipe_root, expected)
         self.assertEqual(lifecycle.launcher, expected / "config/launcher.json")
-        self.assertEqual(lifecycle.session, expected / "runtime/launcher-session.json")
+        self.assertEqual(
+            lifecycle.session, expected / "runtime/launcher-session.json"
+        )
 
-    def test_start_checks_foundation_before_launcher(self):
-        with mock.patch.object(urban_mobility, "recipe_command", return_value=1) as doctor:
-            self.assertEqual(urban_mobility.launcher_command("start"), 1)
-        doctor.assert_called_once_with("doctor")
+    def test_start_checks_selected_recipe_before_launcher(self):
+        context = car_rc_context()
+        with mock.patch.object(
+            urban_mobility, "recipe_command", return_value=1
+        ) as doctor:
+            self.assertEqual(
+                urban_mobility.launcher_command("start", context), 1
+            )
+        doctor.assert_called_once_with("doctor", context)
 
     def test_open_viewer_does_not_open_when_recipe_is_not_ready(self):
+        context = car_rc_context()
         fake = mock.Mock(viewer_url="http://127.0.0.1:8000/viewer")
         with (
             mock.patch.object(urban_mobility, "spec", return_value=fake),
             mock.patch.object(
                 urban_mobility.urban_lifecycle,
                 "require_viewer_ready",
-                side_effect=urban_mobility.urban_lifecycle.LifecycleError("not ready"),
+                side_effect=urban_mobility.urban_lifecycle.LifecycleError(
+                    "not ready"
+                ),
             ),
             mock.patch.object(urban_mobility.webbrowser, "open") as opener,
-            self.assertRaises(urban_mobility.urban_lifecycle.LifecycleError),
+            self.assertRaises(
+                urban_mobility.urban_lifecycle.LifecycleError
+            ),
         ):
-            urban_mobility.open_viewer()
+            urban_mobility.open_viewer(context)
         opener.assert_not_called()
 
     def test_status_rejects_foreign_session_before_launcher_ctl(self):
+        context = car_rc_context()
         fake = mock.Mock()
         fake.session = mock.Mock()
         fake.session.is_file.return_value = True
@@ -157,7 +267,7 @@ class UrbanMobilityToolTest(unittest.TestCase):
                 "foreign session",
             ),
         ):
-            urban_mobility.launcher_command("status")
+            urban_mobility.launcher_command("status", context)
         runner.assert_not_called()
 
 
