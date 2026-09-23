@@ -51,6 +51,11 @@ urban_mobility:
       target: inputs.business_pack_city_receipt.path
       type: path
       required: true
+    web_bridge_port:
+      cli: --web-bridge-port
+      target: inputs.browser_visualization.web_bridge_port
+      type: int
+      required: false
 
 execution_environment:
   workspace:
