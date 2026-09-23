@@ -82,6 +82,7 @@ target_environment:
       - hakoniwa-pdu-bridge-core
 
 urban_mobility:
+  use_case: drone-car-distributed
   composition:
     path: recipes/experiments/urban-mobility-shizuoka.yaml
 
