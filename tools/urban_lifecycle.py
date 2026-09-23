@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import http.client
 import json
 import os
 from pathlib import Path
@@ -73,28 +72,24 @@ def listening(port: int, *, host: str = "127.0.0.1", timeout: float = 0.2) -> bo
         return False
 
 
-def http_ready(url: str, *, timeout: float = 1.0) -> bool:
-    """Probe the local HTTP Viewer without initializing HTTPS/certificate state."""
+def http_ready(url: str, *, timeout: float = 0.2) -> bool:
+    """Check that the local HTTP Viewer has bound its TCP listening socket.
+
+    Demo readiness must not issue an HTTP request here. On Windows the managed
+    single-process HTTP server can accept the probe while still being brought
+    up by the Launcher, which makes a response-level probe unnecessarily
+    blocking. The browser performs the real HTTP request after Demo Ready.
+    """
     try:
         parsed = urlsplit(url)
         if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
             return False
-        port = parsed.port or 80
-        target = parsed.path or "/"
-        if parsed.query:
-            target += "?" + parsed.query
-        connection = http.client.HTTPConnection(
-            parsed.hostname,
-            port,
+        return listening(
+            parsed.port or 80,
+            host=parsed.hostname,
             timeout=timeout,
         )
-        try:
-            connection.request("GET", target)
-            response = connection.getresponse()
-            return 200 <= int(response.status) < 400
-        finally:
-            connection.close()
-    except (OSError, ValueError, http.client.HTTPException):
+    except ValueError:
         return False
 
 
