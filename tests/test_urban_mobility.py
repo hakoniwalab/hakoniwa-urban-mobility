@@ -173,6 +173,20 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "urban-car-hakoniwa-asset",
         )
 
+    def test_external_browser_asset_is_copied_into_recipe_workspace(self):
+        multi_car = urban_composer.multi_car
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "external" / "city-world.glb"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"glb")
+            target = root / "workspace" / "config" / "threejs" / "assets" / "city-world.glb"
+
+            materialized = multi_car.materialize_browser_asset(source, target)
+
+            self.assertEqual(materialized, target.resolve())
+            self.assertEqual(target.read_bytes(), b"glb")
+
     def test_multi_car_native_executable_uses_windows_suffix(self):
         multi_car = urban_composer.multi_car
         with mock.patch.object(multi_car.sys, "platform", "win32"):
