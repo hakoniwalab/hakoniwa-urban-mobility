@@ -89,9 +89,12 @@ materializes the Urban integrated composition under:
 hakoniwa-business-pack\work\recipes\urban-mobility-rc\
 ```
 
-Urban YAML configuration is loaded through the same Ruby YAML-to-JSON exporter
-used by the Business Pack Recipe engine. The Foundation Python therefore does
-not need an undeclared PyYAML installation.
+The managed Recipe declares
+`recipes/requirements/urban-mobility-rc.txt` as its Python runtime
+requirements. Business Pack installs those requirements into Foundation Python
+before Urban-specific composition runs; currently this supplies
+`PyYAML>=6.0,<7`. Do not repair a missing module with an ad-hoc
+`pip install`; fix the managed Recipe dependency contract instead.
 
 ## 4. Start and inspect
 
