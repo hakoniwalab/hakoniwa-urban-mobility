@@ -225,6 +225,14 @@ class UrbanMobilityToolTest(unittest.TestCase):
             ).resolve(),
         )
 
+    def test_urban_recipes_require_shared_callback_assets(self):
+        for recipe in (
+            urban_mobility.ROOT / "recipes/usecases/urban-car-rc.yaml",
+            urban_mobility.ROOT / "recipes/experiments/urban-mobility-rc.yaml",
+        ):
+            text = recipe.read_text(encoding="utf-8")
+            self.assertIn("callback_assets_shared: true", text)
+
     def test_car_rc_template_fills_city_receipt_from_cli(self):
         context = car_rc_context()
         template = {
