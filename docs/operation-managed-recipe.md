@@ -98,6 +98,17 @@ urban_mobility:
       required: true
 ```
 
+The Car RC template uses WebBridge port `18765` by default so it does not
+collide with Windows IP Helper configurations that may own `8765`. Override it
+when necessary:
+
+```powershell
+python .\tools\urban_mobility.py configure `
+  --recipe recipes\usecases\urban-car-rc.yaml `
+  --city-receipt C:\path\to\city-world-receipt.json `
+  --web-bridge-port 19001
+```
+
 The tracked template is not edited. Urban writes an effective generated
 composition under:
 
