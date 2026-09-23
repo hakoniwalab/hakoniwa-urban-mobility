@@ -88,6 +88,26 @@ class UrbanMobilityToolTest(unittest.TestCase):
             )
 
 
+    def test_composition_path_comes_from_managed_recipe(self):
+        configured = {
+            "urban_mobility": {
+                "composition": {
+                    "path": "recipes/experiments/urban-mobility-shizuoka.yaml"
+                }
+            }
+        }
+        with mock.patch.object(
+            urban_mobility, "load_managed_recipe", return_value=configured
+        ):
+            path = urban_mobility.composition_path()
+        self.assertEqual(
+            path,
+            (
+                urban_mobility.ROOT
+                / "recipes/experiments/urban-mobility-shizuoka.yaml"
+            ).resolve(),
+        )
+
     def test_spec_is_recipe_local(self):
         with tempfile.TemporaryDirectory() as directory:
             selected = Path(directory) / "work"
