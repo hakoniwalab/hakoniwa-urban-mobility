@@ -139,6 +139,36 @@ class UrbanLifecycleTest(unittest.TestCase):
             self.assertTrue(report["websocket_listening"])
             self.assertTrue(report["demo_ready"])
 
+    def test_wait_for_demo_ready_allows_after_start_services_to_bind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            spec = self.spec(Path(directory))
+            reports = iter([
+                {
+                    "launcher_running": True,
+                    "http_ready": False,
+                    "websocket_listening": False,
+                    "demo_ready": False,
+                },
+                {
+                    "launcher_running": True,
+                    "http_ready": True,
+                    "websocket_listening": True,
+                    "demo_ready": True,
+                },
+            ])
+            with (
+                mock.patch.object(
+                    lifecycle,
+                    "status_report",
+                    side_effect=lambda _spec: next(reports),
+                ),
+                mock.patch.object(lifecycle.time, "sleep"),
+            ):
+                report = lifecycle.wait_for_demo_ready(
+                    spec, timeout_sec=1.0, poll_interval_sec=0.01
+                )
+            self.assertTrue(report["demo_ready"])
+
     def test_verify_stopped_rejects_a_residual_listener(self):
         with tempfile.TemporaryDirectory() as directory:
             spec = self.spec(Path(directory))
