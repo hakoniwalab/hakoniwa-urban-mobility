@@ -179,6 +179,13 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "urban-car-hakoniwa-asset",
         )
 
+    def test_polling_transport_uses_windows_shakoc_dll(self):
+        source = (
+            urban_mobility.ROOT / "apps/car/urban_car.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('install / "bin/shakoc.dll"', source)
+        self.assertIn('elif system == "Windows":', source)
+
     def test_car_launcher_does_not_enable_ondemand_without_mux_config(self):
         source = urban_composer.multi_car
         text = (source.ROOT / "tools/multi_car.py").read_text(encoding="utf-8")
