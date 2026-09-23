@@ -69,12 +69,13 @@ python .\tools\urban_mobility.py doctor
 Recipe contract, installed Foundation receipts/capabilities, and declared local
 artifacts before Urban-specific composition begins.
 
-On Windows, native executable requirements are expanded with
-`${NATIVE_EXECUTABLE_SUFFIX}`, so the Car plant is checked as
-`urban-car-hakoniwa-asset.exe`.
+The managed `plan` and `doctor` validate source prerequisites, not generated
+build outputs. In particular, the Car plant executable is produced by
+`configure`; requiring `build/bin/urban-car-hakoniwa-asset.exe` before
+`configure` would create a circular prerequisite.
 
-Do not install ad-hoc Python packages merely to satisfy a lower-level tool
-before this managed `doctor` has passed.
+Do not install ad-hoc Python packages or manually build generated outputs merely
+to satisfy a lower-level tool before this managed `doctor` has passed.
 
 ## 3. Configure
 
