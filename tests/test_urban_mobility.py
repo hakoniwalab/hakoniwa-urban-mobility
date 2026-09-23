@@ -151,6 +151,7 @@ class UrbanMobilityToolTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("PyYAML>=6.0,<7", requirements)
         self.assertIn("pygame==2.6.1", requirements)
+        self.assertIn("mujoco==3.13.0", requirements)
 
     def test_car_asset_build_matches_release_foundation_on_multiconfig_hosts(self):
         multi_car = urban_composer.multi_car
