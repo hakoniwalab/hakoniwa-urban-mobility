@@ -27,7 +27,9 @@ class UrbanMobilityToolTest(unittest.TestCase):
 
     def test_recipe_command_delegates_with_current_python(self):
         completed = mock.Mock(returncode=0)
-        with mock.patch.object(urban_mobility.subprocess, "run", return_value=completed) as runner:
+        with mock.patch.object(
+            urban_mobility.subprocess, "run", return_value=completed
+        ) as runner:
             self.assertEqual(urban_mobility.recipe_command("doctor"), 0)
         command = runner.call_args.args[0]
         self.assertEqual(command[0], sys.executable)
@@ -58,6 +60,7 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}",
             recipe,
         )
+        self.assertIn("hakoniwa-drone-show:", recipe)
 
     def test_multi_car_native_executable_uses_windows_suffix(self):
         multi_car = urban_composer.multi_car
@@ -72,7 +75,9 @@ class UrbanMobilityToolTest(unittest.TestCase):
         completed = mock.Mock(returncode=0, stdout='{"id":"urban"}', stderr="")
         with (
             mock.patch.object(multi_car, "required", side_effect=lambda path, label: path),
-            mock.patch.object(multi_car.subprocess, "run", return_value=completed) as runner,
+            mock.patch.object(
+                multi_car.subprocess, "run", return_value=completed
+            ) as runner,
         ):
             self.assertEqual(multi_car.load_yaml(Path("config.yaml")), {"id": "urban"})
         command = runner.call_args.args[0]
