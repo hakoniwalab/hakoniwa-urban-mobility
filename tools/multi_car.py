@@ -542,7 +542,7 @@ def paths() -> dict[str, Path]:
         "scenario_executor": ROOT / "apps/car/scenario_executor.py",
         "command_client": ROOT / "apps/car/urban_car.py",
         "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
-        "ps5_mapping": ROOT / "config/car/ps5-controller-macos.json",
+        "ps5_mapping": ROOT / "config/car/dualsense-controller.json",
         "core_config": foundation_install().parent / "config/cpp_core_config.json",
         "web_bridge": native_executable(foundation_install() / "bin/hakoniwa-pdu-web-bridge"),
         "http_server": ROOT / "tools/workspace_http_server.py",
