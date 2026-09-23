@@ -199,6 +199,15 @@ recipe_local_requirements:
       - {path: config/controller/param-api-mixer-mujoco.txt, kind: file}
       - {path: drone_api/rc/rc-custom.py, kind: file}
       - {path: drone_api/rc/rc_config/ps4-control.json, kind: file}
+  hakoniwa-drone-show:
+    root:
+      default_path: ../hakoniwa-drone-show
+      override_env: HAKONIWA_DRONE_SHOW_ROOT
+      relative_to: recipe_repository
+    source:
+      type: local
+    required_artifacts:
+      - {path: tools/recipe/drone_fleet_mujoco_city.py, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
