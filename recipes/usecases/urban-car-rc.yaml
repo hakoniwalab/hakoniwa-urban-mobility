@@ -87,6 +87,9 @@ runtime_dependencies:
       - name: pygame
         version: "2.6.1"
         purpose: Read the local RC controller used by the Car command sender.
+      - name: mujoco
+        version: "3.13.0"
+        purpose: Validate composed City World + Golf Cart MJCF during configure.
 
 foundation_contract:
   mode: required
