@@ -59,6 +59,26 @@ class UrbanMobilityToolTest(unittest.TestCase):
             recipe,
         )
 
+    def test_multi_car_native_executable_uses_windows_suffix(self):
+        multi_car = urban_composer.multi_car
+        with mock.patch.object(multi_car.sys, "platform", "win32"):
+            self.assertEqual(
+                multi_car.native_executable(Path("build/bin/urban-car-hakoniwa-asset")),
+                Path("build/bin/urban-car-hakoniwa-asset.exe"),
+            )
+
+    def test_multi_car_yaml_loader_reuses_business_pack_exporter(self):
+        multi_car = urban_composer.multi_car
+        completed = mock.Mock(returncode=0, stdout='{"id":"urban"}', stderr="")
+        with (
+            mock.patch.object(multi_car, "required", side_effect=lambda path, label: path),
+            mock.patch.object(multi_car.subprocess, "run", return_value=completed) as runner,
+        ):
+            self.assertEqual(multi_car.load_yaml(Path("config.yaml")), {"id": "urban"})
+        command = runner.call_args.args[0]
+        self.assertEqual(command[0], "ruby")
+        self.assertTrue(str(command[1]).endswith("recipes/tools/export_recipe_json.rb"))
+
     def test_spec_is_recipe_local(self):
         with tempfile.TemporaryDirectory() as directory:
             selected = Path(directory) / "work"
