@@ -63,6 +63,14 @@ class UrbanMobilityToolTest(unittest.TestCase):
         self.assertIn("apps/car/urban-car-hakoniwa-asset.cpp", recipe)
         self.assertIn("hakoniwa-drone-show:", recipe)
         self.assertIn(
+            "url: https://github.com/hakoniwalab/hakoniwa-drone-show.git",
+            recipe,
+        )
+        self.assertIn(
+            "url: https://github.com/toppers/hakoniwa-drone-core.git",
+            recipe,
+        )
+        self.assertIn(
             "requirements: recipes/requirements/urban-mobility-rc.txt",
             recipe,
         )
