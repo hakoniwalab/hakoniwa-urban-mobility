@@ -1,3 +1,4 @@
 # Urban Car RC managed Recipe runtime dependencies.
 PyYAML>=6.0,<7
 pygame==2.6.1
+mujoco==3.13.0
