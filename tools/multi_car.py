@@ -134,6 +134,29 @@ def native_executable(path: Path) -> Path:
     return path
 
 
+def build_car_asset(*, enable_mirror: bool = False) -> None:
+    """Build the host-native Urban Car plant from the selected sibling sources."""
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(ROOT),
+            "-B",
+            str(ROOT / "build"),
+            f"-DHAKO_URBAN_ENABLE_MIRROR={'ON' if enable_mirror else 'OFF'}",
+            "-DHAKO_URBAN_ENABLE_VIEWER=ON",
+            "-DBUILD_TESTING=ON",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["cmake", "--build", str(ROOT / "build"), "--parallel", "4"],
+        cwd=ROOT,
+        check=True,
+    )
+
+
 def load_yaml(path: Path) -> dict:
     """Load YAML through the dependency-pinned Foundation Python environment."""
     required(path, "Urban Car Fleet configuration")
