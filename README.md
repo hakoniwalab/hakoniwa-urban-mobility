@@ -37,9 +37,9 @@ python tools/urban_mobility.py configure
 On Windows, enter the Business Pack workspace first:
 
 ```powershell
-PS C:\\project\\urban\\hakoniwa-business-pack> python tools\\workspace.py enter
-(hako) PS C:\\project\\urban\\hakoniwa-business-pack> cd ..\\hakoniwa-urban-mobility
-(hako) PS C:\\project\\urban\\hakoniwa-urban-mobility> python tools\\urban_mobility.py doctor
+PS C:\project\urban\hakoniwa-business-pack> python tools\workspace.py enter
+(hako) PS C:\project\urban\hakoniwa-business-pack> cd ..\hakoniwa-urban-mobility
+(hako) PS C:\project\urban\hakoniwa-urban-mobility> python tools\urban_mobility.py doctor
 ```
 
 The lower-level `multi_car.py`, `drone_one.py`, and legacy RC tools are
