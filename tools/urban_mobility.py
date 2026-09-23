@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import importlib.util
 import json
 from pathlib import Path
 import platform
@@ -23,11 +24,25 @@ sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 import urban_lifecycle  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
-from recipe import load_recipe as load_managed_recipe  # noqa: E402
 
 
 class UrbanMobilityError(RuntimeError):
     pass
+
+
+def load_managed_recipe(path: Path) -> dict:
+    """Load a managed Recipe through the Business Pack recipe.py module."""
+    script = BUSINESS_PACK / "tools/recipe.py"
+    spec = importlib.util.spec_from_file_location(
+        "business_pack_recipe_for_urban_mobility",
+        script,
+    )
+    if spec is None or spec.loader is None:
+        raise UrbanMobilityError(f"cannot load Business Pack Recipe tool: {script}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.load_recipe(path)
 
 
 @dataclass(frozen=True)
