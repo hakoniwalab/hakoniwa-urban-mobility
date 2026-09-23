@@ -35,6 +35,35 @@ class UrbanLifecycleTest(unittest.TestCase):
             with self.assertRaisesRegex(lifecycle.LifecycleError, "does not belong"):
                 lifecycle.read_session(spec)
 
+    def test_http_ready_uses_plain_local_http_without_ssl_context(self):
+        response = mock.Mock(status=200)
+        connection = mock.Mock()
+        connection.getresponse.return_value = response
+        with mock.patch.object(
+            lifecycle.http.client,
+            "HTTPConnection",
+            return_value=connection,
+        ) as factory:
+            self.assertTrue(
+                lifecycle.http_ready(
+                    "http://127.0.0.1:8000/viewer?autoConnect=true"
+                )
+            )
+
+        factory.assert_called_once_with("127.0.0.1", 8000, timeout=1.0)
+        connection.request.assert_called_once_with(
+            "GET", "/viewer?autoConnect=true"
+        )
+        connection.close.assert_called_once()
+
+    def test_http_ready_rejects_nonlocal_or_https_urls(self):
+        with mock.patch.object(
+            lifecycle.http.client, "HTTPConnection"
+        ) as factory:
+            self.assertFalse(lifecycle.http_ready("https://127.0.0.1:8000/viewer"))
+            self.assertFalse(lifecycle.http_ready("http://example.com/viewer"))
+        factory.assert_not_called()
+
     def test_start_rejects_an_existing_running_session(self):
         with tempfile.TemporaryDirectory() as directory:
             spec = self.spec(Path(directory))
