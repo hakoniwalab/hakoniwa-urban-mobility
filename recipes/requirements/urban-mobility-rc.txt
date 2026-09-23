@@ -1,0 +1,2 @@
+# Urban composition and scenario YAML parsing.
+PyYAML>=6.0,<7
