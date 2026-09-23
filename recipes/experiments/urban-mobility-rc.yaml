@@ -109,6 +109,15 @@ execution_environment:
     - HTTP 8000, WebSocket 8765, and Launcher control 54111 must be available before start.
     - A human operator connects and operates the PS4 controller after Demo Ready.
 
+runtime_dependencies:
+  python:
+    interpreter: work/foundation/install/python
+    requirements: recipes/requirements/urban-mobility-rc.txt
+    packages:
+      - name: PyYAML
+        version: ">=6.0,<7"
+        purpose: Parse Urban composition, scenario, and vehicle YAML in Foundation Python.
+
 native_runtime_requirements:
   schema_version: 1
   components:
