@@ -45,6 +45,12 @@ def car_rc_context() -> urban_mobility.RecipeContext:
                         "type": "path",
                         "required": True,
                     },
+                    "web_bridge_port": {
+                        "cli": "--web-bridge-port",
+                        "target": "inputs.browser_visualization.web_bridge_port",
+                        "type": "int",
+                        "required": False,
+                    },
                 },
             },
         },
@@ -222,7 +228,7 @@ class UrbanMobilityToolTest(unittest.TestCase):
             selected = Path(directory) / "work"
             city_receipt = Path(directory) / "city-world-receipt.json"
             city_receipt.write_text("{}", encoding="utf-8")
-            args = Namespace(city_receipt=city_receipt)
+            args = Namespace(city_receipt=city_receipt, web_bridge_port=None)
             with (
                 mock.patch.dict(
                     "os.environ", {"HAKONIWA_WORK_DIR": str(selected)}
@@ -244,6 +250,38 @@ class UrbanMobilityToolTest(unittest.TestCase):
         self.assertEqual(
             generated["inputs"]["business_pack_city_receipt"]["path"],
             str(city_receipt.resolve()),
+        )
+
+    def test_car_rc_optional_web_bridge_port_override(self):
+        context = car_rc_context()
+        template = {
+            "id": "urban-car-one",
+            "inputs": {
+                "business_pack_city_receipt": {"path": "tracked-default.json"},
+                "browser_visualization": {"web_bridge_port": 18765},
+            },
+            "composition": {"output": {"recipe_id": "urban-car-one"}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            selected = Path(directory) / "work"
+            city_receipt = Path(directory) / "city-world-receipt.json"
+            city_receipt.write_text("{}", encoding="utf-8")
+            args = Namespace(city_receipt=city_receipt, web_bridge_port=19001)
+            with (
+                mock.patch.dict(
+                    "os.environ", {"HAKONIWA_WORK_DIR": str(selected)}
+                ),
+                mock.patch.object(
+                    urban_composer.multi_car,
+                    "load_yaml",
+                    return_value=template,
+                ),
+            ):
+                output = urban_mobility.materialize_template(context, args)
+            generated = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(
+            generated["inputs"]["browser_visualization"]["web_bridge_port"],
+            19001,
         )
 
     def test_spec_is_selected_recipe_local(self):
