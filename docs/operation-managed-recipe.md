@@ -22,6 +22,7 @@ C:\project\urban\
   hakoniwa-business-pack\
   hakoniwa-urban-mobility\
   hakoniwa-drone-core\
+  hakoniwa-drone-show\
   hakoniwa-robot-runtime\
   hakoniwa-mujoco-robots\
   hakoniwa-mbody-registry\
