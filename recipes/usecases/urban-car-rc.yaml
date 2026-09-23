@@ -109,6 +109,7 @@ foundation_requirements:
       shared_memory: true
       hako_cmd: true
       python_binding: true
+      callback_assets_shared: true
     build_limits:
       asset_num:
         min: 16
