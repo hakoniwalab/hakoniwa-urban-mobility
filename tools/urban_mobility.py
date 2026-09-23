@@ -17,7 +17,6 @@ WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 RECIPE_ID = "urban-mobility-rc"
 MANAGED_RECIPE = ROOT / "recipes/experiments/urban-mobility-rc.yaml"
-COMPOSITION = ROOT / "recipes/experiments/urban-mobility-shizuoka.yaml"
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
@@ -25,6 +24,7 @@ sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 import urban_lifecycle  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
+from recipe import load_recipe as load_managed_recipe  # noqa: E402
 
 
 class UrbanMobilityError(RuntimeError):
@@ -41,6 +41,25 @@ def foundation_python() -> Path:
 
 def root() -> Path:
     return recipe_root(BUSINESS_PACK, RECIPE_ID)
+
+
+def composition_path() -> Path:
+    """Resolve the Urban composition selected by the managed Recipe."""
+    data = load_managed_recipe(MANAGED_RECIPE)
+    try:
+        value = data["urban_mobility"]["composition"]["path"]
+    except (KeyError, TypeError) as exc:
+        raise UrbanMobilityError(
+            f"managed Recipe has no urban_mobility.composition.path: {MANAGED_RECIPE}"
+        ) from exc
+    if not isinstance(value, str) or not value.strip():
+        raise UrbanMobilityError(
+            f"managed Recipe has an invalid urban_mobility.composition.path: {value!r}"
+        )
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path.resolve()
 
 
 def viewer_url() -> str:
@@ -178,7 +197,7 @@ def main() -> int:
             return 1
         import urban_composer
 
-        return urban_composer.configure(COMPOSITION)
+        return urban_composer.configure(composition_path())
     if command == "open-viewer":
         return open_viewer()
     return launcher_command(command)
