@@ -161,6 +161,25 @@ target_link_libraries(urban-car-hakoniwa-asset PRIVATE
     hakoniwa-core::conductor
     ${HAKO_PDU_ENDPOINT_LIBRARY})
 
+if(WIN32)
+    # The Launcher starts this executable from outside the build tree. Stage
+    # its runtime DLL closure next to the executable so Windows can resolve
+    # MuJoCo and any other shared runtime dependencies before main() runs.
+    file(GLOB _urban_foundation_runtime_dlls
+        "${HAKONIWA_FOUNDATION_PREFIX}/bin/*.dll")
+    add_custom_command(TARGET urban-car-hakoniwa-asset POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:urban-car-hakoniwa-asset>
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:MuJoCo::mujoco>"
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_urban_foundation_runtime_dlls}
+            $<TARGET_FILE_DIR:urban-car-hakoniwa-asset>
+        COMMAND_EXPAND_LISTS)
+endif()
+
 if(MSVC)
     target_compile_options(urban-car-hakoniwa-asset PRIVATE
         /W4 /external:W0 /wd4710 /wd4711 /wd5220 /wd5247)
