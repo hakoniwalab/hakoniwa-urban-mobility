@@ -61,6 +61,14 @@ class UrbanMobilityToolTest(unittest.TestCase):
             recipe,
         )
         self.assertIn("hakoniwa-drone-show:", recipe)
+        self.assertIn(
+            "requirements: recipes/requirements/urban-mobility-rc.txt",
+            recipe,
+        )
+        requirements = (
+            urban_mobility.ROOT / "recipes/requirements/urban-mobility-rc.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("PyYAML>=6.0,<7", requirements)
 
     def test_multi_car_native_executable_uses_windows_suffix(self):
         multi_car = urban_composer.multi_car
@@ -70,19 +78,6 @@ class UrbanMobilityToolTest(unittest.TestCase):
                 Path("build/bin/urban-car-hakoniwa-asset.exe"),
             )
 
-    def test_multi_car_yaml_loader_reuses_business_pack_exporter(self):
-        multi_car = urban_composer.multi_car
-        completed = mock.Mock(returncode=0, stdout='{"id":"urban"}', stderr="")
-        with (
-            mock.patch.object(multi_car, "required", side_effect=lambda path, label: path),
-            mock.patch.object(
-                multi_car.subprocess, "run", return_value=completed
-            ) as runner,
-        ):
-            self.assertEqual(multi_car.load_yaml(Path("config.yaml")), {"id": "urban"})
-        command = runner.call_args.args[0]
-        self.assertEqual(command[0], "ruby")
-        self.assertTrue(str(command[1]).endswith("recipes/tools/export_recipe_json.rb"))
 
     def test_spec_is_recipe_local(self):
         with tempfile.TemporaryDirectory() as directory:
