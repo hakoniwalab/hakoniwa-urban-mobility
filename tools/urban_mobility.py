@@ -23,8 +23,6 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
-import drone_one  # noqa: E402
-import urban_composer  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
 
@@ -91,6 +89,8 @@ def launcher_command(operation: str) -> int:
     if operation == "start":
         if recipe_command("doctor") != 0:
             return 1
+        import drone_one
+
         paths = drone_one._paths(RECIPE_ID)
         configured = drone_one.read_selected_recipe(paths)
         runtime_recipe = drone_one.load_runtime_recipe(configured)
@@ -162,6 +162,8 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     command = parser().parse_args().command
     if command == "prepare-native":
+        import drone_one
+
         paths = drone_one._paths(RECIPE_ID)
         return drone_one.base.prepare_native_distribution(
             drone_one.DEFAULT_DRONE_ROOT,
@@ -174,6 +176,8 @@ def main() -> int:
     if command == "configure":
         if recipe_command("configure") != 0:
             return 1
+        import urban_composer
+
         return urban_composer.configure(COMPOSITION)
     if command == "open-viewer":
         return open_viewer()
