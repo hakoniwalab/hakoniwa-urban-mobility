@@ -242,7 +242,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_DRONE_CORE_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/toppers/hakoniwa-drone-core.git
     required_artifacts:
       - {path: NATIVE_RUNTIME_REQUIREMENTS.yaml, kind: file}
       - {path: MUJOCO_VERSION.txt, kind: file}
@@ -257,7 +258,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_DRONE_SHOW_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-drone-show.git
     required_artifacts:
       - {path: tools/recipe/drone_fleet_mujoco_city.py, kind: file}
   hakoniwa-robot-runtime:
@@ -266,7 +268,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_ROBOT_RUNTIME_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-robot-runtime.git
     required_artifacts:
       - {path: include, kind: directory}
       - {path: src, kind: directory}
@@ -276,7 +279,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MUJOCO_ROBOTS_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mujoco-robots.git
     required_artifacts:
       - {path: MUJOCO_VERSION.txt, kind: file}
       - {path: src, kind: directory}
@@ -286,7 +290,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MBODY_REGISTRY_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mbody-registry.git
     required_artifacts:
       - {path: tools/compose_mujoco_world.py, kind: file}
       - {path: bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml, kind: file}
@@ -297,7 +302,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_THREEJS_DRONE_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-threejs-drone.git
     required_artifacts:
       - {path: index.html, kind: file}
       - {path: config, kind: directory}
@@ -307,7 +313,8 @@ recipe_local_requirements:
       override_env: HAKONIWA_MAP_VIEWER_ROOT
       relative_to: recipe_repository
     source:
-      type: local
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-map-viewer.git
     required_artifacts:
       - {path: src/client/index.html, kind: file}
 
