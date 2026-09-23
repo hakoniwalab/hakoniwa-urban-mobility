@@ -136,6 +136,15 @@ class UrbanMobilityToolTest(unittest.TestCase):
         self.assertIn("target: inputs.business_pack_city_receipt.path", recipe)
         self.assertNotIn("hakoniwa-drone-core:", recipe)
         self.assertNotIn("hakoniwa-drone-show:", recipe)
+        self.assertIn("hakoniwa-pdu-registry:", recipe)
+        self.assertIn(
+            "url: https://github.com/hakoniwalab/hakoniwa-pdu-registry.git",
+            recipe,
+        )
+        self.assertIn(
+            "pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp",
+            recipe,
+        )
 
         requirements = (
             urban_mobility.ROOT / "recipes/requirements/urban-car-rc.txt"
