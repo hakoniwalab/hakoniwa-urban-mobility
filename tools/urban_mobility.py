@@ -396,7 +396,14 @@ def launcher_command(operation: str, context: RecipeContext) -> int:
             raise UrbanMobilityError(
                 f"Recipe {context.recipe_id} is already stopped: {lifecycle.session}"
             )
-        urban_lifecycle.read_session(lifecycle)
+        session = urban_lifecycle.read_session(lifecycle) or {}
+        session_state = session.get("state")
+        if session_state in {"FAILED", "TERMINATED"}:
+            report = urban_lifecycle.status_report(lifecycle)
+            print(json.dumps(report, indent=2))
+            if operation == "stop":
+                urban_lifecycle.verify_stopped(lifecycle)
+            return 0
         command = [
             str(foundation_python()),
             "-m",
