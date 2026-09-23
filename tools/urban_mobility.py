@@ -409,6 +409,14 @@ def launcher_command(operation: str, context: RecipeContext) -> int:
         return result.returncode
     if operation == "stop":
         urban_lifecycle.verify_stopped(lifecycle)
+    elif operation == "start":
+        report = urban_lifecycle.wait_for_demo_ready(lifecycle)
+        print(json.dumps(report, indent=2))
+        if not report["demo_ready"]:
+            raise UrbanMobilityError(
+                f"Recipe {context.recipe_id} Launcher is RUNNING but browser "
+                "readiness did not complete within 15 seconds; inspect Recipe logs"
+            )
     else:
         print(json.dumps(urban_lifecycle.status_report(lifecycle), indent=2))
     return 0
