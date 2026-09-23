@@ -138,7 +138,7 @@ foundation_requirements:
       shared_memory: true
       hako_cmd: true
       python_binding: true
-    build_limits: &urban_limits
+    build_limits:
       asset_num:
         min: 16
       pdu_channel_max:
@@ -161,18 +161,60 @@ foundation_requirements:
       launcher_background_lifecycle: true
       shm_backend: true
       external_rpc: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
   hakoniwa-pdu-endpoint:
     capabilities:
       hakoniwa_core: true
       core_callback: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
   hakoniwa-pdu-bridge-core:
     capabilities:
       hakoniwa_app: true
       web_bridge: true
       web_bridge_fleets_config_format: true
-    build_limits: *urban_limits
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
 
 recipe_local_requirements_schema_version: 1
 recipe_local_requirements:
