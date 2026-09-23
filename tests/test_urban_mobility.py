@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -22,6 +23,40 @@ class UrbanMobilityToolTest(unittest.TestCase):
             drone["spawn"]["up_m"],
             float(drone["rooftop"]["surface_height_m"])
             + float(drone["rooftop"]["base_clearance_m"]),
+        )
+
+    def test_recipe_command_delegates_with_current_python(self):
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(urban_mobility.subprocess, "run", return_value=completed) as runner:
+            self.assertEqual(urban_mobility.recipe_command("doctor"), 0)
+        command = runner.call_args.args[0]
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[2], "doctor")
+        self.assertEqual(command[3], "--recipe")
+        self.assertEqual(Path(command[4]), urban_mobility.MANAGED_RECIPE)
+
+    def test_foundation_python_uses_workspace_platform_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            install = Path(directory) / "install"
+            expected = install / "python" / "Scripts" / "python.exe"
+            expected.parent.mkdir(parents=True)
+            expected.touch()
+            with (
+                mock.patch.object(urban_mobility, "foundation_install", return_value=install),
+                mock.patch.object(
+                    urban_mobility,
+                    "foundation_python_layout",
+                    return_value=(expected, expected.parent),
+                ) as layout,
+            ):
+                self.assertEqual(urban_mobility.foundation_python(), expected)
+            layout.assert_called_once_with(install / "python")
+
+    def test_managed_recipe_uses_native_executable_suffix(self):
+        recipe = urban_mobility.MANAGED_RECIPE.read_text(encoding="utf-8")
+        self.assertIn(
+            "build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}",
+            recipe,
         )
 
     def test_spec_is_recipe_local(self):
