@@ -143,6 +143,7 @@ def build_car_asset(*, enable_mirror: bool = False) -> None:
             str(ROOT),
             "-B",
             str(ROOT / "build"),
+            "-DCMAKE_BUILD_TYPE=Release",
             f"-DHAKO_URBAN_ENABLE_MIRROR={'ON' if enable_mirror else 'OFF'}",
             "-DHAKO_URBAN_ENABLE_VIEWER=ON",
             "-DBUILD_TESTING=ON",
@@ -151,7 +152,17 @@ def build_car_asset(*, enable_mirror: bool = False) -> None:
         check=True,
     )
     subprocess.run(
-        ["cmake", "--build", str(ROOT / "build"), "--parallel", "4"],
+        [
+            "cmake",
+            "--build",
+            str(ROOT / "build"),
+            "--config",
+            "Release",
+            "--target",
+            "urban-car-hakoniwa-asset",
+            "--parallel",
+            "4",
+        ],
         cwd=ROOT,
         check=True,
     )
