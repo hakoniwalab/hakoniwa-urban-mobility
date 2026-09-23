@@ -22,30 +22,54 @@ The target ownership and lifecycle contract is defined in
 
 ## Standard managed Recipe entrypoint
 
-The integrated Urban Mobility workflow is operated through
-`tools/urban_mobility.py`. This is the supported entrypoint for
-`plan / doctor / configure / start / status / stop / open-viewer`.
-The first three commands delegate to the Business Pack Recipe engine and
-evaluate `recipes/experiments/urban-mobility-rc.yaml`.
+`tools/urban_mobility.py` is the user-facing lifecycle entrypoint. The
+simulation topology is selected with `--recipe`; the Python entrypoint does
+not own a fixed Urban use case.
+
+The first managed use-case Recipe is one RC-controlled Golf Cart:
 
 ```bash
-python tools/urban_mobility.py plan
-python tools/urban_mobility.py doctor
-python tools/urban_mobility.py configure
+python tools/urban_mobility.py plan \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py doctor \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py configure \
+  --recipe recipes/usecases/urban-car-rc.yaml \
+  --city-receipt /path/to/city-world-receipt.json
 ```
+
+The Recipe selects the Car/RC topology and a tracked configuration template.
+`--city-receipt` fills the City World input at configure time. The receipt is
+the artifact produced by the City World/PLATEAU workflow; Urban Mobility does
+not redownload or regenerate the city.
+
+After configuration, use the same Recipe identity for runtime operations:
+
+```bash
+python tools/urban_mobility.py check-rc --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py start --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py status --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py open-viewer --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py stop --recipe recipes/usecases/urban-car-rc.yaml
+```
+
+The existing integrated Drone + multi-Car Recipe remains available as a
+separate use case under `recipes/experiments/urban-mobility-rc.yaml`.
+This separation lets future Recipes describe shared-world Car/Drone simulation,
+Drone Show, or other topologies without growing `urban_mobility.py` into a
+topology-specific script.
 
 On Windows, enter the Business Pack workspace first:
 
 ```powershell
 PS C:\project\urban\hakoniwa-business-pack> python tools\workspace.py enter
 (hako) PS C:\project\urban\hakoniwa-business-pack> cd ..\hakoniwa-urban-mobility
-(hako) PS C:\project\urban\hakoniwa-urban-mobility> python tools\urban_mobility.py doctor
 ```
 
-The lower-level `multi_car.py`, `drone_one.py`, and legacy RC tools are
-kept for component regression and composition work; they are not the primary
-Windows setup/health-check path. See
-[`docs/operation-managed-recipe.md`](docs/operation-managed-recipe.md).
+The lower-level `multi_car.py`, `drone_one.py`, and legacy RC tools remain
+component regression/composition helpers rather than the primary setup path.
+See [`docs/operation-managed-recipe.md`](docs/operation-managed-recipe.md).
+
 
 ## Recipe-selected one-Drone checkpoint
 
