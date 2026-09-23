@@ -196,6 +196,16 @@ recipe_local_requirements:
       - {path: apps/car/ps5_ackermann_sender.py, kind: file}
       - {path: CMakeLists.txt, kind: file}
       - {path: config/car/dualsense-controller.json, kind: file}
+  hakoniwa-pdu-registry:
+    root:
+      default_path: ../hakoniwa-pdu-registry
+      override_env: HAKONIWA_PDU_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-pdu-registry.git
+    required_artifacts:
+      - {path: pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
