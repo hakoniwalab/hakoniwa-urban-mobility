@@ -268,6 +268,16 @@ recipe_local_requirements:
       url: https://github.com/hakoniwalab/hakoniwa-drone-show.git
     required_artifacts:
       - {path: tools/recipe/drone_fleet_mujoco_city.py, kind: file}
+  hakoniwa-pdu-registry:
+    root:
+      default_path: ../hakoniwa-pdu-registry
+      override_env: HAKONIWA_PDU_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-pdu-registry.git
+    required_artifacts:
+      - {path: pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp, kind: file}
   hakoniwa-robot-runtime:
     root:
       default_path: ../hakoniwa-robot-runtime
