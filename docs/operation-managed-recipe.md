@@ -1,171 +1,176 @@
 # Managed Urban Mobility Recipe operation
 
-This document defines the standard lifecycle for the integrated Urban Mobility
-Recipe. The Business Pack Recipe engine owns dependency and Foundation
-validation; Urban-specific tools own composition and runtime materialization.
+`tools/urban_mobility.py` is the standard lifecycle entrypoint. A managed
+Recipe selects the simulation topology; configure-time arguments fill the
+user-specific inputs such as the City World receipt.
 
-The standard entrypoint is:
+The Python entrypoint is intentionally thin:
 
 ```text
-tools/urban_mobility.py
+urban_mobility.py
+  -> selected managed Recipe
+  -> Business Pack plan / doctor / configure
+  -> use-case template materialization
+  -> component-owned configure/runtime tools
 ```
 
-Do not use `tools/multi_car.py doctor` as the first Windows health check.
-That command is a lower-level one-Car regression tool.
+Do not use `tools/multi_car.py doctor` as the first setup health check. It is
+a lower-level Car regression tool.
 
 ## Windows 11 / PowerShell
 
-The expected sibling layout is:
-
-```text
-C:\project\urban\
-  hakoniwa-business-pack\
-  hakoniwa-urban-mobility\
-  hakoniwa-drone-core\
-  hakoniwa-drone-show\
-  hakoniwa-robot-runtime\
-  hakoniwa-mujoco-robots\
-  hakoniwa-mbody-registry\
-  hakoniwa-threejs-drone\
-  hakoniwa-map-viewer\
-```
-
-After Business Pack setup or portable workspace installation, enter the managed
-workspace:
+After Business Pack setup, enter its workspace and return to Urban Mobility:
 
 ```powershell
 PS C:\project\urban> cd .\hakoniwa-business-pack
 PS C:\project\urban\hakoniwa-business-pack> python .\tools\workspace.py enter
-Entering Hakoniwa Workspace Environment: C:\project\urban\hakoniwa-business-pack
 (hako) PS C:\project\urban\hakoniwa-business-pack> cd ..\hakoniwa-urban-mobility
 ```
 
-Confirm that `python` resolves to the Foundation Python selected by the
-Business Pack workspace:
+Confirm the selected Foundation Python if needed:
 
 ```powershell
 python -c "import sys; print(sys.executable)"
 ```
 
-A normal development workspace uses
-`work\foundation\install\python\Scripts\python.exe` on Windows.
+On a normal Windows development workspace it resolves below
+`work\foundation\install\python\Scripts\python.exe`.
 
-## 1. Plan
+## Car + RC use case
 
-```powershell
-python .\tools\urban_mobility.py plan
+The first managed template Recipe is:
+
+```text
+recipes/usecases/urban-car-rc.yaml
 ```
 
-`plan` resolves the managed Recipe, local source requirements, Foundation
-requirements, and intended actions. It must not run the Urban simulation.
+It owns the reusable topology:
 
-## 2. Doctor
+- one Ackermann Golf Cart,
+- one RC command producer,
+- one Car physics plant,
+- one WebBridge and browser Viewer,
+- the Foundation and Git dependencies needed to run them.
+
+The City World is not part of that topology. Pass an existing
+`city-world-receipt.json` produced by the City World workflow.
+
+### 1. Plan
 
 ```powershell
-python .\tools\urban_mobility.py doctor
+python .\tools\urban_mobility.py plan `
+  --recipe recipes\usecases\urban-car-rc.yaml
 ```
 
-`doctor` delegates to the Business Pack Recipe engine. It checks the managed
-Recipe contract, installed Foundation receipts/capabilities, and declared local
-artifacts before Urban-specific composition begins.
+Missing public sibling repositories are planned as Git clones. Existing
+checkouts are reused.
 
-All external Urban component repositories are declared as Git sources. If a
-sibling checkout is absent, `plan` reports `clone` and `configure` can
-materialize it automatically. Existing sibling checkouts are reused. The
-`HAKONIWA_*_ROOT` overrides remain available for explicitly selected local
-checkouts.
+### 2. Doctor
 
-The managed `plan` and `doctor` validate source prerequisites, not generated
-build outputs. In particular, the Car plant executable is produced by
-`configure`; requiring `build/bin/urban-car-hakoniwa-asset.exe` before
-`configure` would create a circular prerequisite.
+```powershell
+python .\tools\urban_mobility.py doctor `
+  --recipe recipes\usecases\urban-car-rc.yaml
+```
 
-Do not install ad-hoc Python packages or manually build generated outputs merely
-to satisfy a lower-level tool before this managed `doctor` has passed.
+Doctor checks the selected Recipe contract, Foundation receipts/capabilities,
+and source prerequisites without building generated Urban outputs.
 
-## City / composition selection
+### 3. Configure with a City World receipt
 
-The standard entrypoint does not hard-code a city-specific composition path.
-The managed Recipe selects the tracked composition through:
+```powershell
+python .\tools\urban_mobility.py configure `
+  --recipe recipes\usecases\urban-car-rc.yaml `
+  --city-receipt C:\path\to\city-world-receipt.json
+```
+
+The Recipe declares this parameter mapping:
 
 ```yaml
 urban_mobility:
-  composition:
-    path: recipes/experiments/urban-mobility-shizuoka.yaml
+  use_case: car-rc
+  template:
+    path: recipes/experiments/urban-car-one.yaml
+  parameters:
+    city_receipt:
+      cli: --city-receipt
+      target: inputs.business_pack_city_receipt.path
+      type: path
+      required: true
 ```
 
-The selected composition owns the concrete City World Receipt, route/scenario,
-vehicle count, spawn settings, and Viewer inputs. To change the city, select a
-different tracked composition in the managed Recipe rather than editing
-`tools/urban_mobility.py`.
-
-## 3. Configure
-
-```powershell
-python .\tools\urban_mobility.py configure
-```
-
-`configure` first runs the Business Pack Recipe configure path, then
-materializes the Urban integrated composition under:
+The tracked template is not edited. Urban writes an effective generated
+composition under:
 
 ```text
-hakoniwa-business-pack\work\recipes\urban-mobility-rc\
+hakoniwa-business-pack\work\recipes\urban-car-rc\config\urban-composition.json
 ```
 
-The managed Recipe declares
-`recipes/requirements/urban-mobility-rc.txt` as its Python runtime
-requirements. Business Pack installs those requirements into Foundation Python
-before Urban-specific composition runs; currently this supplies
-`PyYAML>=6.0,<7`. Do not repair a missing module with an ad-hoc
-`pip install`; fix the managed Recipe dependency contract instead.
+Business Pack installs the Recipe-owned Python requirements
+(`PyYAML` and `pygame`) into Foundation Python before the Urban composition
+is materialized.
 
-## 4. Start and inspect
+### 4. Check the RC controller
 
 ```powershell
-python .\tools\urban_mobility.py start
-python .\tools\urban_mobility.py status
-python .\tools\urban_mobility.py open-viewer
+python .\tools\urban_mobility.py check-rc `
+  --recipe recipes\usecases\urban-car-rc.yaml
 ```
 
-`start` re-runs managed Recipe `doctor` before launching. Runtime control
-uses the Foundation Python selected by the Business Pack platform layout rather
-than a hard-coded POSIX `python/bin/python3` path.
+The tracked DualSense axis contract is platform-neutral. Actual controller
+enumeration and axis behavior should still be verified on each host platform.
 
-## 5. Stop
+### 5. Start, inspect, and stop
 
 ```powershell
-python .\tools\urban_mobility.py stop
-python .\tools\urban_mobility.py status
+python .\tools\urban_mobility.py start `
+  --recipe recipes\usecases\urban-car-rc.yaml
+python .\tools\urban_mobility.py status `
+  --recipe recipes\usecases\urban-car-rc.yaml
+python .\tools\urban_mobility.py open-viewer `
+  --recipe recipes\usecases\urban-car-rc.yaml
+python .\tools\urban_mobility.py stop `
+  --recipe recipes\usecases\urban-car-rc.yaml
 ```
 
-Only the selected `urban-mobility-rc` Launcher session is controlled.
+Runtime lifecycle state is isolated under the selected Recipe ID
+(`urban-car-rc`).
 
 ## macOS / Linux
 
-Use the same Urban commands. Activate or enter the Business Pack workspace
-first, then run:
+Use the same Recipe and arguments after entering/activating the Business Pack
+workspace:
 
 ```bash
-python tools/urban_mobility.py plan
-python tools/urban_mobility.py doctor
-python tools/urban_mobility.py configure
-python tools/urban_mobility.py start
+python tools/urban_mobility.py plan \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py doctor \
+  --recipe recipes/usecases/urban-car-rc.yaml
+python tools/urban_mobility.py configure \
+  --recipe recipes/usecases/urban-car-rc.yaml \
+  --city-receipt /path/to/city-world-receipt.json
 ```
 
-The Business Pack workspace selects the native Foundation Python layout for the
-host platform.
+Business Pack resolves the host-native Foundation Python and executable layout.
+
+## Other managed use cases
+
+The existing integrated Drone + multi-Car Recipe is still available:
+
+```text
+recipes/experiments/urban-mobility-rc.yaml
+```
+
+It declares `use_case: drone-car-distributed` and points to its tracked
+Shizuoka composition. This is retained while the generalized Recipe model is
+introduced. Future Recipes can describe shared-world Car/Drone simulation,
+Drone Show, or other topologies.
 
 ## Lower-level regression tools
-
-The following tools remain useful but are not the primary managed Recipe
-entrypoint:
 
 - `tools/multi_car.py`: Car fleet composition and one-Car/multi-Car regression.
 - `tools/drone_one.py`: one-Drone component regression.
 - `tools/drone_car_rc.py`: legacy two-asset RC regression.
-- `tools/urban_composer.py`: integrated composition implementation used by
-  `urban_mobility.py configure`.
+- `tools/urban_composer.py`: integrated Drone + multi-Car composition.
 
-When a managed `doctor` failure points to one of these components, use its
-lower-level diagnostics to isolate the component. Do not invert that order for
-normal setup verification.
+Use lower-level diagnostics after the managed Recipe identifies a component
+problem; do not make them the normal setup entrypoint.
