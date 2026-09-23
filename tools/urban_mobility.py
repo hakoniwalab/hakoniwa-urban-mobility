@@ -116,13 +116,34 @@ def spec(
     require_viewer: bool = True,
 ) -> urban_lifecycle.LifecycleSpec:
     recipe_root_path = root(context)
-    url = viewer_url(context) if require_viewer else "http://127.0.0.1:8000/"
+    contract_path = recipe_root_path / "config/viewer-url.json"
+    http_port = 8000
+    websocket_port = 8765
+    url = "http://127.0.0.1:8000/"
+    if contract_path.is_file():
+        try:
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            if isinstance(payload.get("http_port"), int):
+                http_port = payload["http_port"]
+            if isinstance(payload.get("websocket_port"), int):
+                websocket_port = payload["websocket_port"]
+            if isinstance(payload.get("url"), str):
+                url = payload["url"]
+        except (OSError, json.JSONDecodeError) as exc:
+            raise UrbanMobilityError(
+                f"invalid Viewer URL contract: {contract_path}: {exc}"
+            ) from exc
+    elif require_viewer:
+        url = viewer_url(context)
+
     return urban_lifecycle.LifecycleSpec(
         recipe_id=context.recipe_id,
         recipe_root=recipe_root_path,
         launcher=recipe_root_path / "config/launcher.json",
         session=recipe_root_path / "runtime/launcher-session.json",
         viewer_url=url,
+        websocket_port=websocket_port,
+        ports=(http_port, websocket_port, 54111),
     )
 
 
@@ -212,6 +233,12 @@ def _parameter_values(context: RecipeContext, args: argparse.Namespace) -> dict[
                     f"Urban parameter {name} file not found: {path}"
                 )
             value = str(path)
+        elif definition.get("type") == "int":
+            value = int(value)
+            if not 1 <= value <= 65535:
+                raise UrbanMobilityError(
+                    f"Urban parameter {name} must be within 1..65535: {value}"
+                )
         values[name] = value
     return values
 
@@ -285,6 +312,8 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
         "url": url,
         "layout": "three-main",
         "use_case": context.use_case,
+        "http_port": resolved["visualization"]["http_port"],
+        "websocket_port": resolved["visualization"]["web_bridge_port"],
     }
     collider_config = root(context) / "config/threejs/viewer-config-colliders.json"
     if collider_config.is_file():
@@ -462,6 +491,11 @@ def parser() -> argparse.ArgumentParser:
         "--city-receipt",
         type=Path,
         help="City World receipt used to fill a Recipe template input",
+    )
+    result.add_argument(
+        "--web-bridge-port",
+        type=int,
+        help="optional WebBridge port override for configure",
     )
     return result
 
