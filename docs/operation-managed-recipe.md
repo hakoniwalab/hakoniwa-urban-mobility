@@ -120,6 +120,16 @@ Business Pack installs the Recipe-owned Python requirements
 (`PyYAML` and `pygame`) into Foundation Python before the Urban composition
 is materialized.
 
+On Windows, the managed Urban Recipes also require
+`hakoniwa-core-pro.capabilities.callback_assets_shared: true`. Callback-backed
+Endpoint code runs from a DLL, so the callback assets runtime must be shared
+across the executable/DLL boundary. Without this capability, separate static
+copies of Hakoniwa Core runtime state can be created in one process and the
+WebBridge may terminate with a native access violation. Business Pack doctor
+uses the Component Receipt to detect this mismatch and rebuild Foundation with
+the shared callback runtime when necessary. This is the Windows DLL-boundary
+case tracked by `hakoniwa-core-pro#90` and `hakoniwa-core-pro#92`.
+
 ### 4. Check the RC controller
 
 ```powershell
