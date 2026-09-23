@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -77,6 +78,16 @@ def workspace_url(path: Path) -> str:
     except ValueError as error:
         raise RecipeError(f"browser asset is outside the workspace: {path}") from error
     return "/" + relative.as_posix()
+
+
+def materialize_browser_asset(source: Path, target: Path) -> Path:
+    """Copy an external browser asset into the managed Recipe workspace."""
+    source = required(source.resolve(), "browser asset")
+    target = target.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source != target:
+        shutil.copy2(source, target)
+    return target
 
 
 def map_viewer_url(resolved: dict, viewer_config: Path) -> str:
@@ -1369,6 +1380,14 @@ def materialize_browser_visualization(
     """Materialize a read-only state bridge and compact Three.js configs."""
     bridge_root = work / "web-bridge"
     browser_root = work / "threejs"
+    asset_root = browser_root / "assets"
+    city_glb = materialize_browser_asset(
+        city_glb, asset_root / "city-world.glb"
+    )
+    if collider_glb is not None:
+        collider_glb = materialize_browser_asset(
+            collider_glb, asset_root / "city-world-colliders.glb"
+        )
     state_types = json.loads(runtime_files["state_pdu_types"].read_text(encoding="utf-8"))
 
     state_types_path = bridge_root / "pdu/urban-fleet-state-pdutypes.json"
