@@ -186,7 +186,7 @@ recipe_local_requirements:
     required_artifacts:
       - {path: tools/drone_one.py, kind: file}
       - {path: tools/multi_car.py, kind: file}
-      - {path: build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}, kind: executable}
+      - {path: "build/bin/urban-car-hakoniwa-asset${NATIVE_EXECUTABLE_SUFFIX}", kind: executable}
       - {path: recipes/experiments/urban-drone-one.yaml, kind: file}
       - {path: config/drone/hexa/drone.xml, kind: file}
       - {path: config/drone/hexa/drone_config_0.json, kind: file}
