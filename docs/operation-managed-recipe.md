@@ -69,6 +69,12 @@ python .\tools\urban_mobility.py doctor
 Recipe contract, installed Foundation receipts/capabilities, and declared local
 artifacts before Urban-specific composition begins.
 
+All external Urban component repositories are declared as Git sources. If a
+sibling checkout is absent, `plan` reports `clone` and `configure` can
+materialize it automatically. Existing sibling checkouts are reused. The
+`HAKONIWA_*_ROOT` overrides remain available for explicitly selected local
+checkouts.
+
 The managed `plan` and `doctor` validate source prerequisites, not generated
 build outputs. In particular, the Car plant executable is produced by
 `configure`; requiring `build/bin/urban-car-hakoniwa-asset.exe` before
