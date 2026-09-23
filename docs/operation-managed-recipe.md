@@ -83,6 +83,22 @@ build outputs. In particular, the Car plant executable is produced by
 Do not install ad-hoc Python packages or manually build generated outputs merely
 to satisfy a lower-level tool before this managed `doctor` has passed.
 
+## City / composition selection
+
+The standard entrypoint does not hard-code a city-specific composition path.
+The managed Recipe selects the tracked composition through:
+
+```yaml
+urban_mobility:
+  composition:
+    path: recipes/experiments/urban-mobility-shizuoka.yaml
+```
+
+The selected composition owns the concrete City World Receipt, route/scenario,
+vehicle count, spawn settings, and Viewer inputs. To change the city, select a
+different tracked composition in the managed Recipe rather than editing
+`tools/urban_mobility.py`.
+
 ## 3. Configure
 
 ```powershell
