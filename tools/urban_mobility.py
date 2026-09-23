@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import importlib.util
 import json
+import os
 from pathlib import Path
 import platform
 import subprocess
@@ -301,7 +302,12 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     import multi_car
 
     config_path = materialize_template(context, args)
-    multi_car.build_car_asset()
+    if not getattr(args, "reuse_built_asset", False):
+        multi_car.build_car_asset()
+    elif not (ROOT / "build/bin/urban-car-hakoniwa-asset.exe").is_file():
+        raise UrbanMobilityError(
+            "--reuse-built-asset requires build/bin/urban-car-hakoniwa-asset.exe"
+        )
     resolved = multi_car.resolve_config(config_path)
     if multi_car.configure(resolved) != 0:
         return 1
@@ -335,7 +341,8 @@ def configure_integrated(context: RecipeContext) -> int:
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
-    if recipe_command("configure", context) != 0:
+    portable_reconfigure = getattr(args, "portable_reconfigure", False)
+    if not portable_reconfigure and recipe_command("configure", context) != 0:
         return 1
     if context.use_case == "car-rc":
         return configure_car_rc(context, args)
@@ -369,7 +376,8 @@ def prepare_start(context: RecipeContext) -> None:
 
 def launcher_command(operation: str, context: RecipeContext) -> int:
     if operation == "start":
-        if recipe_command("doctor", context) != 0:
+        portable = os.environ.get("HAKONIWA_PORTABLE_WORKSPACE") == "1"
+        if not portable and recipe_command("doctor", context) != 0:
             return 1
         prepare_start(context)
         lifecycle = spec(context)
@@ -511,6 +519,22 @@ def parser() -> argparse.ArgumentParser:
         "--web-bridge-port",
         type=int,
         help="optional WebBridge port override for configure",
+    )
+    result.add_argument(
+        "--reuse-built-asset",
+        action="store_true",
+        help=(
+            "reuse the packaged Urban Car executable during configure; intended "
+            "for a portable workspace without a C++ build toolchain"
+        ),
+    )
+    result.add_argument(
+        "--portable-reconfigure",
+        action="store_true",
+        help=(
+            "regenerate relocatable runtime configuration from packaged, "
+            "prevalidated artifacts without resolving or building sources"
+        ),
     )
     return result
 

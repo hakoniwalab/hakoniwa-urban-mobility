@@ -577,6 +577,9 @@ def mujoco_library() -> Path:
     ).strip()
     if not version:
         raise RecipeError("hakoniwa-mujoco-robots/MUJOCO_VERSION.txt is empty")
+    packaged = ROOT / "build/bin/mujoco.dll"
+    if packaged.is_file():
+        return packaged.resolve()
     roots = (
         ROOT / "build/_deps/mujoco_precompiled-src",
         MUJOCO_ROBOTS / "src/cmake-build/_deps/mujoco_precompiled-src",
