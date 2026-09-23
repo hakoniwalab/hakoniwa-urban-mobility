@@ -26,6 +26,7 @@ import urban_lifecycle  # noqa: E402
 import drone_one  # noqa: E402
 import urban_composer  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
+from workspace import foundation_python_layout  # noqa: E402
 
 
 class UrbanMobilityError(RuntimeError):
@@ -33,7 +34,8 @@ class UrbanMobilityError(RuntimeError):
 
 
 def foundation_python() -> Path:
-    path = foundation_install(BUSINESS_PACK) / "python/bin/python3"
+    install = foundation_install(BUSINESS_PACK)
+    path, _ = foundation_python_layout(install / "python")
     if not path.is_file():
         raise UrbanMobilityError(f"Foundation Python not found: {path}")
     return path
@@ -74,7 +76,7 @@ def spec(*, require_viewer: bool = True) -> urban_lifecycle.LifecycleSpec:
 def recipe_command(operation: str) -> int:
     return subprocess.run(
         [
-            str(foundation_python()),
+            sys.executable,
             str(BUSINESS_PACK / "tools/recipe.py"),
             operation,
             "--recipe",
