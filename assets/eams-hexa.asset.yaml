@@ -1,0 +1,40 @@
+# Asset manifest (docs/asset-contract.md) for the Urban-owned EAMS Hexa.
+schema: hakoniwa.asset/v1
+id: eams-hexa
+kind: vehicle
+category: drone
+version: 0.1.0
+title: Urban EAMS Hexa (nominal 9 kg, 6 rotors)
+source:
+  repository: hakoniwa-urban-mobility
+  # Drone profile understood by tools/drone_one.py.
+  profile: eams-nominal-9kg
+simulator: drone-core
+model:
+  physics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone.xml
+  dynamics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone_config_0.json
+spawn:
+  # The landing collider bottom is 0.48 m below the base frame
+  # (drone_one.py EAMS_LANDING_COLLIDER_POSITION/SIZE).
+  ground_clearance_m: 0.5
+interactions:
+  # Mirror body of this Drone inside the Car world (asset-contract 5.3).
+  drone-mirror:
+    pdu_types: ${repo:hakoniwa-drone-core}/config/pdudef/drone-pdutypes.json
+    mjcf_model: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone.xml
+    mjcf_body: drone_base
+controls:
+  rc:
+    program: ${repo:hakoniwa-drone-core}/drone_api/rc/rc-custom.py
+    scope: vehicle
+    args: ["${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json"]
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/drone/city_fleet_mission.py
+    scope: vehicle
+    args: ["--drone-root", "${runtime.drone_root}",
+           "--service-config", "${runtime.service_config}",
+           "--city-marker", "${runtime.city_marker}",
+           "--mission", "${param.mission}",
+           "--summary-json", "${runtime.summary_json}"]
+    params:
+      mission: {type: path, required: true, kinds: [drone-mission]}

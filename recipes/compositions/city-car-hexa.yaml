@@ -1,0 +1,25 @@
+# City + Car + one Drone (docs/asset-contract.md): one Golf Cart on a route
+# scenario (api), one PS5-driven Golf Cart (rc), and one PS4-flown EAMS Hexa
+# (rc) whose mirror body interacts with the Cars.
+#   python tools/urban_assets.py register-city --receipt <city-world-receipt.json>
+#   python tools/urban_mobility.py configure --composition recipes/compositions/city-car-hexa.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/city-car-hexa.yaml
+schema: hakoniwa.composition/v1
+id: city-car-hexa
+world: shizuoka-22203-lat35.099-lon138.859
+vehicles:
+  - name: Car-1
+    asset: golf-cart
+    control: api
+    params: {scenario: ../scenarios/golf-cart-demo-loop.yaml}
+    spawn: {east_m: 45.0, north_m: 7.5, yaw_deg: 0.0}
+  - name: Car-2
+    asset: golf-cart
+    control: rc
+    spawn: {east_m: 10.0, north_m: 0.0, yaw_deg: 90.0}
+  - name: Drone-1
+    asset: eams-hexa
+    control: rc
+    spawn: {east_m: 5.0, north_m: -45.0, yaw_deg: 0.0}
+interactions:
+  - {type: drone-mirror, drone: Drone-1}

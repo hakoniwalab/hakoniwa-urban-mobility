@@ -298,10 +298,118 @@ def materialize_template(
     return output_path
 
 
+# Composition simulators -> the managed Recipe that prepares their environment
+# (asset-contract 7.1 step 1; one standard managed Recipe replaces this later).
+COMPOSITION_RECIPES = {
+    frozenset({"ackermann-mujoco"}): "recipes/usecases/urban-car-rc.yaml",
+    frozenset({"ackermann-mujoco", "drone-core"}): "recipes/experiments/urban-mobility-rc.yaml",
+}
+
+
+def load_composition(composition_path: Path):
+    import urban_composition
+
+    try:
+        return urban_composition.load(composition_path)
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+
+
+# A Drone-only Composition runs through tools/drone_one.py, which owns its
+# Recipe workspace; the adapter writes that tool's recipe from the Composition.
+DRONE_ONLY = frozenset({"drone-core"})
+DRONE_RECIPE_FILE = "urban-composition-drone.yaml"
+
+
+def composition_recipe(composition_path: Path) -> Path:
+    composition = load_composition(composition_path)
+    recipe = COMPOSITION_RECIPES.get(frozenset(composition.simulators()))
+    if recipe is None:
+        raise UrbanMobilityError(
+            "no managed Recipe adapts a Composition with simulators "
+            f"{sorted(composition.simulators())} yet"
+        )
+    return ROOT / recipe
+
+
+def drone_recipe_path() -> Path:
+    import drone_one
+
+    return drone_one._paths().recipe_config / DRONE_RECIPE_FILE
+
+
+def materialize_drone_recipe(composition_path: Path) -> Path:
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        recipe = urban_composition.to_drone_recipe(composition)
+        text = urban_composition.render_simple_yaml(recipe) + "\n"
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    path = drone_recipe_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def drone_composition_command(command: str, composition_path: Path) -> int:
+    """Run a Drone-only Composition through tools/drone_one.py.
+
+    configure and start rewrite the tool recipe from the Composition, so a
+    placement-only edit takes effect at the next start (drone_one.py accepts
+    pose-only recipe edits and rejects the rest until configure).
+    """
+    tool = [sys.executable, str(ROOT / "tools/drone_one.py")]
+    if command == "configure":
+        recipe = materialize_drone_recipe(composition_path)
+        return subprocess.run([*tool, "configure", "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
+    if command == "start":
+        if not drone_recipe_path().is_file():
+            raise UrbanMobilityError("the Drone Composition is not configured; run configure --composition first")
+        materialize_drone_recipe(composition_path)
+    if command in {"plan", "check-rc"}:
+        raise UrbanMobilityError(f"{command} is not supported for a Drone-only Composition")
+    return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
+
+
+def materialize_composition(context: RecipeContext, composition_path: Path) -> Path:
+    import multi_car
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        config = urban_composition.to_car_config(composition, context.recipe_id)
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    output_path = generated_composition_path(context)
+    multi_car.write_json(output_path, config)
+    multi_car.write_json(
+        root(context) / "validation/urban-inputs.json",
+        {
+            "schema_version": 1,
+            "managed_recipe": str(context.path),
+            "recipe_id": context.recipe_id,
+            "use_case": context.use_case,
+            "composition": str(composition.path),
+            "composition_id": composition.id,
+            "generated_composition": str(output_path),
+        },
+    )
+    return output_path
+
+
 def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     import multi_car
 
-    config_path = materialize_template(context, args)
+    if getattr(args, "composition", None) is not None:
+        if getattr(args, "city_receipt", None) is not None:
+            raise UrbanMobilityError(
+                "--city-receipt conflicts with --composition; the Composition world selects the City"
+            )
+        config_path = materialize_composition(context, args.composition)
+    else:
+        config_path = materialize_template(context, args)
     if not getattr(args, "reuse_built_asset", False):
         multi_car.build_car_asset()
     elif not (ROOT / "build/bin/urban-car-hakoniwa-asset.exe").is_file():
@@ -334,10 +442,58 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def configure_integrated(context: RecipeContext) -> int:
+def composition_outputs(context: RecipeContext, composition_path: Path) -> tuple[dict, str | None]:
+    """Return the tool configuration and, with a Drone, its drone_one.py recipe text."""
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        if context.use_case == "car-rc":
+            return urban_composition.to_car_config(composition, context.recipe_id), None
+        if context.use_case == "drone-car-distributed":
+            config, drone = urban_composition.to_integrated(
+                composition, context.recipe_id, root(context) / "config" / DRONE_RECIPE_FILE
+            )
+            return config, urban_composition.render_simple_yaml(drone) + "\n"
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    raise UrbanMobilityError(f"Urban use case {context.use_case} does not take a Composition")
+
+
+def write_composition_outputs(context: RecipeContext, config: dict, drone: str | None) -> Path:
+    import multi_car
+
+    config_path = generated_composition_path(context)
+    multi_car.write_json(config_path, config)
+    if drone is not None:
+        drone_path = root(context) / "config" / DRONE_RECIPE_FILE
+        drone_path.parent.mkdir(parents=True, exist_ok=True)
+        drone_path.write_text(drone, encoding="utf-8")
+    return config_path
+
+
+def configure_integrated(context: RecipeContext, args: argparse.Namespace | None = None) -> int:
+    import multi_car
     import urban_composer
 
-    return urban_composer.configure(composition_path(context))
+    selected = getattr(args, "composition", None)
+    if selected is None:
+        return urban_composer.configure(composition_path(context))
+    config, drone = composition_outputs(context, selected)
+    config_path = write_composition_outputs(context, config, drone)
+    multi_car.write_json(
+        root(context) / "validation/urban-inputs.json",
+        {
+            "schema_version": 1,
+            "managed_recipe": str(context.path),
+            "recipe_id": context.recipe_id,
+            "use_case": context.use_case,
+            "composition": str(Path(selected).resolve()),
+            "composition_id": config["composition_source"]["id"],
+            "generated_composition": str(config_path),
+        },
+    )
+    return urban_composer.configure(config_path)
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
@@ -347,14 +503,50 @@ def configure(context: RecipeContext, args: argparse.Namespace) -> int:
     if context.use_case == "car-rc":
         return configure_car_rc(context, args)
     if context.use_case == "drone-car-distributed":
-        return configure_integrated(context)
+        return configure_integrated(context, args)
     raise UrbanMobilityError(
         f"unsupported Urban use case for configure: {context.use_case}"
     )
 
 
-def prepare_start(context: RecipeContext) -> None:
+def refresh_composition_placement(context: RecipeContext, composition_path: Path) -> Path:
+    """Rewrite the tool inputs for a placement-only Composition edit.
+
+    Returns the Car configuration path. Any edit beyond vehicle placement is
+    rejected before anything is written.
+    """
+    import urban_composition
+
+    inputs = root(context) / "validation/urban-inputs.json"
+    try:
+        configured = json.loads(inputs.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise UrbanMobilityError(f"Recipe {context.recipe_id} is not configured: {inputs}") from exc
+    if "composition" not in configured:
+        raise UrbanMobilityError(
+            f"Recipe {context.recipe_id} was not configured from a Composition; run configure --composition"
+        )
+    previous = json.loads(generated_composition_path(context).read_text(encoding="utf-8"))
+    current, drone = composition_outputs(context, composition_path)
+    if not urban_composition.placement_only_change(previous, current):
+        raise UrbanMobilityError(
+            "the Composition changed more than vehicle placement; run configure --composition"
+        )
+    # A Drone placement edit lands in the drone_one.py recipe, which that tool
+    # accepts as a pose-only edit at start.
+    return write_composition_outputs(context, current, drone)
+
+
+def refresh_car_poses(config_path: Path) -> None:
+    import multi_car
+
+    multi_car.refresh_runtime_initial_body_poses(multi_car.resolve_config(config_path))
+
+
+def prepare_start(context: RecipeContext, composition_path: Path | None = None) -> None:
     if context.use_case == "car-rc":
+        if composition_path is not None:
+            refresh_car_poses(refresh_composition_placement(context, composition_path))
         return
     if context.use_case != "drone-car-distributed":
         raise UrbanMobilityError(
@@ -362,6 +554,12 @@ def prepare_start(context: RecipeContext) -> None:
         )
 
     import drone_one
+
+    car_config = (
+        refresh_composition_placement(context, composition_path)
+        if composition_path is not None
+        else None
+    )
 
     paths = drone_one._paths(context.recipe_id)
     configured = drone_one.read_selected_recipe(paths)
@@ -372,14 +570,16 @@ def prepare_start(context: RecipeContext) -> None:
         runtime_recipe,
         runtime_config_dir=root(context) / "config/drone/rc",
     )
+    if car_config is not None:
+        refresh_car_poses(car_config)
 
 
-def launcher_command(operation: str, context: RecipeContext) -> int:
+def launcher_command(operation: str, context: RecipeContext, args: argparse.Namespace | None = None) -> int:
     if operation == "start":
         portable = os.environ.get("HAKONIWA_PORTABLE_WORKSPACE") == "1"
         if not portable and recipe_command("doctor", context) != 0:
             return 1
-        prepare_start(context)
+        prepare_start(context, getattr(args, "composition", None))
         lifecycle = spec(context)
         if not lifecycle.launcher.is_file():
             raise UrbanMobilityError(
@@ -507,8 +707,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--recipe",
         type=Path,
-        required=True,
-        help="managed Urban Mobility Recipe",
+        help="managed Urban Mobility Recipe (derived from --composition when omitted)",
+    )
+    result.add_argument(
+        "--composition",
+        type=Path,
+        help="Urban Composition (docs/asset-contract.md) used by configure",
     )
     result.add_argument(
         "--city-receipt",
@@ -541,6 +745,12 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.recipe is None:
+        if args.composition is None:
+            raise UrbanMobilityError("--recipe or --composition is required")
+        if frozenset(load_composition(args.composition).simulators()) == DRONE_ONLY:
+            return drone_composition_command(args.command, args.composition)
+        args.recipe = composition_recipe(args.composition)
     context = load_context(args.recipe)
     if args.command == "prepare-native":
         return prepare_native(context)
@@ -555,7 +765,7 @@ def main() -> int:
         return check_rc(context)
     if args.command == "open-viewer":
         return open_viewer(context)
-    return launcher_command(args.command, context)
+    return launcher_command(args.command, context, args)
 
 
 if __name__ == "__main__":

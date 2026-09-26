@@ -34,11 +34,15 @@ def load_composition(path: Path) -> tuple[dict, dict, dict]:
     config = multi_car.load_yaml(config_path)
     resolved = multi_car.resolve_config(config_path)
     try:
-        car_path = multi_car.resolve_path(config["scenarios"]["car"], "Car scenario")
-        drone_path = multi_car.resolve_path(
-            config["scenarios"]["drone"], "Drone scenario"
+        scenarios = config["scenarios"]
+        drone_path = multi_car.resolve_path(scenarios["drone"], "Drone scenario")
+        car_value = scenarios.get("car")
+        car_path = (
+            multi_car.resolve_path(car_value, "Car scenario")
+            if car_value is not None
+            else None
         )
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, AttributeError) as exc:
         raise UrbanComposeError("integrated composition references are incomplete") from exc
     drone_scenario = multi_car.load_yaml(drone_path)
     if drone_scenario.get("version") != 1:
@@ -60,9 +64,11 @@ def load_composition(path: Path) -> tuple[dict, dict, dict]:
         spawn["up_m"], surface_height + base_clearance, abs_tol=1.0e-6
     ):
         raise UrbanComposeError("Drone spawn height must equal rooftop + clearance")
-    if resolved["vehicle_generation"] is None:
-        raise UrbanComposeError("integrated Car fleet must be generated from a route")
-    if resolved["vehicle_generation"]["scenario"] != car_path:
+    # The Car scenario is optional: explicit rc Cars need none. When present it
+    # must be the scenario that multi_car.py auto-starts.
+    route_scenario = resolved["route_scenario"]
+    configured_car_path = None if route_scenario is None else route_scenario["scenario"]
+    if configured_car_path != car_path:
         raise UrbanComposeError("Car scenario references disagree")
     return config, resolved, {
         "path": drone_path,
@@ -227,7 +233,14 @@ def _merge_launchers(
     controller = asset(drone_launcher, "urban-drone-ps4-controller")
     controller["args"][1] = str(unified_pdu)
     visual_publisher = asset(drone_launcher, "visual-state-publisher")
-    scenario = asset(car_launcher, "urban-car-scenario-executor")
+    # Car control assets exist only for the selected controls: one scenario
+    # executor for api Cars and one PS5 sender per rc Car.
+    car_controls = [
+        copy.deepcopy(item)
+        for item in car_launcher.get("assets", [])
+        if item.get("name") == "urban-car-scenario-executor"
+        or str(item.get("name", "")).endswith("-ps5-controller")
+    ]
     web_bridge = asset(car_launcher, "urban-vehicle-web-bridge")
     web_bridge["depends_on"] = [
         "urban-car-fleet-plant", "visual-state-publisher"
@@ -253,7 +266,7 @@ def _merge_launchers(
             drone_service,
             car_plant,
             visual_publisher,
-            scenario,
+            *car_controls,
             controller,
             web_bridge,
             http_server,
@@ -303,13 +316,14 @@ def configure(
         / "drone/mujoco-city-fleet/process-01/hexa-body.xml"
     )
     multi_car.required(generated_body, "generated Urban Hexa mirror model")
-    if len(resolved["mirrors"]) != 1:
-        raise UrbanComposeError("integrated demo requires one Drone Mirror")
+    if len(resolved["mirrors"]) > 1:
+        raise UrbanComposeError("integrated demo supports at most one Drone Mirror")
     spawn = drone_scenario["spawn"]
-    resolved["mirrors"][0]["mjcf_model"] = generated_body
-    resolved["mirrors"][0]["initial_position_mjcf"] = (
-        spawn["north_m"], -spawn["east_m"], spawn["up_m"]
-    )
+    for mirror in resolved["mirrors"]:
+        mirror["mjcf_model"] = generated_body
+        mirror["initial_position_mjcf"] = (
+            spawn["north_m"], -spawn["east_m"], spawn["up_m"]
+        )
     if multi_car.configure(resolved) != 0:
         return 1
 
@@ -325,7 +339,11 @@ def configure(
     multi_car.write_json(resolved["work"] / "validation/integrated-composition.json", {
         "schema_version": 1,
         "configuration": str(config_path.resolve()),
-        "car_scenario": str(resolved["vehicle_generation"]["scenario"]),
+        "car_scenario": (
+            None
+            if resolved["route_scenario"] is None
+            else str(resolved["route_scenario"]["scenario"])
+        ),
         "drone_scenario": str(drone_scenario["path"]),
         "drone_spawn_enu": spawn,
         "rooftop": drone_scenario["rooftop"],
@@ -341,6 +359,8 @@ def configure(
         "Drone    : rooftop ENU "
         f"({spawn['east_m']:.2f}, {spawn['north_m']:.2f}, {spawn['up_m']:.2f})"
     )
-    print("Cars     : 5 external_python vehicles; one auto-started scenario executor")
+    print("Cars     : " + ", ".join(
+        f"{vehicle['name']}={vehicle['control_mode']}" for vehicle in resolved["vehicles"]
+    ))
     print("Time     : Drone service is the only Conductor owner")
     return 0

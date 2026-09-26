@@ -1,0 +1,14 @@
+# City + one Drone: the Composition equivalent of recipes/experiments/urban-drone-one.yaml
+# (docs/asset-contract.md), except that the spawn height is computed from the
+# terrain, so the Drone starts on the ground instead of the rooftop.
+#   python tools/urban_assets.py register-city --receipt <city-world-receipt.json>
+#   python tools/urban_mobility.py configure --composition recipes/compositions/city-hexa-rc.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/city-hexa-rc.yaml
+schema: hakoniwa.composition/v1
+id: city-hexa-rc
+world: shizuoka-22203-lat35.099-lon138.859
+vehicles:
+  - name: Drone-1
+    asset: eams-hexa
+    control: rc
+    spawn: {east_m: 0.0, north_m: 0.0, yaw_deg: 0.0}
