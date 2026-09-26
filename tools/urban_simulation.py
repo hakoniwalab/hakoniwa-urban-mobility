@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""Run Urban Compositions: the one entrypoint for the CLI and the browser backend.
+
+plan() decides how a Composition runs (asset-contract 7.1):
+
+  route        Composition                      tool                  managed Recipe
+  car          City + Cars                      tools/multi_car.py    urban-car-rc
+  drone        City + one Drone                 tools/drone_one.py    - (own workspace)
+  integrated   City + Cars + one Drone          tools/urban_composer  urban-mobility-rc
+  fpv          plain World + one FPV Drone      hakoniwa-fpv-drone/tools/fpv.py
+
+run() executes a lifecycle command for a plan. Every route re-reads the
+Composition at start, so placement, control param, and program edits need no
+configure (section 5.5). The Car and integrated routes run through
+tools/urban_mobility.py, which owns the managed Recipe lifecycle and calls the
+managed-route functions here with a ManagedTarget.
+
+Tool-specific inputs the contract does not expose (the Drone launch area,
+the RC mission file, the rooftop field name) stay inside this module and
+tools/urban_composition.py.
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE = ROOT.parent
+BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
+
+for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+URBAN_MOBILITY = ROOT / "tools/urban_mobility.py"
+DRONE_ONE = ROOT / "tools/drone_one.py"
+FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
+FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
+FPV_SELECTION_FILE = "urban-composition.json"
+DRONE_RECIPE_FILE = "urban-composition-drone.yaml"
+DRONE_WORKSPACE_ID = "urban-drone-one"
+
+CAR = frozenset({"ackermann-mujoco"})
+DRONE = frozenset({"drone-core"})
+CAR_AND_DRONE = CAR | DRONE
+# Managed Recipes that prepare the environment of a route, and their ids.
+MANAGED_RECIPES = {
+    "car": ("recipes/usecases/urban-car-rc.yaml", "urban-car-rc", "car-rc"),
+    "integrated": ("recipes/experiments/urban-mobility-rc.yaml", "urban-mobility-rc", "drone-car-distributed"),
+}
+COMMANDS = ("plan", "configure", "start", "status", "stop", "open-viewer")
+
+
+class SimulationError(RuntimeError):
+    pass
+
+
+def load_composition(composition_path: Path):
+    import urban_composition
+
+    try:
+        return urban_composition.load(composition_path)
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+
+
+def _recipe_root(recipe_id: str) -> Path:
+    from workdir import recipe_root
+
+    return recipe_root(BUSINESS_PACK, recipe_id)
+
+
+# --- Plan ----------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Plan:
+    composition: object
+    route: str
+    managed_recipe: Path | None
+    workspace: Path
+
+    def to_json(self) -> dict:
+        composition = self.composition
+        return {
+            "composition": composition.id,
+            "path": str(composition.path),
+            "route": self.route,
+            "world": {"id": composition.world.id, "kind": composition.world.kind},
+            "vehicles": [
+                {"name": vehicle.name, "asset": vehicle.asset.id, "control": vehicle.control}
+                for vehicle in composition.vehicles
+            ],
+            "simulators": sorted(composition.simulators()),
+            "managed_recipe": None if self.managed_recipe is None else str(self.managed_recipe),
+            "workspace": str(self.workspace),
+        }
+
+
+def plan(composition_path: Path) -> Plan:
+    """Validate a Composition and decide the route that runs it."""
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    simulators = frozenset(composition.simulators())
+    plain = composition.world.kind == "plain"
+    if plain:
+        try:
+            urban_composition.fpv_vehicle(composition)
+        except urban_composition.CompositionError as exc:
+            raise SimulationError(str(exc)) from exc
+        return Plan(composition, "fpv", None, FPV_OUTPUT_ROOT / composition.id)
+    if any(urban_composition.is_fpv(vehicle) for vehicle in composition.vehicles):
+        raise SimulationError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
+    if simulators == DRONE:
+        return Plan(composition, "drone", None, _recipe_root(DRONE_WORKSPACE_ID))
+    route = {CAR: "car", CAR_AND_DRONE: "integrated"}.get(simulators)
+    if route is None:
+        raise SimulationError(f"no route runs a Composition with simulators {sorted(simulators)}")
+    recipe, recipe_id, _ = MANAGED_RECIPES[route]
+    return Plan(composition, route, ROOT / recipe, _recipe_root(recipe_id))
+
+
+def run(command: str, composition_path: Path) -> int:
+    """Run a lifecycle command for a Composition."""
+    selected = plan(composition_path)
+    if command == "plan":
+        print(json.dumps(selected.to_json(), indent=2))
+        return 0
+    if selected.route == "fpv":
+        return fpv_command(command, composition_path)
+    if selected.route == "drone":
+        return drone_command(command, composition_path)
+    # The managed Recipe lifecycle lives in tools/urban_mobility.py.
+    return subprocess.run(
+        [sys.executable, str(URBAN_MOBILITY), command,
+         "--recipe", str(selected.managed_recipe), "--composition", str(Path(composition_path).resolve())],
+        cwd=ROOT, check=False,
+    ).returncode
+
+
+# --- Control runtimes -------------------------------------------------------------
+
+def car_runtime(work: Path):
+    """Controls runtime for the Car simulator configured under a Recipe root."""
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={
+            "pdu_def": work / "config/car/urban-car-pdudef.json",
+            "rc_config": ROOT / "config/car/dualsense-controller.json",
+        },
+        service_asset="urban-car-fleet-plant",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def drone_runtime(paths: object, pdu_def: Path):
+    """Controls runtime for the Drone simulator configured in drone_one paths."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={
+            "pdu_def": pdu_def,
+            "drone_root": drone_one.DEFAULT_DRONE_ROOT.resolve(),
+            "service_config": paths.recipe_config / "drone/fleets/services/api-current-service.json",
+            "city_marker": paths.recipe_config / "mujoco-city-fleet.json",
+            "summary_json": paths.recipe_validation / "urban-drone-mission.json",
+        },
+        service_asset="drone-service-1",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def fpv_runtime():
+    """Controls runtime for the FPV Drone service that tools/fpv.py configures."""
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={"pdu_def": WORKSPACE / "hakoniwa-drone-core/config/pdudef/drone-pdudef-1.json"},
+        service_asset="fpv-drone-service",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def control_processes(composition_path: Path, runtimes: dict) -> list[dict]:
+    import urban_controls
+
+    try:
+        return urban_controls.control_processes(load_composition(composition_path), runtimes)
+    except urban_controls.ControlError as exc:
+        raise SimulationError(str(exc)) from exc
+
+
+# --- Managed routes: car and integrated (called by tools/urban_mobility.py) ----------
+
+@dataclass(frozen=True)
+class ManagedTarget:
+    """The managed Recipe workspace a Car or integrated Composition configures."""
+
+    managed_recipe: Path
+    recipe_id: str
+    use_case: str
+    work: Path
+
+    @property
+    def tool_config(self) -> Path:
+        return self.work / "config/urban-composition.json"
+
+    @property
+    def drone_recipe(self) -> Path:
+        return self.work / "config" / DRONE_RECIPE_FILE
+
+    @property
+    def inputs(self) -> Path:
+        return self.work / "validation/urban-inputs.json"
+
+
+def composition_outputs(target: ManagedTarget, composition_path: Path) -> tuple[dict, str | None]:
+    """Return the tool configuration and, with a Drone, its drone_one.py recipe text."""
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        if target.use_case == "car-rc":
+            return urban_composition.to_car_config(composition, target.recipe_id), None
+        if target.use_case == "drone-car-distributed":
+            config, drone = urban_composition.to_integrated(composition, target.recipe_id, target.drone_recipe)
+            return config, urban_composition.render_simple_yaml(drone) + "\n"
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+    raise SimulationError(f"Urban use case {target.use_case} does not take a Composition")
+
+
+def write_composition_outputs(target: ManagedTarget, config: dict, drone: str | None) -> Path:
+    import multi_car
+
+    multi_car.write_json(target.tool_config, config)
+    if drone is not None:
+        target.drone_recipe.parent.mkdir(parents=True, exist_ok=True)
+        target.drone_recipe.write_text(drone, encoding="utf-8")
+    return target.tool_config
+
+
+def materialize(target: ManagedTarget, composition_path: Path) -> Path:
+    """Write the tool inputs for configure and record which Composition produced them."""
+    import multi_car
+
+    config, drone = composition_outputs(target, composition_path)
+    config_path = write_composition_outputs(target, config, drone)
+    multi_car.write_json(target.inputs, {
+        "schema_version": 1,
+        "managed_recipe": str(target.managed_recipe),
+        "recipe_id": target.recipe_id,
+        "use_case": target.use_case,
+        "composition": str(Path(composition_path).resolve()),
+        "composition_id": config["composition_source"]["id"],
+        "generated_composition": str(config_path),
+    })
+    return config_path
+
+
+def refresh_placement(target: ManagedTarget, composition_path: Path) -> Path:
+    """Rewrite the tool inputs for a placement-only Composition edit.
+
+    Returns the Car configuration path. Any edit beyond vehicle placement is
+    rejected before anything is written.
+    """
+    import urban_composition
+
+    try:
+        configured = json.loads(target.inputs.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SimulationError(f"Recipe {target.recipe_id} is not configured: {target.inputs}") from exc
+    if "composition" not in configured:
+        raise SimulationError(
+            f"Recipe {target.recipe_id} was not configured from a Composition; run configure --composition"
+        )
+    previous = json.loads(target.tool_config.read_text(encoding="utf-8"))
+    current, drone = composition_outputs(target, composition_path)
+    if not urban_composition.placement_only_change(previous, current):
+        raise SimulationError("the Composition changed more than vehicle placement; run configure --composition")
+    # A Drone placement edit lands in the drone_one.py recipe, which that tool
+    # accepts as a pose-only edit at start.
+    return write_composition_outputs(target, current, drone)
+
+
+def refresh_car_poses(config_path: Path) -> None:
+    import multi_car
+
+    multi_car.refresh_runtime_initial_body_poses(multi_car.resolve_config(config_path))
+
+
+def apply_managed_controls(target: ManagedTarget, composition_path: Path) -> None:
+    """Replace the configured Launcher's control assets with the manifest controls."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    runtimes = {"ackermann-mujoco": car_runtime(target.work)}
+    if target.use_case == "drone-car-distributed":
+        runtimes["drone-core"] = drone_runtime(
+            drone_one._paths(target.recipe_id), target.work / "config/car/urban-car-pdudef.json"
+        )
+    launcher_path = target.work / "config/launcher.json"
+    launcher = multi_car.load_json(launcher_path, "configured Launcher")
+    urban_controls.apply_controls(launcher, control_processes(composition_path, runtimes))
+    multi_car.write_json(launcher_path, launcher)
+
+
+# --- Drone route (tools/drone_one.py) --------------------------------------------------
+
+def drone_recipe_path() -> Path:
+    import drone_one
+
+    return drone_one._paths().recipe_config / DRONE_RECIPE_FILE
+
+
+def materialize_drone_recipe(composition_path: Path) -> Path:
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        recipe = urban_composition.to_drone_recipe(composition)
+        text = urban_composition.render_simple_yaml(recipe) + "\n"
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+    path = drone_recipe_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def write_drone_controls(composition_path: Path) -> Path:
+    """Write the processes that tools/drone_one.py applies whenever it writes its Launcher."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    paths = drone_one._paths()
+    processes = control_processes(
+        composition_path,
+        {"drone-core": drone_runtime(paths, paths.recipe_config / "pdudef/drone-pdudef-current.json")},
+    )
+    path = paths.recipe_config / urban_controls.CONTROLS_FILE
+    multi_car.write_json(path, processes)
+    return path
+
+
+def drone_command(command: str, composition_path: Path) -> int:
+    """Run a City + one Drone Composition through tools/drone_one.py.
+
+    configure and start rewrite the tool recipe and control processes from
+    the Composition (drone_one.py accepts pose-only recipe edits at start and
+    rejects the rest until configure).
+    """
+    tool = [sys.executable, str(DRONE_ONE)]
+    if command == "configure":
+        recipe = materialize_drone_recipe(composition_path)
+        result = subprocess.run([*tool, "configure", "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
+        if result == 0:
+            write_drone_controls(composition_path)
+        return result
+    if command == "start":
+        if not drone_recipe_path().is_file():
+            raise SimulationError("the Drone Composition is not configured; run configure --composition first")
+        materialize_drone_recipe(composition_path)
+        write_drone_controls(composition_path)
+    if command not in {"start", "status", "stop", "open-viewer", "doctor", "prepare-native"}:
+        raise SimulationError(f"{command} is not supported for a City + Drone Composition")
+    return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
+
+
+# --- FPV route (hakoniwa-fpv-drone tools/fpv.py) ------------------------------------------
+
+def fpv_selection(composition_path: Path) -> tuple[object, Path, dict]:
+    """Return (composition, tools/fpv.py output, the inputs that need configure)."""
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        vehicle = urban_composition.fpv_vehicle(composition)
+        world = urban_composition.plain_world_yaml(composition)
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+    generator = vehicle.asset.data["source"]["generator"]
+    assembly = (WORKSPACE / vehicle.asset.data["source"]["repository"] / generator["assembly"]).resolve()
+    selection = {"world": str(world), "asset": vehicle.asset.id, "assembly": str(assembly)}
+    return composition, FPV_OUTPUT_ROOT / composition.id, selection
+
+
+def apply_fpv_composition(composition_path: Path, output: Path) -> None:
+    """Apply the spawn and manifest controls to a configured tools/fpv.py runtime."""
+    import multi_car
+    import urban_composition
+    import urban_controls
+
+    composition = load_composition(composition_path)
+    vehicle = urban_composition.fpv_vehicle(composition)
+    runtime = output / "runtime"
+    report = multi_car.load_json(runtime / "vehicle/report.json", "FPV generated report")
+    generated = float(report["initial_pose"]["mujoco_z_m"])
+    declared = float(vehicle.asset.data["spawn"]["ground_clearance_m"])
+    if abs(generated - declared) > 1.0e-6:
+        raise SimulationError(
+            f"Asset {vehicle.asset.id} declares ground_clearance_m {declared}, but the generated "
+            f"vehicle starts {generated} m above the ground; update {vehicle.asset.path}"
+        )
+    try:
+        spawn = urban_composition.to_fpv_spawn(composition)
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+    config_path = runtime / "vehicle/drone_config_0.json"
+    config = multi_car.load_json(config_path, "FPV Drone config")
+    dynamics = config["components"]["droneDynamics"]
+    dynamics["position_meter"] = spawn["position_meter"]
+    dynamics["angle_degree"] = spawn["angle_degree"]
+    multi_car.write_json(config_path, config)
+    launcher_path = runtime / "launcher.json"
+    launcher = multi_car.load_json(launcher_path, "FPV Launcher")
+    urban_controls.apply_controls(launcher, control_processes(composition_path, {"drone-core": fpv_runtime()}))
+    multi_car.write_json(launcher_path, launcher)
+
+
+def fpv_command(command: str, composition_path: Path) -> int:
+    """Run a plain World + FPV Drone Composition through tools/fpv.py.
+
+    configure generates the vehicle on the plain World; configure and start
+    apply the Composition spawn and controls. A different World or Asset
+    needs configure.
+    """
+    import multi_car
+
+    composition, output, selection = fpv_selection(composition_path)
+    tool = [sys.executable, str(FPV_TOOL), command, "--output", str(output)]
+    selected = output / FPV_SELECTION_FILE
+    if command == "configure":
+        result = subprocess.run(
+            [*tool, "--world", selection["world"], "--threejs", "--assembly", selection["assembly"]],
+            cwd=FPV_TOOL.parents[1], check=False,
+        ).returncode
+        if result != 0:
+            return result
+        multi_car.write_json(selected, selection)
+        apply_fpv_composition(composition_path, output)
+        return 0
+    if command == "start":
+        if not selected.is_file():
+            raise SimulationError("the FPV Composition is not configured; run configure --composition first")
+        if json.loads(selected.read_text(encoding="utf-8")) != selection:
+            raise SimulationError("the Composition changed its World or FPV Asset; run configure --composition")
+        apply_fpv_composition(composition_path, output)
+    if command not in {"start", "status", "stop", "open-viewer"}:
+        raise SimulationError(f"{command} is not supported for a plain World + FPV Drone Composition")
+    return subprocess.run(tool, cwd=FPV_TOOL.parents[1], check=False).returncode
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    result.add_argument("command", choices=COMMANDS)
+    result.add_argument("--composition", type=Path, required=True)
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    return run(args.command, args.composition)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, SimulationError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(2)

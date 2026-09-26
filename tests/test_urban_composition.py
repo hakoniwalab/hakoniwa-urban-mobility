@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -13,6 +15,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import urban_assets  # noqa: E402
 import urban_composition  # noqa: E402
 import urban_controls  # noqa: E402
+import urban_simulation  # noqa: E402
 from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
@@ -241,7 +244,7 @@ class CarCompositionTest(Fixture):
 
     def test_composition_selects_the_car_managed_recipe(self):
         with self.catalog():
-            recipe = urban_mobility.composition_recipe(self.composition())
+            recipe = urban_simulation.plan(self.composition()).managed_recipe
         self.assertEqual(recipe, ROOT / "recipes/usecases/urban-car-rc.yaml")
 
 
@@ -263,10 +266,11 @@ class CarPlacementTest(Fixture):
         with self.catalog(), \
                 mock.patch.object(urban_mobility, "root", return_value=context_root), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
-                mock.patch.object(urban_mobility, "apply_composition_controls") as controls, \
+                mock.patch.object(urban_simulation, "apply_managed_controls") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as refresh:
             urban_mobility.prepare_start(context, composition)
-        controls.assert_called_once_with(context, composition)
+        [(target, applied)] = [call.args for call in controls.call_args_list]
+        self.assertEqual((target.recipe_id, target.work, applied), ("urban-car-rc", context_root, composition))
         return refresh
 
     def test_placement_only_edit_is_applied_at_start(self):
@@ -281,7 +285,7 @@ class CarPlacementTest(Fixture):
     def test_non_placement_edit_requires_configure(self):
         context_root = self.work / "recipe"
         self.configure(context_root, self.composition())
-        with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "run configure"):
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "run configure"):
             self.start(self.composition(vehicle={"name": "Car-9"}), context_root)
 
 
@@ -342,7 +346,7 @@ class DroneCompositionTest(Fixture):
             urban_composition.to_drone_recipe(composition, ground=lambda east, north: 0.0)
 
     def test_drone_only_composition_is_run_by_drone_one(self):
-        recipe_path = self.work / "workspace/config" / urban_mobility.DRONE_RECIPE_FILE
+        recipe_path = self.work / "workspace/config" / urban_simulation.DRONE_RECIPE_FILE
         calls = []
 
         def run(command, **kwargs):
@@ -350,24 +354,24 @@ class DroneCompositionTest(Fixture):
             return mock.Mock(returncode=0)
 
         with self.catalog(), \
-                mock.patch.object(urban_mobility, "drone_recipe_path", return_value=recipe_path), \
+                mock.patch.object(urban_simulation, "drone_recipe_path", return_value=recipe_path), \
                 mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 0.0), \
-                mock.patch.object(urban_mobility.subprocess, "run", side_effect=run):
+                mock.patch.object(urban_simulation.subprocess, "run", side_effect=run):
             composition = self.drone()
-            self.assertEqual(urban_mobility.drone_composition_command("configure", composition), 0)
+            self.assertEqual(urban_simulation.drone_command("configure", composition), 0)
             self.assertEqual(calls[-1][-3:], ["configure", "--recipe", str(recipe_path)])
             self.assertEqual(drone_one.base.load_simple_yaml(recipe_path)["control"], {"mode": "ps4-rc"})
             # A placement edit rewrites the tool recipe before start.
             self.drone(spawn={"east_m": 7.0, "north_m": 0.0, "yaw_deg": 0.0})
-            self.assertEqual(urban_mobility.drone_composition_command("start", composition), 0)
+            self.assertEqual(urban_simulation.drone_command("start", composition), 0)
             self.assertEqual(calls[-1][-1], "start")
             spawn = drone_one.base.load_simple_yaml(recipe_path)["drone"]["spawn_pose_enu"]
             self.assertEqual(spawn["east_m"], 7.0)
 
     def test_drone_start_requires_configure(self):
-        with mock.patch.object(urban_mobility, "drone_recipe_path", return_value=self.work / "missing.yaml"):
-            with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "not configured"):
-                urban_mobility.drone_composition_command("start", self.drone())
+        with mock.patch.object(urban_simulation, "drone_recipe_path", return_value=self.work / "missing.yaml"):
+            with self.assertRaisesRegex(urban_simulation.SimulationError, "not configured"):
+                urban_simulation.drone_command("start", self.drone())
 
 
 class IntegratedFixture(Fixture):
@@ -476,7 +480,7 @@ class IntegratedCompositionTest(IntegratedFixture):
 
     def test_composition_selects_the_integrated_managed_recipe(self):
         with self.catalog():
-            recipe = urban_mobility.composition_recipe(self.integrated())
+            recipe = urban_simulation.plan(self.integrated()).managed_recipe
         self.assertEqual(recipe, ROOT / "recipes/experiments/urban-mobility-rc.yaml")
 
 
@@ -490,10 +494,14 @@ class IntegratedPlacementTest(IntegratedFixture):
     def configure_state(self, composition: Path) -> Path:
         context_root = self.work / "recipe"
         (context_root / "validation").mkdir(parents=True, exist_ok=True)
-        with self.catalog(), mock.patch.object(urban_mobility, "root", return_value=context_root), \
+        target = urban_simulation.ManagedTarget(
+            managed_recipe=self.context().path, recipe_id="urban-mobility-rc",
+            use_case="drone-car-distributed", work=context_root,
+        )
+        with self.catalog(), \
                 mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 1.0):
-            config, drone = urban_mobility.composition_outputs(self.context(), composition)
-            urban_mobility.write_composition_outputs(self.context(), config, drone)
+            config, drone = urban_simulation.composition_outputs(target, composition)
+            urban_simulation.write_composition_outputs(target, config, drone)
         (context_root / "validation/urban-inputs.json").write_text(
             json.dumps({"composition": str(composition)}), encoding="utf-8"
         )
@@ -508,7 +516,7 @@ class IntegratedPlacementTest(IntegratedFixture):
                 mock.patch.object(drone_one, "refresh_runtime_spawn"), \
                 mock.patch.object(drone_one, "refresh_runtime_controller_params"), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
-                mock.patch.object(urban_mobility, "apply_composition_controls") as controls, \
+                mock.patch.object(urban_simulation, "apply_managed_controls") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as car_poses:
             urban_mobility.prepare_start(self.context(), composition)
         controls.assert_called_once()
@@ -523,20 +531,20 @@ class IntegratedPlacementTest(IntegratedFixture):
         load_runtime, car_poses = self.start(moved, context_root)
         load_runtime.assert_called_once()
         car_poses.assert_called_once()
-        drone = drone_one.base.load_simple_yaml(context_root / "config" / urban_mobility.DRONE_RECIPE_FILE)
+        drone = drone_one.base.load_simple_yaml(context_root / "config" / urban_simulation.DRONE_RECIPE_FILE)
         self.assertEqual(drone["drone"]["spawn_pose_enu"]["east_m"], 9.0)
         config = json.loads((context_root / "config/urban-composition.json").read_text(encoding="utf-8"))
         self.assertEqual(config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]["east_m"], 44.0)
 
     def test_non_placement_edit_writes_nothing(self):
         context_root = self.configure_state(self.integrated())
-        drone_path = context_root / "config" / urban_mobility.DRONE_RECIPE_FILE
+        drone_path = context_root / "config" / urban_simulation.DRONE_RECIPE_FILE
         before = drone_path.read_text(encoding="utf-8")
         edited = self.integrated(
             car={"control": "rc", "params": {}},
             drone={"spawn": {"east_m": 9.0, "north_m": -40.0, "yaw_deg": 30.0}},
         )
-        with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "run configure"):
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "run configure"):
             self.start(edited, context_root)
         self.assertEqual(drone_path.read_text(encoding="utf-8"), before)
 
@@ -548,11 +556,11 @@ class ControlsTest(IntegratedFixture):
 
     def car_runtime(self, work: Path):
         with mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
-            return urban_mobility.car_runtime(work)
+            return urban_simulation.car_runtime(work)
 
     def drone_runtime(self, paths, pdu_def: Path):
         with mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
-            return urban_mobility.drone_runtime(paths, pdu_def)
+            return urban_simulation.drone_runtime(paths, pdu_def)
 
     def processes(self, composition: Path, runtimes: dict) -> list[dict]:
         return urban_controls.control_processes(self.load(composition), runtimes)
@@ -717,18 +725,18 @@ class ControlsTest(IntegratedFixture):
         self.assertEqual(names, ["drone-service-1", "control-drone-1-rc"])
 
     def test_configured_launcher_gets_the_manifest_controls(self):
-        context = urban_mobility.RecipeContext(
-            path=ROOT / "recipes/usecases/urban-car-rc.yaml", data={}, recipe_id="urban-car-rc", use_case="car-rc",
-        )
         work = self.work / "recipe"
+        target = urban_simulation.ManagedTarget(
+            managed_recipe=ROOT / "recipes/usecases/urban-car-rc.yaml", recipe_id="urban-car-rc",
+            use_case="car-rc", work=work,
+        )
         (work / "config").mkdir(parents=True)
         (work / "config/launcher.json").write_text(json.dumps({"assets": [
             {"name": "urban-car-fleet-plant"}, {"name": "urban-car-1-ps5-controller"},
             {"name": "urban-vehicle-web-bridge"},
         ]}), encoding="utf-8")
-        with self.catalog(), mock.patch.object(urban_mobility, "root", return_value=work), \
-                mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
-            urban_mobility.apply_composition_controls(context, self.composition(vehicle={"params": {"max_speed": 1.5}}))
+        with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
+            urban_simulation.apply_managed_controls(target, self.composition(vehicle={"params": {"max_speed": 1.5}}))
         assets = json.loads((work / "config/launcher.json").read_text(encoding="utf-8"))["assets"]
         self.assertEqual([asset["name"] for asset in assets],
                          ["urban-car-fleet-plant", "control-car-1-rc", "urban-vehicle-web-bridge"])
@@ -790,7 +798,7 @@ class FpvCompositionTest(Fixture):
 
     def test_fpv_rc_matches_the_fpv_tool_remote_controller(self):
         with mock.patch.object(multi_car, "foundation_python", return_value=Path("/foundation/python")):
-            runtime = urban_mobility.fpv_runtime()
+            runtime = urban_simulation.fpv_runtime()
         [process] = urban_controls.control_processes(self.load(self.fpv()), {"drone-core": runtime})
         fpv_root = urban_assets.WORKSPACE / "hakoniwa-fpv-drone"
         drone_core = urban_assets.WORKSPACE / "hakoniwa-drone-core"
@@ -822,10 +830,10 @@ class FpvCompositionTest(Fixture):
                 self.fpv_runtime_dir(Path(arguments[4]))
             return mock.Mock(returncode=0)
 
-        with self.catalog(), mock.patch.object(urban_mobility, "FPV_OUTPUT_ROOT", output_root), \
-                mock.patch.object(urban_mobility.subprocess, "run", side_effect=run), \
+        with self.catalog(), mock.patch.object(urban_simulation, "FPV_OUTPUT_ROOT", output_root), \
+                mock.patch.object(urban_simulation.subprocess, "run", side_effect=run), \
                 mock.patch.object(multi_car, "foundation_python", return_value=Path("/foundation/python")):
-            return urban_mobility.fpv_composition_command(command, composition)
+            return urban_simulation.fpv_command(command, composition)
 
     def test_configure_generates_on_the_world_and_applies_spawn_and_controls(self):
         output_root, calls = self.work / "fpv", []
@@ -864,15 +872,15 @@ class FpvCompositionTest(Fixture):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         data["world"] = "other-course"
         path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "World or FPV Asset"):
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "World or FPV Asset"):
             self.run_fpv("start", path, output_root, calls)
 
     def test_manifest_clearance_must_match_the_generated_vehicle(self):
         output_root = self.work / "fpv"
         self.fpv_runtime_dir(output_root / "test", clearance=0.03)
         with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path("/python")), \
-                self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "update"):
-            urban_mobility.apply_fpv_composition(self.fpv(), output_root / "test")
+                self.assertRaisesRegex(urban_simulation.SimulationError, "update"):
+            urban_simulation.apply_fpv_composition(self.fpv(), output_root / "test")
 
     def test_plain_world_needs_the_fpv_drone_and_fpv_needs_a_plain_world(self):
         hexa = self.composition(world="fpv-training-course", viewer={}, vehicles=[{
@@ -888,6 +896,72 @@ class FpvCompositionTest(Fixture):
         car = self.composition(world="fpv-training-course", viewer={})
         with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds are not adapted"):
             urban_composition.to_car_config(self.load(car), "urban-car-rc")
+
+
+class PlanTest(IntegratedFixture):
+    """urban_simulation.plan() picks one route per Composition shape."""
+
+    def plan(self, composition: Path):
+        with self.catalog():
+            return urban_simulation.plan(composition)
+
+    def test_routes(self):
+        def fpv():
+            return self.composition(world="fpv-training-course", viewer={}, vehicles=[{
+                "name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
+                "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
+
+        # Each fixture Composition overwrites the same file, so build it per case.
+        cases = {
+            "car": (self.composition, "recipes/usecases/urban-car-rc.yaml"),
+            "drone": (self.drone, None),
+            "integrated": (self.integrated, "recipes/experiments/urban-mobility-rc.yaml"),
+            "fpv": (fpv, None),
+        }
+        for route, (make, recipe) in cases.items():
+            with self.subTest(route=route):
+                selected = self.plan(make())
+                self.assertEqual(selected.route, route)
+                self.assertEqual(selected.managed_recipe, None if recipe is None else ROOT / recipe)
+
+    def test_plan_json_describes_the_composition(self):
+        selected = self.plan(self.integrated()).to_json()
+        self.assertEqual(selected["route"], "integrated")
+        self.assertEqual(selected["world"], {"id": "test-city", "kind": "city"})
+        self.assertEqual([vehicle["name"] for vehicle in selected["vehicles"]], ["Car-1", "Drone-1"])
+        self.assertEqual(selected["simulators"], ["ackermann-mujoco", "drone-core"])
+        self.assertTrue(selected["workspace"].endswith("urban-mobility-rc"))
+        json.dumps(selected)
+
+    def test_unsupported_shapes_name_the_limit(self):
+        city_fpv = self.composition(world=CITY_ID, viewer={}, vehicles=[{
+            "name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
+            "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "plain Worlds only"):
+            self.plan(city_fpv)
+        plain_car = self.composition(world="fpv-training-course", viewer={})
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "FPV Drone"):
+            self.plan(plain_car)
+
+    def test_plan_command_prints_json_without_running_tools(self):
+        output = io.StringIO()
+        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run") as run, \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(urban_simulation.run("plan", self.composition()), 0)
+        run.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())["route"], "car")
+
+    def test_managed_routes_run_urban_mobility_with_the_recipe(self):
+        composition = self.integrated()
+        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
+                                               return_value=mock.Mock(returncode=0)) as run:
+            self.assertEqual(urban_simulation.run("configure", composition), 0)
+        arguments = run.call_args.args[0]
+        self.assertEqual(Path(arguments[1]), ROOT / "tools/urban_mobility.py")
+        self.assertEqual(arguments[2:], [
+            "configure", "--recipe", str(ROOT / "recipes/experiments/urban-mobility-rc.yaml"),
+            "--composition", str(composition.resolve()),
+        ])
 
 
 if __name__ == "__main__":

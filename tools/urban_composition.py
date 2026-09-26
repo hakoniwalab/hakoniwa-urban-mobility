@@ -176,7 +176,12 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     except AssetError as exc:
         raise CompositionError(str(exc)) from exc
     world = assets.get(data.get("world"))
-    if world is None or world.kind not in {"city", "plain"}:
+    if world is None:
+        raise CompositionError(
+            f"World Asset {data.get('world')!r} is not in the catalog; register a City with "
+            "tools/urban_assets.py register-city --receipt <city-world-receipt.json>"
+        )
+    if world.kind not in {"city", "plain"}:
         raise CompositionError(f"Composition world is not a City or plain World Asset: {data.get('world')!r}")
     entries = data.get("vehicles")
     if not isinstance(entries, list) or not entries:

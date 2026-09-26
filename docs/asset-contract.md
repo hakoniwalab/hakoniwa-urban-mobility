@@ -65,7 +65,14 @@ Launcher config, Three.js config, Recipe workspace
 
 - The Composition is the only user-facing Recipe input. One entrypoint serves
   every combination:
-  `tools/urban_mobility.py configure|start|status|open-viewer|stop --composition <file>`.
+  `tools/urban_mobility.py plan|configure|start|status|open-viewer|stop --composition <file>`.
+  It delegates to `tools/urban_simulation.py`, the API the browser backend
+  calls: `plan(composition)` validates the Composition and returns its route
+  (`car`, `drone`, `integrated`, `fpv`), managed Recipe, and workspace
+  (`Plan.to_json()` for the browser; the `plan` command prints it), and
+  `run(command, composition)` executes a lifecycle command on that route.
+  The Car and integrated routes run the managed Recipe lifecycle in
+  `tools/urban_mobility.py --recipe <managed> --composition <file>`.
 - A Car-only Composition materializes only the Car dependencies; the Recipe
   never requires the union of all Assets.
 - The Recipes in `recipes/experiments/` retire once their Composition
