@@ -37,6 +37,7 @@ LEGACY_CONTROL_ASSETS = {
     "urban-car-scenario-executor",
     "urban-drone-ps4-controller",
     "urban-drone-mission",
+    "fpv-remote-controller",
 }
 CONTROL_PREFIX = "control-"
 # Written next to a tool's generated config when a Composition selects the
@@ -166,7 +167,10 @@ def control_process(
         ).lower(),
         "activation_timing": "after_start",
         "command": runtime.python if runner == "python" else program,
-        "args": [program, *args] if runner == "python" else args,
+        "args": (
+            [*map(str, control.get("interpreter_args", [])), program, *args]
+            if runner == "python" else args
+        ),
         "depends_on": [runtime.service_asset],
         "delay_sec": 1,
     }

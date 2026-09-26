@@ -124,18 +124,42 @@ def asset_dirs() -> list[Path]:
     return [REPOSITORY_ASSETS, USER_ASSETS]
 
 
+def source_repository_manifests() -> list[Path]:
+    """Manifests owned by other workspace repositories (their top-level assets/).
+
+    Only the top level is read: other repositories' assets/ directories also
+    hold models and textures.
+    """
+    return sorted(
+        path for path in WORKSPACE.glob(f"*/assets/*{MANIFEST_SUFFIX}")
+        if path.parent.resolve() != REPOSITORY_ASSETS.resolve()
+    )
+
+
 def catalog(directories: list[Path] | None = None) -> dict[str, Asset]:
+    """Load every manifest: this repository's, source repositories', and user Assets.
+
+    With directories, only manifests under those directories are read.
+    """
+    if directories is None:
+        paths = [
+            *sorted(REPOSITORY_ASSETS.rglob(f"*{MANIFEST_SUFFIX}")),
+            *source_repository_manifests(),
+            *(sorted(USER_ASSETS.rglob(f"*{MANIFEST_SUFFIX}")) if USER_ASSETS.is_dir() else []),
+        ]
+    else:
+        paths = [
+            path for directory in directories if directory.is_dir()
+            for path in sorted(directory.rglob(f"*{MANIFEST_SUFFIX}"))
+        ]
     assets: dict[str, Asset] = {}
-    for directory in directories if directories is not None else asset_dirs():
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.rglob(f"*{MANIFEST_SUFFIX}")):
-            asset = load_manifest(path)
-            if asset.id in assets:
-                raise AssetError(
-                    f"duplicate Asset id {asset.id}: {assets[asset.id].path} and {path}"
-                )
-            assets[asset.id] = asset
+    for path in paths:
+        asset = load_manifest(path)
+        if asset.id in assets:
+            raise AssetError(
+                f"duplicate Asset id {asset.id}: {assets[asset.id].path} and {path}"
+            )
+        assets[asset.id] = asset
     return assets
 
 

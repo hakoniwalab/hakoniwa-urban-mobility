@@ -17,6 +17,7 @@ from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
 
+FPV_ASSETS = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/assets"
 RECEIPT = Path("C:/cities/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json")
 CITY_ID = "hokkaido-01100-lat43.062-lon141.355"
 
@@ -44,12 +45,17 @@ class Fixture(unittest.TestCase):
         self.receipt.parent.mkdir(parents=True)
         self.receipt.write_text("{}", encoding="utf-8")
         urban_assets.register_city(self.receipt, directory=self.work / "assets")
-        self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, self.work / "assets"])
+        self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, FPV_ASSETS, self.work / "assets"])
         # Flat ground at 0 m unless a test passes its own ground function; the
         # fixture City receipts have no World model to ray-cast.
-        ground = mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 0.0)
-        ground.start()
-        self.addCleanup(ground.stop)
+        for name in ("city_ground", "plain_ground"):
+            ground = mock.patch.object(urban_composition, name, return_value=lambda east, north: 0.0)
+            ground.start()
+            self.addCleanup(ground.stop)
+        # Generated plain World models go to the test directory, not the workspace.
+        cache = mock.patch.object(urban_composition, "PLAIN_WORLD_CACHE", self.work / "plain-world-cache")
+        cache.start()
+        self.addCleanup(cache.stop)
 
     def composition(self, **overrides) -> Path:
         vehicle = {
@@ -727,6 +733,161 @@ class ControlsTest(IntegratedFixture):
         self.assertEqual([asset["name"] for asset in assets],
                          ["urban-car-fleet-plant", "control-car-1-rc", "urban-vehicle-web-bridge"])
         self.assertIn("1.5", assets[1]["args"])
+
+
+try:
+    import mujoco  # noqa: F401
+except ImportError:
+    mujoco = None
+
+
+class FpvCompositionTest(Fixture):
+    """Plain World + FPV Drone through tools/fpv.py."""
+
+    def fpv(self, **vehicle) -> Path:
+        entry = {"name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
+                 "spawn": {"east_m": 0.0, "north_m": 0.0, "yaw_deg": 90.0}}
+        entry.update(vehicle)
+        return self.composition(world="fpv-training-course", vehicles=[entry], viewer={})
+
+    def test_catalog_reads_manifests_owned_by_source_repositories(self):
+        names = {path.name for path in urban_assets.source_repository_manifests()}
+        self.assertLessEqual({"fpv-drone-master3x.asset.yaml", "fpv-training-course.asset.yaml"}, names)
+        self.assertEqual(self.assets["fpv-training-course"].kind, "plain")
+
+    def test_spawn_is_ned_with_the_asset_clearance(self):
+        spawn = urban_composition.to_fpv_spawn(
+            self.load(self.fpv(spawn={"east_m": 4.0, "north_m": 17.0, "yaw_deg": 0.0})),
+            ground=lambda east, north: 5.0,
+        )
+        self.assertEqual(spawn["position_meter"], [17.0, 4.0, -5.016])
+        self.assertEqual(spawn["angle_degree"], [0.0, 0.0, 90.0], "ENU yaw 0 (east) is NED yaw 90")
+        facing_north = urban_composition.to_fpv_spawn(self.load(self.fpv()), ground=lambda east, north: 0.0)
+        self.assertEqual(facing_north["angle_degree"], [0.0, 0.0, 0.0])
+
+    def test_plain_world_model_holds_the_course_without_a_vehicle(self):
+        import xml.etree.ElementTree as ET
+
+        world = urban_composition.plain_world_yaml(self.load(self.fpv()))
+        mjcf = urban_composition.plain_world_mjcf(world)
+        self.assertEqual(mjcf.parent, self.work / "plain-world-cache")
+        root = ET.parse(mjcf).getroot()
+        self.assertIsNotNone(root.find("./worldbody/geom[@name='ground']"))
+        self.assertIsNotNone(root.find("./worldbody/body[@name='course_tower']"))
+        self.assertIsNone(root.find(".//body[@name='drone_base']"))
+        self.assertEqual(urban_composition.plain_world_mjcf(world), mjcf, "cached")
+
+    @unittest.skipIf(mujoco is None, "MuJoCo Python is not installed")
+    def test_fpv_spawn_lands_on_course_obstacles(self):
+        import world_height
+
+        world = urban_composition.plain_world_yaml(self.load(self.fpv()))
+        ground = world_height.ray_ground(urban_composition.plain_world_mjcf(world), cache_dir=self.work / "heights")
+        # fpv-training-course.yaml: tower 5 m tall at MuJoCo (17, -4), low bar 1.3 m at (11, 3.5).
+        self.assertAlmostEqual(ground(4.0, 17.0), 5.0, places=6)
+        self.assertAlmostEqual(ground(-3.5, 11.0), 1.3, places=6)
+        self.assertAlmostEqual(ground(0.0, 0.0), 0.0, places=6)
+
+    def test_fpv_rc_matches_the_fpv_tool_remote_controller(self):
+        with mock.patch.object(multi_car, "foundation_python", return_value=Path("/foundation/python")):
+            runtime = urban_mobility.fpv_runtime()
+        [process] = urban_controls.control_processes(self.load(self.fpv()), {"drone-core": runtime})
+        fpv_root = urban_assets.WORKSPACE / "hakoniwa-fpv-drone"
+        drone_core = urban_assets.WORKSPACE / "hakoniwa-drone-core"
+        # tools/fpv.py writes fpv-remote-controller with these fields.
+        self.assertEqual(process["args"], [
+            "-u", str((fpv_root / "tools/fpv_rc_bootstrap.py").resolve()),
+            str(drone_core / "config/pdudef/drone-pdudef-1.json"),
+            str((drone_core / "drone_api/rc/rc_config/ps4-control.json").resolve()),
+            "--rc-root", str((drone_core / "drone_api/rc").resolve()),
+        ])
+        self.assertEqual(process["cwd"], str(fpv_root.resolve()))
+        self.assertEqual(process["depends_on"], ["fpv-drone-service"])
+        self.assertEqual(process["activation_timing"], "after_start")
+
+    def fpv_runtime_dir(self, output: Path, clearance: float = 0.016) -> None:
+        vehicle = output / "runtime/vehicle"
+        vehicle.mkdir(parents=True)
+        (vehicle / "report.json").write_text(json.dumps({"initial_pose": {"mujoco_z_m": clearance}}), encoding="utf-8")
+        (vehicle / "drone_config_0.json").write_text(json.dumps({"components": {"droneDynamics": {
+            "position_meter": [0.0, 0.0, -0.016], "angle_degree": [0.0, 0.0, 0.0]}}}), encoding="utf-8")
+        (output / "runtime/launcher.json").write_text(json.dumps({"assets": [
+            {"name": "fpv-drone-service"}, {"name": "fpv-remote-controller"}, {"name": "fpv-threejs-http-server"},
+        ]}), encoding="utf-8")
+
+    def run_fpv(self, command: str, composition: Path, output_root: Path, calls: list):
+        def run(arguments, **kwargs):
+            calls.append(arguments)
+            if arguments[2] == "configure":
+                self.fpv_runtime_dir(Path(arguments[4]))
+            return mock.Mock(returncode=0)
+
+        with self.catalog(), mock.patch.object(urban_mobility, "FPV_OUTPUT_ROOT", output_root), \
+                mock.patch.object(urban_mobility.subprocess, "run", side_effect=run), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path("/foundation/python")):
+            return urban_mobility.fpv_composition_command(command, composition)
+
+    def test_configure_generates_on_the_world_and_applies_spawn_and_controls(self):
+        output_root, calls = self.work / "fpv", []
+        composition = self.fpv(spawn={"east_m": 2.0, "north_m": 3.0, "yaw_deg": 90.0})
+        self.assertEqual(self.run_fpv("configure", composition, output_root, calls), 0)
+        arguments = calls[0]
+        self.assertEqual(arguments[2:5], ["configure", "--output", str(output_root / "test")])
+        world = arguments[arguments.index("--world") + 1]
+        self.assertTrue(world.endswith("fpv-training-course.yaml"))
+        self.assertIn("--threejs", arguments)
+        self.assertTrue(arguments[arguments.index("--assembly") + 1].endswith("master3x-visual-demo.assembly.json"))
+        runtime = output_root / "test/runtime"
+        dynamics = json.loads((runtime / "vehicle/drone_config_0.json").read_text(encoding="utf-8"))
+        self.assertEqual(dynamics["components"]["droneDynamics"]["position_meter"], [3.0, 2.0, -0.016])
+        names = [asset["name"] for asset in json.loads((runtime / "launcher.json").read_text(encoding="utf-8"))["assets"]]
+        self.assertEqual(names, ["fpv-drone-service", "control-drone-1-rc", "fpv-threejs-http-server"])
+
+    def test_start_applies_a_moved_spawn_and_rejects_a_new_world(self):
+        output_root, calls = self.work / "fpv", []
+        self.run_fpv("configure", self.fpv(), output_root, calls)
+        moved = self.fpv(spawn={"east_m": 6.0, "north_m": -1.0, "yaw_deg": 90.0})
+        self.assertEqual(self.run_fpv("start", moved, output_root, calls), 0)
+        self.assertEqual(calls[-1][2], "start")
+        dynamics = json.loads((output_root / "test/runtime/vehicle/drone_config_0.json").read_text(encoding="utf-8"))
+        self.assertEqual(dynamics["components"]["droneDynamics"]["position_meter"][:2], [-1.0, 6.0])
+        other_world = self.work / "other-world.yaml"
+        other_world.write_text(
+            (FPV_ASSETS.parent / "recipes/environments/fpv-training-course.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        manifest = self.work / "assets/other-course.asset.yaml"
+        manifest.write_text(yaml.safe_dump({"schema": "hakoniwa.asset/v1", "id": "other-course", "kind": "plain",
+                                            "version": 1, "world": str(other_world)}), encoding="utf-8")
+        self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, FPV_ASSETS, self.work / "assets"])
+        path = self.fpv()
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["world"] = "other-course"
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "World or FPV Asset"):
+            self.run_fpv("start", path, output_root, calls)
+
+    def test_manifest_clearance_must_match_the_generated_vehicle(self):
+        output_root = self.work / "fpv"
+        self.fpv_runtime_dir(output_root / "test", clearance=0.03)
+        with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path("/python")), \
+                self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "update"):
+            urban_mobility.apply_fpv_composition(self.fpv(), output_root / "test")
+
+    def test_plain_world_needs_the_fpv_drone_and_fpv_needs_a_plain_world(self):
+        hexa = self.composition(world="fpv-training-course", viewer={}, vehicles=[{
+            "name": "Drone-1", "asset": "eams-hexa", "control": "rc",
+            "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
+        with self.assertRaisesRegex(urban_composition.CompositionError, "exactly one FPV Drone"):
+            urban_composition.fpv_vehicle(self.load(hexa))
+        city_fpv = self.composition(world=CITY_ID, viewer={}, vehicles=[{
+            "name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
+            "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
+        with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds only"):
+            urban_composition.fpv_vehicle(self.load(city_fpv))
+        car = self.composition(world="fpv-training-course", viewer={})
+        with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds are not adapted"):
+            urban_composition.to_car_config(self.load(car), "urban-car-rc")
 
 
 if __name__ == "__main__":

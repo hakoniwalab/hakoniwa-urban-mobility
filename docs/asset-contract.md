@@ -77,7 +77,8 @@ Launcher config, Three.js config, Recipe workspace
 
 The target placement is the Asset's source repository. For v1:
 
-- `hakoniwa-fpv-drone` owns its manifest (`assets/<id>.asset.yaml`).
+- `hakoniwa-fpv-drone` owns its manifests (`assets/<id>.asset.yaml`): the
+  Master3X FPV Drone and the `fpv-training-course` plain World.
 - All other manifests live in this repository under `assets/`, and point into
   their source repositories (`hakoniwa-mbody-registry`, `hakoniwa-drone-core`,
   ...). They move to their source repositories later without changing the
@@ -87,7 +88,10 @@ The target placement is the Asset's source repository. For v1:
   `tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
   The id defaults to the City World job name.
 
-`tools/urban_assets.py list` prints the catalog (both directories).
+The catalog reads this repository's `assets/` (recursively), the top level of
+every workspace repository's `assets/` (`<repo>/assets/*.asset.yaml`; those
+directories also hold models, so they are not searched recursively), and the
+user City Assets. `tools/urban_assets.py list` prints it.
 
 ### 3.2 Fields (vehicle)
 
@@ -184,7 +188,8 @@ starts after the simulation starts.
 otherwise:
 
 ```yaml
-runner: python        # python (default) | executable
+runner: python             # python (default) | executable
+interpreter_args: ["-u"]   # python only: arguments before the program
 ```
 
 Python control programs must not rely on the current directory or the script
@@ -386,6 +391,13 @@ The World YAML uses MuJoCo world coordinates; the contract uses ENU with the
 World origin at the MuJoCo origin. The builder converts between them
 (MuJoCo `x` = north, `y` = -east, as in the current City tooling).
 
+For spawn heights (section 5.4) the FPV generator writes the World alone
+(`generate_world_mujoco()`: ground and obstacles, the same geometry it
+merges into the FPV vehicle model) to `work/urban/cache/plain-world/`, keyed
+by the YAML and the generator source; the ray then lands a vehicle on the
+ground or on an obstacle top. Without MuJoCo Python the height is the flat
+ground.
+
 ## 7. Mapping from the existing Recipes
 
 | Concept | `urban-car-one` | `urban-drone-one` | `drone-car-rc` | Contract |
@@ -451,14 +463,28 @@ The migration keeps a running reference at every step:
    2. Ray-based spawn height on the World (done, section 5.4): Cars and
       Drones start on rooftops as well as on the ground. On open ground
       the ray equals the previous terrain sampling.
-   3. Plain World + FPV Drone.
+   3. Plain World + FPV Drone (done): `urban_mobility.py <command>
+      --composition` runs a plain World + one FPV Drone through
+      `hakoniwa-fpv-drone/tools/fpv.py` (output under `work/urban/fpv/<id>/`).
+      A vehicle whose manifest has `source.generator.tool: tools/fpv.py` is
+      an FPV Drone. `configure` generates the vehicle on the World YAML with
+      the manifest's Assembly Graph and the Three.js viewer; `configure` and
+      every `start` write the spawn into the runtime `drone_config_0.json`
+      (`droneDynamics.position_meter` = [north, east, -up], NED yaw) and
+      replace `fpv-remote-controller` with the manifest control. A different
+      World or FPV Asset needs `configure`. The adapter rejects a manifest
+      `ground_clearance_m` that differs from the generated report's
+      `initial_pose.mujoco_z_m`.
    4. Builders read the Composition directly; the adapter-only defaults
       (`launch_area`, the RC mission file, the `rooftop` field) go away.
+      Plain Worlds for Cars and the EAMS Hexa, and the FPV Drone in a City,
+      belong here.
    5. Several Drones per Composition.
 
    Remaining limits: one Drone per Composition, the `eams-nominal-9kg` Drone
-   profile only, and City Worlds only. Drone `api` together with Cars is
-   configured but not yet run end to end.
+   profile only for the City Drone adapters, plain Worlds only with the FPV
+   Drone, and the FPV Drone only on plain Worlds. Drone `api` together with
+   Cars is configured but not yet run end to end.
 
 ## 8. Examples
 
@@ -544,20 +570,24 @@ version: 0.1.0
 title: FPV Drone (Master3X)
 source:
   repository: hakoniwa-fpv-drone
-  generator: tools/fpv.py configure --assembly recipes/examples/master3x-visual-demo.assembly.json
+  generator:
+    tool: tools/fpv.py
+    assembly: recipes/examples/master3x-visual-demo.assembly.json
 simulator: drone-core
-model:
-  physics: ${runtime.vehicle_dir}/drone.xml
-  visual: ${runtime.threejs_dir}/assets/manifest.json
 spawn:
-  ground_clearance_m: 0.05     # example; set from the model's landing geometry
+  # The generated report's initial_pose.mujoco_z_m for this assembly.
+  ground_clearance_m: 0.016
 controls:
   rc:
     program: ${repo:hakoniwa-fpv-drone}/tools/fpv_rc_bootstrap.py
+    interpreter_args: ["-u"]
     scope: vehicle
-    args: [ "${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json",
-            "--rc-root", "${repo:hakoniwa-drone-core}/drone_api/rc" ]
+    cwd: ${repo:hakoniwa-fpv-drone}
+    args: ["${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json",
+           "--rc-root", "${repo:hakoniwa-drone-core}/drone_api/rc"]
 ```
+
+The vehicle model is generated, so the manifest has no `model` paths.
 
 The FPV Drone is an `rc`-only Asset; the browser offers no `api` control for it.
 

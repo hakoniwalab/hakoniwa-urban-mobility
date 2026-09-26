@@ -429,6 +429,107 @@ def apply_composition_controls(context: RecipeContext, composition_path: Path) -
     multi_car.write_json(launcher_path, launcher)
 
 
+FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
+FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
+FPV_SELECTION_FILE = "urban-composition.json"
+
+
+def fpv_runtime():
+    """Controls runtime for the FPV Drone service that tools/fpv.py configures."""
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={"pdu_def": WORKSPACE / "hakoniwa-drone-core/config/pdudef/drone-pdudef-1.json"},
+        service_asset="fpv-drone-service",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def fpv_selection(composition_path: Path) -> tuple[object, Path, dict]:
+    """Return (composition, tools/fpv.py output, the inputs that need configure)."""
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    try:
+        vehicle = urban_composition.fpv_vehicle(composition)
+        world = urban_composition.plain_world_yaml(composition)
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    generator = vehicle.asset.data["source"]["generator"]
+    assembly = (WORKSPACE / vehicle.asset.data["source"]["repository"] / generator["assembly"]).resolve()
+    selection = {"world": str(world), "asset": vehicle.asset.id, "assembly": str(assembly)}
+    return composition, FPV_OUTPUT_ROOT / composition.id, selection
+
+
+def apply_fpv_composition(composition_path: Path, output: Path) -> None:
+    """Apply the spawn and manifest controls to a configured tools/fpv.py runtime."""
+    import multi_car
+    import urban_composition
+    import urban_controls
+
+    composition = load_composition(composition_path)
+    vehicle = urban_composition.fpv_vehicle(composition)
+    runtime = output / "runtime"
+    report = multi_car.load_json(runtime / "vehicle/report.json", "FPV generated report")
+    generated = float(report["initial_pose"]["mujoco_z_m"])
+    declared = float(vehicle.asset.data["spawn"]["ground_clearance_m"])
+    if abs(generated - declared) > 1.0e-6:
+        raise UrbanMobilityError(
+            f"Asset {vehicle.asset.id} declares ground_clearance_m {declared}, but the generated "
+            f"vehicle starts {generated} m above the ground; update {vehicle.asset.path}"
+        )
+    try:
+        spawn = urban_composition.to_fpv_spawn(composition)
+    except urban_composition.CompositionError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    config_path = runtime / "vehicle/drone_config_0.json"
+    config = multi_car.load_json(config_path, "FPV Drone config")
+    dynamics = config["components"]["droneDynamics"]
+    dynamics["position_meter"] = spawn["position_meter"]
+    dynamics["angle_degree"] = spawn["angle_degree"]
+    multi_car.write_json(config_path, config)
+    launcher_path = runtime / "launcher.json"
+    launcher = multi_car.load_json(launcher_path, "FPV Launcher")
+    urban_controls.apply_controls(launcher, control_processes(composition_path, {"drone-core": fpv_runtime()}))
+    multi_car.write_json(launcher_path, launcher)
+
+
+def fpv_composition_command(command: str, composition_path: Path) -> int:
+    """Run a plain World + FPV Drone Composition through tools/fpv.py.
+
+    configure generates the vehicle on the plain World; configure and start
+    apply the Composition spawn and controls, so placement and param edits
+    take effect at the next start. A different World or Asset needs configure.
+    """
+    import multi_car
+
+    composition, output, selection = fpv_selection(composition_path)
+    tool = [sys.executable, str(FPV_TOOL), command, "--output", str(output)]
+    selected = output / FPV_SELECTION_FILE
+    if command == "configure":
+        result = subprocess.run(
+            [*tool, "--world", selection["world"], "--threejs", "--assembly", selection["assembly"]],
+            cwd=FPV_TOOL.parents[1], check=False,
+        ).returncode
+        if result != 0:
+            return result
+        multi_car.write_json(selected, selection)
+        apply_fpv_composition(composition_path, output)
+        return 0
+    if command == "start":
+        if not selected.is_file():
+            raise UrbanMobilityError("the FPV Composition is not configured; run configure --composition first")
+        if json.loads(selected.read_text(encoding="utf-8")) != selection:
+            raise UrbanMobilityError(
+                "the Composition changed its World or FPV Asset; run configure --composition"
+            )
+        apply_fpv_composition(composition_path, output)
+    if command not in {"start", "status", "stop", "open-viewer"}:
+        raise UrbanMobilityError(f"{command} is not supported for a plain World + FPV Drone Composition")
+    return subprocess.run(tool, cwd=FPV_TOOL.parents[1], check=False).returncode
+
+
 def drone_composition_command(command: str, composition_path: Path) -> int:
     """Run a Drone-only Composition through tools/drone_one.py.
 
@@ -836,7 +937,10 @@ def main() -> int:
     if args.recipe is None:
         if args.composition is None:
             raise UrbanMobilityError("--recipe or --composition is required")
-        if frozenset(load_composition(args.composition).simulators()) == DRONE_ONLY:
+        composition = load_composition(args.composition)
+        if frozenset(composition.simulators()) == DRONE_ONLY:
+            if composition.world.kind == "plain":
+                return fpv_composition_command(args.command, args.composition)
             return drone_composition_command(args.command, args.composition)
         args.recipe = composition_recipe(args.composition)
     context = load_context(args.recipe)

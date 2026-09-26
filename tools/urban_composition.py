@@ -10,6 +10,7 @@ City + Car + one Drone (tools/urban_composer.py).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -40,6 +41,10 @@ DRONE_MIRROR_PARAMS = {
     "relative_normal_speed_threshold_mps": 0.2,
     "cooldown_sec": 0.1,
 }
+PLAIN_WORLD_CACHE = urban_assets.BUSINESS_PACK / "work/urban/cache/plain-world"
+FPV_GENERATOR_SRC = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/src"
+# Vehicles whose manifest names this generator run through tools/fpv.py.
+FPV_TOOL = "tools/fpv.py"
 DEFAULT_HTTP_PORT = 8000
 DEFAULT_CAR_WEB_BRIDGE_PORT = 18765
 # urban_composer.py serves the integrated viewer on the standard WebBridge port.
@@ -230,8 +235,55 @@ def city_ground(receipt: Path) -> Callable[[float, float], float]:
         return lambda east_m, north_m: multi_car.terrain_height_mjcf(data, north_m, -east_m)
 
 
+def plain_world_yaml(composition: Composition) -> Path:
+    if composition.world.kind != "plain":
+        raise CompositionError(f"World {composition.world.id} is not a plain World")
+    return composition.world.resolve(composition.world.data["world"])
+
+
+def plain_world_mjcf(world_yaml: Path, *, cache_dir: Path | None = None) -> Path:
+    """Return the World-only MJCF (ground and obstacles) of a plain World YAML.
+
+    The FPV generator writes it with the same geometry it merges into the FPV
+    vehicle model; it is cached by the YAML and the generator source.
+    """
+    generator = FPV_GENERATOR_SRC / "fpv_drone_generator/generators/mujoco.py"
+    digest = hashlib.sha256(world_yaml.read_bytes() + generator.read_bytes()).hexdigest()
+    output = (cache_dir or PLAIN_WORLD_CACHE) / f"{digest}.xml"
+    if not output.is_file():
+        if str(FPV_GENERATOR_SRC) not in sys.path:
+            sys.path.insert(0, str(FPV_GENERATOR_SRC))
+        from fpv_drone_generator.generators.mujoco import generate_world_mujoco
+        from fpv_drone_generator.world import load_world
+
+        partial = output.with_suffix(".partial.xml")
+        generate_world_mujoco(load_world(world_yaml), partial)
+        partial.replace(output)
+    return output
+
+
+def plain_ground(world_yaml: Path) -> Callable[[float, float], float]:
+    """Return ground(east_m, north_m) on a plain World: its ground or obstacle tops."""
+    mjcf = plain_world_mjcf(world_yaml)
+    try:
+        import world_height
+
+        return world_height.ray_ground(mjcf)
+    except ImportError:
+        print(
+            "WARNING: MuJoCo Python is not installed; spawn heights use the flat ground "
+            "only, so obstacle tops are ignored. The managed Recipe configure installs it.",
+            file=sys.stderr,
+        )
+        return lambda east_m, north_m: 0.0
+
+
 def _ground(composition: Composition, ground: Callable[[float, float], float] | None):
-    return ground or city_ground(city_receipt(composition))
+    if ground is not None:
+        return ground
+    if composition.world.kind == "plain":
+        return plain_ground(plain_world_yaml(composition))
+    return city_ground(city_receipt(composition))
 
 
 def _surface(vehicle: Vehicle, ground: Callable[[float, float], float]) -> float:
@@ -465,6 +517,44 @@ def to_integrated(
         scenarios["car"] = route_scenario["path"]
     config["scenarios"] = scenarios
     return config, _drone_recipe(composition, drone, ground)
+
+
+# --- FPV Drone on a plain World (tools/fpv.py) --------------------------------------
+
+def is_fpv(vehicle: Vehicle) -> bool:
+    generator = vehicle.asset.data.get("source", {}).get("generator")
+    return isinstance(generator, dict) and generator.get("tool") == FPV_TOOL
+
+
+def fpv_vehicle(composition: Composition) -> Vehicle:
+    """Return the one FPV Drone of a plain World + FPV Drone Composition."""
+    if composition.world.kind != "plain":
+        raise CompositionError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
+    if len(composition.vehicles) != 1 or not is_fpv(composition.vehicles[0]):
+        raise CompositionError("the FPV adapter runs exactly one FPV Drone (tools/fpv.py)")
+    if composition.interactions:
+        raise CompositionError("interactions need Cars; this Composition has one FPV Drone only")
+    return composition.vehicles[0]
+
+
+def to_fpv_spawn(
+    composition: Composition,
+    *,
+    ground: Callable[[float, float], float] | None = None,
+) -> dict:
+    """Return the Drone Core droneDynamics pose (NED) for the FPV Drone spawn.
+
+    The plain World's MuJoCo frame is X=North, Y=-East, Z=Up (section 6.2);
+    Drone Core takes position_meter as [north, east, -up] and a NED yaw.
+    """
+    vehicle = fpv_vehicle(composition)
+    up = _spawn_up(vehicle, _ground(composition, ground))
+    spawn = vehicle.spawn
+    yaw_ned = (90.0 - spawn["yaw_deg"] + 180.0) % 360.0 - 180.0
+    return {
+        "position_meter": [spawn["north_m"], spawn["east_m"], -up],
+        "angle_degree": [0.0, 0.0, yaw_ned],
+    }
 
 
 # --- Shared --------------------------------------------------------------------
