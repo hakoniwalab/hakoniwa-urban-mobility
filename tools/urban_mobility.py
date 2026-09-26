@@ -353,21 +353,102 @@ def materialize_drone_recipe(composition_path: Path) -> Path:
     return path
 
 
+def car_runtime(work: Path):
+    """Controls runtime for the Car simulator configured under a Recipe root."""
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={
+            "pdu_def": work / "config/car/urban-car-pdudef.json",
+            "rc_config": ROOT / "config/car/dualsense-controller.json",
+        },
+        service_asset="urban-car-fleet-plant",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def drone_runtime(paths: object, pdu_def: Path):
+    """Controls runtime for the Drone simulator configured in drone_one paths."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    return urban_controls.Runtime(
+        values={
+            "pdu_def": pdu_def,
+            "drone_root": drone_one.DEFAULT_DRONE_ROOT.resolve(),
+            "service_config": paths.recipe_config / "drone/fleets/services/api-current-service.json",
+            "city_marker": paths.recipe_config / "mujoco-city-fleet.json",
+            "summary_json": paths.recipe_validation / "urban-drone-mission.json",
+        },
+        service_asset="drone-service-1",
+        python=str(multi_car.foundation_python()),
+    )
+
+
+def control_processes(composition_path: Path, runtimes: dict) -> list[dict]:
+    import urban_controls
+
+    try:
+        return urban_controls.control_processes(load_composition(composition_path), runtimes)
+    except urban_controls.ControlError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+
+
+def write_drone_controls(composition_path: Path) -> Path:
+    """Write the processes that tools/drone_one.py applies whenever it writes its Launcher."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    paths = drone_one._paths()
+    processes = control_processes(
+        composition_path,
+        {"drone-core": drone_runtime(paths, paths.recipe_config / "pdudef/drone-pdudef-current.json")},
+    )
+    path = paths.recipe_config / urban_controls.CONTROLS_FILE
+    multi_car.write_json(path, processes)
+    return path
+
+
+def apply_composition_controls(context: RecipeContext, composition_path: Path) -> None:
+    """Replace the configured Launcher's control assets with the manifest controls."""
+    import drone_one
+    import multi_car
+    import urban_controls
+
+    runtimes = {"ackermann-mujoco": car_runtime(root(context))}
+    if context.use_case == "drone-car-distributed":
+        runtimes["drone-core"] = drone_runtime(
+            drone_one._paths(context.recipe_id), root(context) / "config/car/urban-car-pdudef.json"
+        )
+    launcher_path = root(context) / "config/launcher.json"
+    launcher = multi_car.load_json(launcher_path, "configured Launcher")
+    urban_controls.apply_controls(launcher, control_processes(composition_path, runtimes))
+    multi_car.write_json(launcher_path, launcher)
+
+
 def drone_composition_command(command: str, composition_path: Path) -> int:
     """Run a Drone-only Composition through tools/drone_one.py.
 
-    configure and start rewrite the tool recipe from the Composition, so a
-    placement-only edit takes effect at the next start (drone_one.py accepts
-    pose-only recipe edits and rejects the rest until configure).
+    configure and start rewrite the tool recipe and control processes from
+    the Composition, so placement, param, and program edits take effect at
+    the next start (drone_one.py accepts pose-only recipe edits and rejects
+    the rest until configure).
     """
     tool = [sys.executable, str(ROOT / "tools/drone_one.py")]
     if command == "configure":
         recipe = materialize_drone_recipe(composition_path)
-        return subprocess.run([*tool, "configure", "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
+        result = subprocess.run([*tool, "configure", "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
+        if result == 0:
+            write_drone_controls(composition_path)
+        return result
     if command == "start":
         if not drone_recipe_path().is_file():
             raise UrbanMobilityError("the Drone Composition is not configured; run configure --composition first")
         materialize_drone_recipe(composition_path)
+        write_drone_controls(composition_path)
     if command in {"plan", "check-rc"}:
         raise UrbanMobilityError(f"{command} is not supported for a Drone-only Composition")
     return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
@@ -419,6 +500,8 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     resolved = multi_car.resolve_config(config_path)
     if multi_car.configure(resolved) != 0:
         return 1
+    if getattr(args, "composition", None) is not None:
+        apply_composition_controls(context, args.composition)
 
     viewer_config = root(context) / "config/threejs/viewer-config.json"
     url = multi_car.map_viewer_url(resolved, viewer_config)
@@ -493,7 +576,10 @@ def configure_integrated(context: RecipeContext, args: argparse.Namespace | None
             "generated_composition": str(config_path),
         },
     )
-    return urban_composer.configure(config_path)
+    if urban_composer.configure(config_path) != 0:
+        return 1
+    apply_composition_controls(context, selected)
+    return 0
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
@@ -547,6 +633,7 @@ def prepare_start(context: RecipeContext, composition_path: Path | None = None) 
     if context.use_case == "car-rc":
         if composition_path is not None:
             refresh_car_poses(refresh_composition_placement(context, composition_path))
+            apply_composition_controls(context, composition_path)
         return
     if context.use_case != "drone-car-distributed":
         raise UrbanMobilityError(
@@ -572,6 +659,7 @@ def prepare_start(context: RecipeContext, composition_path: Path | None = None) 
     )
     if car_config is not None:
         refresh_car_poses(car_config)
+        apply_composition_controls(context, composition_path)
 
 
 def launcher_command(operation: str, context: RecipeContext, args: argparse.Namespace | None = None) -> int:

@@ -230,8 +230,13 @@ def _merge_launchers(
     if "--external-conductor" not in car_plant["args"]:
         car_plant["args"].append("--external-conductor")
 
-    controller = asset(drone_launcher, "urban-drone-ps4-controller")
-    controller["args"][1] = str(unified_pdu)
+    # The Drone control is the PS4 RC client or, for a Fleet RPC Drone, the mission.
+    names = {item.get("name") for item in drone_launcher.get("assets", [])}
+    if "urban-drone-ps4-controller" in names:
+        controller = asset(drone_launcher, "urban-drone-ps4-controller")
+        controller["args"][1] = str(unified_pdu)
+    else:
+        controller = asset(drone_launcher, "urban-drone-mission")
     visual_publisher = asset(drone_launcher, "visual-state-publisher")
     # Car control assets exist only for the selected controls: one scenario
     # executor for api Cars and one PS5 sender per rc Car.
@@ -284,9 +289,10 @@ def configure(
     drone_car_rc.build_car_asset()
     paths = _drone_paths(resolved["recipe_id"])
     base_recipe = drone_scenario["recipe"]
+    # The Drone scenario selects its control (the tracked rooftop scenario
+    # selects ps4-rc).
     drone_recipe = replace(
         base_recipe,
-        control_mode="ps4-rc",
         city_receipt=resolved["city_receipt"],
         spawn_pose_enu=drone_scenario["spawn"],
     )

@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import urban_assets  # noqa: E402
 import urban_composition  # noqa: E402
+import urban_controls  # noqa: E402
 from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
@@ -166,10 +167,13 @@ class CarCompositionTest(Fixture):
         with self.assertRaisesRegex(urban_composition.CompositionError, "share one route scenario"):
             urban_composition.to_car_config(composition, "urban-car-rc")
 
-    def test_car_rc_params_are_not_adapted_yet(self):
-        rc = self.load(self.composition(vehicle={"params": {"max_speed": 2.0}}))
-        with self.assertRaisesRegex(urban_composition.CompositionError, "rc params are not adapted"):
-            urban_composition.to_car_config(rc, "urban-car-rc")
+    def test_car_rc_params_do_not_change_the_car_config(self):
+        # Params reach only the control process (tools/urban_controls.py).
+        default = urban_composition.to_car_config(self.load(self.composition()), "urban-car-rc")
+        tuned = urban_composition.to_car_config(
+            self.load(self.composition(vehicle={"params": {"max_speed": 2.0}})), "urban-car-rc"
+        )
+        self.assertTrue(urban_composition.placement_only_change(default, tuned))
 
     def test_multi_car_accepts_a_scenario_for_explicit_external_vehicles(self):
         scenario = {"path": str(ROOT / "recipes/scenarios/golf-cart-demo-loop.yaml")}
@@ -234,8 +238,10 @@ class CarPlacementTest(Fixture):
         with self.catalog(), \
                 mock.patch.object(urban_mobility, "root", return_value=context_root), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
+                mock.patch.object(urban_mobility, "apply_composition_controls") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as refresh:
             urban_mobility.prepare_start(context, composition)
+        controls.assert_called_once_with(context, composition)
         return refresh
 
     def test_placement_only_edit_is_applied_at_start(self):
@@ -400,12 +406,13 @@ class IntegratedCompositionTest(IntegratedFixture):
         self.assertNotIn("car", config["scenarios"])
         self.assertNotIn("drone_mirrors", config["inputs"])
 
-    def test_integrated_drone_api_is_not_adapted_yet(self):
+    def test_integrated_drone_api_selects_fleet_rpc(self):
         mission = self.work / "mission.json"
         mission.write_text("{}", encoding="utf-8")
         composition = self.integrated(drone={"control": "api", "params": {"mission": str(mission)}})
-        with self.assertRaisesRegex(urban_composition.CompositionError, "Drone api control with Cars"):
-            self.outputs(composition)
+        _, _, drone_path = self.outputs(composition)
+        drone = drone_one.load_urban_recipe(drone_path)
+        self.assertEqual((drone.control_mode, drone.mission), ("fleet-rpc", mission.resolve()))
 
     def test_mirror_must_name_a_drone(self):
         path = self.integrated(mirror=False)
@@ -476,8 +483,10 @@ class IntegratedPlacementTest(IntegratedFixture):
                 mock.patch.object(drone_one, "refresh_runtime_spawn"), \
                 mock.patch.object(drone_one, "refresh_runtime_controller_params"), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
+                mock.patch.object(urban_mobility, "apply_composition_controls") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as car_poses:
             urban_mobility.prepare_start(self.context(), composition)
+        controls.assert_called_once()
         return load_runtime, car_poses
 
     def test_drone_and_car_placement_edits_apply_at_start(self):
@@ -505,6 +514,200 @@ class IntegratedPlacementTest(IntegratedFixture):
         with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "run configure"):
             self.start(edited, context_root)
         self.assertEqual(drone_path.read_text(encoding="utf-8"), before)
+
+
+class ControlsTest(IntegratedFixture):
+    """Manifest controls must reproduce the control processes the tools write today."""
+
+    PYTHON = "/foundation/python"
+
+    def car_runtime(self, work: Path):
+        with mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
+            return urban_mobility.car_runtime(work)
+
+    def drone_runtime(self, paths, pdu_def: Path):
+        with mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
+            return urban_mobility.drone_runtime(paths, pdu_def)
+
+    def processes(self, composition: Path, runtimes: dict) -> list[dict]:
+        return urban_controls.control_processes(self.load(composition), runtimes)
+
+    def car_launcher(self, work: Path, vehicles: list[dict], route_scenario: dict | None = None) -> list[dict]:
+        source = {
+            "plant": ROOT / "build/bin/urban-car-hakoniwa-asset",
+            "core_config": ROOT / "core.json",
+            "ps5_sender": ROOT / "apps/car/ps5_ackermann_sender.py",
+            "ps5_mapping": ROOT / "config/car/dualsense-controller.json",
+            "scenario_executor": ROOT / "apps/car/scenario_executor.py",
+        }
+        with mock.patch.object(multi_car, "paths", return_value=source), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)), \
+                mock.patch.object(multi_car, "foundation_install", return_value=Path("/install")), \
+                mock.patch.object(multi_car, "launcher_supports_cleanup", return_value=True):
+            path = multi_car.materialize_launcher(
+                {"manifest": work / "manifest.json", "pdu_def": work / "config/car/urban-car-pdudef.json"},
+                work / "out", 2, vehicles, route_scenario=route_scenario,
+            )
+        return json.loads(path.read_text(encoding="utf-8"))["assets"]
+
+    def assertSameProcess(self, generated: dict, legacy: dict):
+        def normalized(asset: dict) -> dict:
+            def value(item):
+                try:
+                    return float(item)
+                except ValueError:
+                    return str(Path(item)) if ("/" in item or "\\" in item) else item
+            return {
+                "command": str(Path(asset["command"])),
+                "args": [value(str(item)) for item in asset["args"]],
+                "cwd": asset.get("cwd"),
+                "depends_on": asset["depends_on"],
+                "activation_timing": asset["activation_timing"],
+                "delay_sec": asset["delay_sec"],
+            }
+        self.assertEqual(normalized(generated), normalized(legacy))
+
+    def test_car_rc_matches_the_multi_car_ps5_sender(self):
+        [generated] = self.processes(self.composition(), {"ackermann-mujoco": self.car_runtime(self.work)})
+        legacy = self.car_launcher(self.work, [{"name": "Car-1", "prefix": "car_1_", "control_mode": "ps5"}])
+        self.assertSameProcess(generated, legacy[1])
+        self.assertEqual(generated["name"], "control-car-1-rc")
+
+    def test_car_api_matches_the_multi_car_scenario_executor(self):
+        composition = self.composition(vehicles=[
+            {"name": name, "asset": "golf-cart", "control": "api", "params": {"scenario": str(self.SCENARIO)},
+             "spawn": {"east_m": east, "north_m": 0.0, "yaw_deg": 0.0}}
+            for name, east in (("Car-1", 0.0), ("Car-2", 5.0))
+        ])
+        generated = self.processes(composition, {"ackermann-mujoco": self.car_runtime(self.work)})
+        legacy = self.car_launcher(
+            self.work,
+            [{"name": "Car-1", "prefix": "car_1_", "control_mode": "external_python"},
+             {"name": "Car-2", "prefix": "car_2_", "control_mode": "external_python"}],
+            route_scenario={"scenario": self.SCENARIO, "auto_start_scenario": True},
+        )
+        self.assertEqual(len(generated), 1, "one executor drives every api Car")
+        self.assertSameProcess(generated[0], legacy[1])
+
+    def drone_paths(self):
+        from types import SimpleNamespace
+
+        paths = SimpleNamespace(recipe_config=self.work / "drone/config", recipe_validation=self.work / "drone/validation")
+        paths.recipe_config.mkdir(parents=True)
+        return paths
+
+    def drone_launcher(self, paths) -> Path:
+        path = paths.recipe_config / "launcher.json"
+        path.write_text(json.dumps({"assets": [
+            {"name": "drone-service-1", "args": []},
+            {"name": "show-runner", "command": self.PYTHON, "args": [], "depends_on": ["drone-service-1"]},
+        ]}), encoding="utf-8")
+        return path
+
+    def test_drone_rc_matches_the_drone_one_ps4_controller(self):
+        paths = self.drone_paths()
+        pdu_def = paths.recipe_config / "pdudef/drone-pdudef-current.json"
+        [generated] = self.processes(self.drone(), {"drone-core": self.drone_runtime(paths, pdu_def)})
+        legacy_path = drone_one.patch_rc_launcher(
+            self.drone_launcher(paths), paths=paths, drone_root=drone_one.DEFAULT_DRONE_ROOT
+        )
+        legacy = json.loads(legacy_path.read_text(encoding="utf-8"))["assets"][1]
+        self.assertSameProcess(generated, legacy)
+
+    def test_drone_api_matches_the_drone_one_mission(self):
+        paths = self.drone_paths()
+        mission = self.work / "mission.json"
+        mission.write_text("{}", encoding="utf-8")
+        composition = self.drone(control="api", params={"mission": str(mission)})
+        [generated] = self.processes(
+            composition, {"drone-core": self.drone_runtime(paths, paths.recipe_config / "pdudef/x.json")}
+        )
+        legacy_path = drone_one.patch_launcher(
+            self.drone_launcher(paths), paths=paths, drone_root=drone_one.DEFAULT_DRONE_ROOT,
+            mission_path=mission.resolve(),
+        )
+        legacy = json.loads(legacy_path.read_text(encoding="utf-8"))["assets"][1]
+        self.assertSameProcess(generated, legacy)
+
+    def test_params_reach_the_control_arguments(self):
+        [process] = self.processes(
+            self.composition(vehicle={"params": {"max_speed": 2.0}}),
+            {"ackermann-mujoco": self.car_runtime(self.work)},
+        )
+        args = process["args"]
+        self.assertEqual(float(args[args.index("--max-speed") + 1]), 2.0)
+
+    def test_composition_replaces_the_program_with_placeholders(self):
+        script = self.work / "my_driver.py"
+        script.write_text("", encoding="utf-8")
+        [process] = self.processes(
+            self.composition(vehicle={
+                "program": "my_driver.py",
+                "args": ["--robot", "${vehicle.name}", "--pdu-def", "${runtime.pdu_def}"],
+            }),
+            {"ackermann-mujoco": self.car_runtime(self.work)},
+        )
+        self.assertEqual(process["args"], [
+            str(script.resolve()), "--robot", "Car-1",
+            "--pdu-def", str(self.work / "config/car/urban-car-pdudef.json"),
+        ])
+        self.assertEqual(process["cwd"], str(self.work))
+
+    def test_placeholder_errors_name_the_problem(self):
+        runtime = self.car_runtime(self.work)
+        cases = {
+            "${runtime.nope}": "provides no",
+            "${vehicle.color}": "unknown placeholder",
+            "${oops}": "unknown placeholder",
+        }
+        for arg, message in cases.items():
+            composition = self.composition(vehicle={"program": "x.py", "args": [arg]})
+            with self.subTest(arg=arg), self.assertRaisesRegex(urban_controls.ControlError, message):
+                self.processes(composition, {"ackermann-mujoco": runtime})
+
+    def test_program_and_args_replace_together(self):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "together"):
+            self.load(self.composition(vehicle={"program": "x.py"}))
+
+    def test_apply_controls_replaces_every_legacy_control(self):
+        launcher = {"assets": [
+            {"name": "drone-service-1"}, {"name": "urban-car-fleet-plant"},
+            {"name": "urban-car-2-ps5-controller"}, {"name": "urban-car-scenario-executor"},
+            {"name": "urban-drone-ps4-controller"}, {"name": "urban-vehicle-web-bridge"},
+        ]}
+        urban_controls.apply_controls(launcher, [{"name": "control-car-1-rc"}, {"name": "control-drone-1-rc"}])
+        self.assertEqual([asset["name"] for asset in launcher["assets"]], [
+            "drone-service-1", "urban-car-fleet-plant", "control-car-1-rc", "control-drone-1-rc",
+            "urban-vehicle-web-bridge",
+        ])
+
+    def test_drone_one_applies_the_composition_controls_file(self):
+        paths = self.drone_paths()
+        path = drone_one.patch_rc_launcher(self.drone_launcher(paths), paths=paths, drone_root=drone_one.DEFAULT_DRONE_ROOT)
+        (paths.recipe_config / urban_controls.CONTROLS_FILE).write_text(
+            json.dumps([{"name": "control-drone-1-rc", "args": ["x"]}]), encoding="utf-8"
+        )
+        drone_one.apply_composition_controls(path, paths)
+        names = [asset["name"] for asset in json.loads(path.read_text(encoding="utf-8"))["assets"]]
+        self.assertEqual(names, ["drone-service-1", "control-drone-1-rc"])
+
+    def test_configured_launcher_gets_the_manifest_controls(self):
+        context = urban_mobility.RecipeContext(
+            path=ROOT / "recipes/usecases/urban-car-rc.yaml", data={}, recipe_id="urban-car-rc", use_case="car-rc",
+        )
+        work = self.work / "recipe"
+        (work / "config").mkdir(parents=True)
+        (work / "config/launcher.json").write_text(json.dumps({"assets": [
+            {"name": "urban-car-fleet-plant"}, {"name": "urban-car-1-ps5-controller"},
+            {"name": "urban-vehicle-web-bridge"},
+        ]}), encoding="utf-8")
+        with self.catalog(), mock.patch.object(urban_mobility, "root", return_value=work), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
+            urban_mobility.apply_composition_controls(context, self.composition(vehicle={"params": {"max_speed": 1.5}}))
+        assets = json.loads((work / "config/launcher.json").read_text(encoding="utf-8"))["assets"]
+        self.assertEqual([asset["name"] for asset in assets],
+                         ["urban-car-fleet-plant", "control-car-1-rc", "urban-vehicle-web-bridge"])
+        self.assertIn("1.5", assets[1]["args"])
 
 
 if __name__ == "__main__":

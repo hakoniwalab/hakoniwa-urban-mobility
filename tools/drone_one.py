@@ -524,16 +524,36 @@ def urban_launcher_writer(
         )
         patch_eams_city_viewer(paths)
         if recipe.control_mode == "ps4-rc":
-            return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
-        return patch_launcher(
-            path,
-            paths=paths,
-            drone_root=drone_root,
-            mission_path=recipe.mission,
-            mujoco_viewer=mujoco_viewer,
-        )
+            path = patch_rc_launcher(path, paths=paths, drone_root=drone_root)
+        else:
+            path = patch_launcher(
+                path,
+                paths=paths,
+                drone_root=drone_root,
+                mission_path=recipe.mission,
+                mujoco_viewer=mujoco_viewer,
+            )
+        return apply_composition_controls(path, paths)
 
     return write
+
+
+def apply_composition_controls(path: Path, paths: object) -> Path:
+    """Replace the control assets with the Composition's manifest controls.
+
+    tools/urban_mobility.py writes the controls file for a Drone Composition;
+    a recipe configured directly with this tool has none.
+    """
+    import urban_controls
+
+    config = getattr(paths, "recipe_config", None)
+    controls = None if config is None else config / urban_controls.CONTROLS_FILE
+    if controls is None or not controls.is_file():
+        return path
+    launcher = json.loads(path.read_text(encoding="utf-8"))
+    urban_controls.apply_controls(launcher, json.loads(controls.read_text(encoding="utf-8")))
+    path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _paths(recipe_id: str = URBAN_DRONE_RECIPE_ID):
@@ -888,6 +908,13 @@ def configure(
     runtime_config_dir: Path | None = None,
 ) -> int:
     paths = workspace or _paths()
+    # Composition controls belong to the previous configuration; the caller
+    # that configures from a Composition writes them again afterwards.
+    import urban_controls
+
+    config = getattr(paths, "recipe_config", None)
+    if config is not None:
+        (config / urban_controls.CONTROLS_FILE).unlink(missing_ok=True)
     rc = base.configure(
         recipe.fleet_experiment,
         drone_root,

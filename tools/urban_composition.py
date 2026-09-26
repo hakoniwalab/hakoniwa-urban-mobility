@@ -56,6 +56,9 @@ class Vehicle:
     control: str
     params: dict
     spawn: dict
+    # Composition replacement of the manifest control program (section 5.2).
+    program: str | None = None
+    args: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -117,7 +120,20 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
             "the height is computed from the Asset ground clearance"
         )
     spawn = {key: _finite(spawn[key], f"vehicle {name} spawn.{key}") for key in sorted(SPAWN_KEYS)}
-    return Vehicle(name=name, asset=asset, control=control, params=params, spawn=spawn)
+    program = entry.get("program")
+    args = entry.get("args")
+    if (program is None) != (args is None):
+        raise CompositionError(f"vehicle {name}: program and args replace the manifest control together")
+    if program is not None:
+        if not isinstance(program, str) or not program.strip():
+            raise CompositionError(f"vehicle {name} program must be a non-empty path")
+        if not isinstance(args, list) or not all(isinstance(arg, (str, int, float)) for arg in args):
+            raise CompositionError(f"vehicle {name} args must be a list of scalars")
+        args = tuple(str(arg) for arg in args)
+    return Vehicle(
+        name=name, asset=asset, control=control, params=params, spawn=spawn,
+        program=program, args=args,
+    )
 
 
 def _interaction(entry: object, index: int, vehicles: dict[str, Vehicle]) -> dict:
@@ -202,7 +218,12 @@ def _require_simulators(composition: Composition, expected: set[str], adapter: s
 
 def _car_route_scenario(composition: Composition, cars: list[Vehicle]) -> dict | None:
     """One composition-scoped api program drives every api Car (asset-contract 4.3)."""
-    scenarios = {_param_path(composition, car.params["scenario"]) for car in cars if car.control == "api"}
+    # A Car whose api program is replaced (section 5.2) may run without a scenario.
+    scenarios = {
+        _param_path(composition, car.params["scenario"])
+        for car in cars
+        if car.control == "api" and "scenario" in car.params
+    }
     if not scenarios:
         return None
     if len(scenarios) > 1:
@@ -217,10 +238,6 @@ def _car_inputs(composition: Composition, cars: list[Vehicle], web_bridge_port: 
     type_names: dict[str, str] = {}
     front_camera = None
     for car in cars:
-        if car.control == "rc" and car.params:
-            raise CompositionError(
-                f"vehicle {car.name}: Car rc params are not adapted yet (asset-contract 7.1 step 3)"
-            )
         asset = car.asset
         if asset.id in type_names:
             continue
@@ -384,11 +401,6 @@ def to_integrated(
     if len(drones) != 1:
         raise CompositionError("the Car + Drone adapter runs exactly one Drone (tools/urban_composer.py)")
     drone = drones[0]
-    if drone.control != "rc":
-        # urban_composer.py configures and merges the PS4 RC Drone only.
-        raise CompositionError(
-            f"vehicle {drone.name}: Drone api control with Cars is not adapted yet (asset-contract 7.1 step 3)"
-        )
     cars = composition.by_simulator(CAR_SIMULATOR)
     inputs = _car_inputs(composition, cars, DEFAULT_INTEGRATED_WEB_BRIDGE_PORT)
     mirrors = []

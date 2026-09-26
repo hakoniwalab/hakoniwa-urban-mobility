@@ -27,10 +27,13 @@ controls:
   rc:
     program: ${repo:hakoniwa-drone-core}/drone_api/rc/rc-custom.py
     scope: vehicle
-    args: ["${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json"]
+    cwd: ${repo:hakoniwa-drone-core}/drone_api
+    args: ["${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json",
+           "--name", "${vehicle.name}", "--index", "${vehicle.index}"]
   api:
     program: ${repo:hakoniwa-urban-mobility}/apps/drone/city_fleet_mission.py
     scope: vehicle
+    cwd: ${repo:hakoniwa-urban-mobility}
     args: ["--drone-root", "${runtime.drone_root}",
            "--service-config", "${runtime.service_config}",
            "--city-marker", "${runtime.city_marker}",

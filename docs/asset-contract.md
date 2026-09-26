@@ -157,11 +157,26 @@ Argument templates use two placeholder namespaces:
 | `${runtime.<name>}` | The builder at configure time; never written by the user | `pdu_def`, `service_config`, `city_marker`, `summary_json`, `drone_root` |
 | `${param.<name>}` | The Composition (user input), validated against `params` | `scenario`, `mission`, `max_speed` |
 | `${vehicle.name}` | The vehicle instance name in the Composition | `Car-1`, `Drone-1` |
+| `${vehicle.index}` | The vehicle's 0-based index among the vehicles of its simulator | `0` |
+| `${repo:<name>}` | A workspace repository; an argument starting with it is normalized as a path | `${repo:hakoniwa-drone-core}/drone_api` |
 
-The manifest's `program` and `args` are the defaults. A Composition may
-replace them (section 5.2) to run a user program; `${runtime.*}` placeholders
-remain available to replacements, so user programs receive the same generated
-paths.
+`${vehicle.*}` is not available to `composition`-scoped controls. An
+unknown or unavailable placeholder is an error naming it.
+
+Param values are typed by the manifest: `path` resolves against the
+Composition file, `number` is written as a decimal, and a missing optional
+param takes its `default`.
+
+A control may set `cwd` (same placeholders). The manifest's `program`,
+`args`, and `cwd` are the defaults. A Composition may replace `program` and
+`args` (section 5.2) to run a user program; the process then runs in the
+Composition directory, and `${runtime.*}` placeholders remain available, so
+user programs receive the same generated paths.
+
+`tools/urban_controls.py` expands the controls into Launcher processes named
+`control-<vehicle>-<control>` (`control-<asset>-<control>` for a
+`composition` scope). Each depends on its simulator's service asset and
+starts after the simulation starts.
 
 ### 4.2 Program types
 
@@ -279,8 +294,10 @@ place vehicles -> start -> observe -> stop -> adjust placement -> start ...
 - A placement-only change (`spawn` of existing vehicles) needs no `configure`:
   `stop`, edit the Composition, `start`. The World model and generated Asset
   models are reused.
-- Adding or removing a vehicle, or changing its Asset or control, requires
-  `configure` before the next `start`.
+- Control params and replaced programs (section 5.2) also need no
+  `configure`: every `start` regenerates the control processes.
+- Adding or removing a vehicle, or changing its Asset or control (`rc` /
+  `api`), requires `configure` before the next `start`.
 - The browser does not check collisions while dragging. It shows the World's
   obstacles so the user can place around them; any remaining mismatch is found
   by running the simulation and adjusted in the next iteration.
@@ -385,18 +402,31 @@ The migration keeps a running reference at every step:
      zero or one Drone Mirror, and merges every selected Car control
      (scenario executor and PS5 senders).
 
-   Remaining limits, lifted in step 3: Car `rc` params (PS5 sender
-   arguments are fixed), Drone `api` together with Cars (the composer merges
-   the PS4 RC Drone only), one Drone per Composition, the `eams-nominal-9kg`
-   Drone profile only, City Worlds only, and a terrain-only spawn height (no
-   rooftops). The Drone adapters pass the spawn surface to the tools under
-   their existing `rooftop` field name.
+   The Drone adapters pass the spawn surface to the tools under their
+   existing `rooftop` field name.
 2. Parity: for each of the three combinations, the Composition path must
    generate the same Launcher configuration as the current Recipe (modulo
    paths and ids), and run.
-3. Builders: rewrite the Car and Drone builders to read the Composition
-   directly. Plain Worlds, ray-based spawn height, and the FPV Drone Asset are
-   added in this step, not before parity.
+3. Builders, in sub-steps:
+   1. Control processes from manifest controls (done): the adapters replace
+      the tools' control assets with the processes of section 4, after
+      `configure` and at every `start`. `drone_one.py` applies them from
+      `urban-composition-controls.json` whenever it writes its Launcher.
+      This enables Car `rc` params, program replacement (section 5.2), and
+      Drone `api` together with Cars (`urban_composer.py` now takes the
+      Drone control from the Drone recipe instead of forcing PS4 RC). The
+      generated processes match the tools' previous ones (tested per
+      control).
+   2. Ray-based spawn height on the compiled World (rooftops).
+   3. Plain World + FPV Drone.
+   4. Builders read the Composition directly; the adapter-only defaults
+      (`launch_area`, the RC mission file, the `rooftop` field) go away.
+   5. Several Drones per Composition.
+
+   Remaining limits: one Drone per Composition, the `eams-nominal-9kg` Drone
+   profile only, City Worlds only, and a terrain-only spawn height (no
+   rooftops). Drone `api` together with Cars is configured but not yet run
+   end to end.
 
 ## 8. Examples
 
