@@ -606,3 +606,6 @@ vehicles:
 - JSON Schema files for `hakoniwa.asset/v1` and `hakoniwa.composition/v1`,
   aligned with the Business Pack `schemas/` conventions.
 - The compiled-model cache fingerprint (issue #5 principle 3).
+- The Compose phase (issue #5) owns the simulation model build: the single
+  World + vehicles MJB compile at `configure` reports progress in the same
+  `[HAKO_PROGRESS]` format as the City height model (section 5.4).
