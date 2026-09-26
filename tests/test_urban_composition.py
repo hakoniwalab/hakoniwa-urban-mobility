@@ -45,6 +45,11 @@ class Fixture(unittest.TestCase):
         self.receipt.write_text("{}", encoding="utf-8")
         urban_assets.register_city(self.receipt, directory=self.work / "assets")
         self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, self.work / "assets"])
+        # Flat ground at 0 m unless a test passes its own ground function; the
+        # fixture City receipts have no World model to ray-cast.
+        ground = mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 0.0)
+        ground.start()
+        self.addCleanup(ground.stop)
 
     def composition(self, **overrides) -> Path:
         vehicle = {
@@ -133,7 +138,13 @@ class CarCompositionTest(Fixture):
             self.assertEqual(got["type"], want["type"])
             for key in ("mjcf", "contract", "view_model"):
                 self.assertEqual(resolve_like_multi_car(got[key]), resolve_like_multi_car(want[key]), key)
-        self.assertEqual(inputs["ackermann_vehicles"]["vehicles"], expected["ackermann_vehicles"]["vehicles"])
+        # Same vehicle, but the height is absolute: World surface + Asset clearance.
+        [got_vehicle] = inputs["ackermann_vehicles"]["vehicles"]
+        [want_vehicle] = expected["ackermann_vehicles"]["vehicles"]
+        got_spawn, want_spawn = dict(got_vehicle.pop("spawn_pose_enu")), dict(want_vehicle.pop("spawn_pose_enu"))
+        self.assertEqual(got_vehicle, want_vehicle)
+        self.assertEqual(got_spawn.pop("up_m"), 0.0 + want_spawn.pop("ground_clearance_m"))
+        self.assertEqual(got_spawn, want_spawn)
         self.assertEqual(inputs["ackermann_runtime"], expected["ackermann_runtime"])
         got_view = dict(inputs["browser_visualization"])
         want_view = dict(expected["browser_visualization"])
@@ -159,6 +170,14 @@ class CarCompositionTest(Fixture):
         self.assertEqual(vehicles["route_scenario"], {"path": scenario, "auto_start": True})
         self.assertEqual([vehicle["control_mode"] for vehicle in vehicles["vehicles"]],
                          ["external_python", "ps5"])
+
+    def test_car_height_is_world_surface_plus_clearance(self):
+        config = urban_composition.to_car_config(
+            self.load(self.composition()), "urban-car-rc", ground=lambda east, north: 21.054
+        )
+        spawn = config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]
+        self.assertAlmostEqual(spawn["up_m"], 21.054 + 0.45)
+        self.assertNotIn("ground_clearance_m", spawn)
 
     def test_api_cars_with_different_scenarios_are_rejected(self):
         composition = self.load(self.composition(vehicles=[
@@ -326,7 +345,7 @@ class DroneCompositionTest(Fixture):
 
         with self.catalog(), \
                 mock.patch.object(urban_mobility, "drone_recipe_path", return_value=recipe_path), \
-                mock.patch.object(urban_composition, "city_terrain_height", return_value=lambda east, north: 0.0), \
+                mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 0.0), \
                 mock.patch.object(urban_mobility.subprocess, "run", side_effect=run):
             composition = self.drone()
             self.assertEqual(urban_mobility.drone_composition_command("configure", composition), 0)
@@ -466,7 +485,7 @@ class IntegratedPlacementTest(IntegratedFixture):
         context_root = self.work / "recipe"
         (context_root / "validation").mkdir(parents=True, exist_ok=True)
         with self.catalog(), mock.patch.object(urban_mobility, "root", return_value=context_root), \
-                mock.patch.object(urban_composition, "city_terrain_height", return_value=lambda east, north: 1.0):
+                mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 1.0):
             config, drone = urban_mobility.composition_outputs(self.context(), composition)
             urban_mobility.write_composition_outputs(self.context(), config, drone)
         (context_root / "validation/urban-inputs.json").write_text(
@@ -476,7 +495,7 @@ class IntegratedPlacementTest(IntegratedFixture):
 
     def start(self, composition: Path, context_root: Path):
         with self.catalog(), mock.patch.object(urban_mobility, "root", return_value=context_root), \
-                mock.patch.object(urban_composition, "city_terrain_height", return_value=lambda east, north: 1.0), \
+                mock.patch.object(urban_composition, "city_ground", return_value=lambda east, north: 1.0), \
                 mock.patch.object(drone_one, "_paths"), \
                 mock.patch.object(drone_one, "read_selected_recipe"), \
                 mock.patch.object(drone_one, "load_runtime_recipe") as load_runtime, \

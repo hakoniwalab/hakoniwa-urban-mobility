@@ -277,8 +277,19 @@ spawn up = ground height at (east_m, north_m) + Asset spawn.ground_clearance_m
 Ground height is the top of the compiled World collision geometry at that
 point, found by a downward MuJoCo ray: terrain and buildings for a City,
 ground and obstacles for a plain World. A vehicle dropped on a rooftop starts
-just above the roof. (The current `terrain_height_mjcf()` samples only the
-City terrain hfield and must be replaced by the ray.)
+just above the roof. Visual-only geoms (no `contype` / `conaffinity`) are
+passed through. The same rule applies to Cars and Drones; the builders
+receive the result as an absolute height.
+
+`tools/world_height.py` implements the ray on the City World MJCF named by
+the receipt. The compiled model is cached as an MJB under
+`work/urban/cache/world-height/`, keyed by a fingerprint of the MJCF and the
+files it references (issue #5 principle 3). A City compiles once, which can
+take minutes; `urban_assets.py register-city` does it at registration
+(`--no-precompile` skips it), so the placement loop only loads the cache.
+Without MuJoCo Python (the managed Recipe configure installs it), the
+height falls back to the terrain hfield with a warning that rooftops are
+ignored.
 
 Spawn edits do not recompile the World; like the current `spawn_pose_enu`,
 they are applied to the runtime configuration before start.
@@ -417,16 +428,17 @@ The migration keeps a running reference at every step:
       Drone control from the Drone recipe instead of forcing PS4 RC). The
       generated processes match the tools' previous ones (tested per
       control).
-   2. Ray-based spawn height on the compiled World (rooftops).
+   2. Ray-based spawn height on the World (done, section 5.4): Cars and
+      Drones start on rooftops as well as on the ground. On open ground
+      the ray equals the previous terrain sampling.
    3. Plain World + FPV Drone.
    4. Builders read the Composition directly; the adapter-only defaults
       (`launch_area`, the RC mission file, the `rooftop` field) go away.
    5. Several Drones per Composition.
 
    Remaining limits: one Drone per Composition, the `eams-nominal-9kg` Drone
-   profile only, City Worlds only, and a terrain-only spawn height (no
-   rooftops). Drone `api` together with Cars is configured but not yet run
-   end to end.
+   profile only, and City Worlds only. Drone `api` together with Cars is
+   configured but not yet run end to end.
 
 ## 8. Examples
 

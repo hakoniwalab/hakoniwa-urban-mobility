@@ -172,13 +172,42 @@ def parser() -> argparse.ArgumentParser:
     register = commands.add_parser("register-city", help="register a City World receipt")
     register.add_argument("--receipt", type=Path, required=True)
     register.add_argument("--id", help="City Asset id (default: the City World job name)")
+    register.add_argument(
+        "--no-precompile",
+        action="store_true",
+        help="skip compiling the City model for spawn heights (otherwise done once here)",
+    )
     return result
+
+
+def precompile_height(receipt: Path) -> None:
+    """Compile and cache the City model used for spawn heights (tools/world_height.py).
+
+    The first compile of a City takes minutes; doing it at registration keeps
+    the placement loop fast.
+    """
+    import json
+
+    data = json.loads(receipt.read_text(encoding="utf-8"))
+    mjcf = Path(data["mjcf"]["path"])
+    if not mjcf.is_absolute():
+        mjcf = receipt.parent / mjcf
+    try:
+        import world_height
+
+        world_height.load_model(mjcf)
+    except ImportError:
+        print("MuJoCo Python is not installed; the City model compiles at the first configure instead.")
+        return
+    print(f"Compiled City model for spawn heights: {mjcf}")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "register-city":
         print(f"Registered City Asset: {register_city(args.receipt, args.id)}")
+        if not args.no_precompile:
+            precompile_height(args.receipt.expanduser().resolve())
         return 0
     for asset in catalog().values():
         detail = asset.category or asset.kind

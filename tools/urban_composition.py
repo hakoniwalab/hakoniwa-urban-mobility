@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
+import sys
 from typing import Callable
 
 import yaml
@@ -201,6 +202,46 @@ def city_receipt(composition: Composition) -> Path:
     return composition.world.resolve(composition.world.data["receipt"])
 
 
+def city_ground(receipt: Path) -> Callable[[float, float], float]:
+    """Return ground(east_m, north_m): the top of the City World collision geometry.
+
+    Uses a downward MuJoCo ray (tools/world_height.py), so rooftops count.
+    Without MuJoCo Python it falls back to the terrain hfield and says so.
+    """
+    import multi_car
+
+    data = multi_car.load_json(receipt, "City World receipt")
+    try:
+        mjcf = Path(data["mjcf"]["path"])
+    except (KeyError, TypeError) as exc:
+        raise CompositionError(f"City World receipt has no MJCF: {receipt}") from exc
+    if not mjcf.is_absolute():
+        mjcf = receipt.parent / mjcf
+    try:
+        import world_height
+
+        return world_height.ray_ground(mjcf)
+    except ImportError:
+        print(
+            "WARNING: MuJoCo Python is not installed; spawn heights use the City terrain "
+            "only, so rooftops are ignored. The managed Recipe configure installs it.",
+            file=sys.stderr,
+        )
+        return lambda east_m, north_m: multi_car.terrain_height_mjcf(data, north_m, -east_m)
+
+
+def _ground(composition: Composition, ground: Callable[[float, float], float] | None):
+    return ground or city_ground(city_receipt(composition))
+
+
+def _surface(vehicle: Vehicle, ground: Callable[[float, float], float]) -> float:
+    return round(ground(vehicle.spawn["east_m"], vehicle.spawn["north_m"]), 6)
+
+
+def _spawn_up(vehicle: Vehicle, ground: Callable[[float, float], float]) -> float:
+    return _surface(vehicle, ground) + float(vehicle.asset.data["spawn"]["ground_clearance_m"])
+
+
 def _param_path(composition: Composition, value: object) -> Path:
     path = Path(str(value)).expanduser()
     return (path if path.is_absolute() else composition.path.parent / path).resolve()
@@ -233,7 +274,12 @@ def _car_route_scenario(composition: Composition, cars: list[Vehicle]) -> dict |
     return {"path": str(scenarios.pop()), "auto_start": True}
 
 
-def _car_inputs(composition: Composition, cars: list[Vehicle], web_bridge_port: int) -> dict:
+def _car_inputs(
+    composition: Composition,
+    cars: list[Vehicle],
+    web_bridge_port: int,
+    ground: Callable[[float, float], float],
+) -> dict:
     types = []
     type_names: dict[str, str] = {}
     front_camera = None
@@ -267,8 +313,9 @@ def _car_inputs(composition: Composition, cars: list[Vehicle], web_bridge_port: 
                     "east_m": car.spawn["east_m"],
                     "north_m": car.spawn["north_m"],
                     "yaw_deg": car.spawn["yaw_deg"],
-                    # multi_car.py adds the terrain height at configure time.
-                    "ground_clearance_m": float(car.asset.data["spawn"]["ground_clearance_m"]),
+                    # Absolute height: the World surface (rooftops included)
+                    # plus the Asset clearance (section 5.4).
+                    "up_m": _spawn_up(car, ground),
                 },
             }
             for car in cars
@@ -304,33 +351,28 @@ def _car_config(composition: Composition, recipe_id: str, inputs: dict) -> dict:
     }
 
 
-def to_car_config(composition: Composition, recipe_id: str) -> dict:
+def to_car_config(
+    composition: Composition,
+    recipe_id: str,
+    *,
+    ground: Callable[[float, float], float] | None = None,
+) -> dict:
     """Return the multi_car.py configuration for a City + Car Composition."""
     _require_simulators(composition, {CAR_SIMULATOR}, "Car")
     if composition.interactions:
         raise CompositionError("interactions need a Drone; this Composition has Cars only")
-    inputs = _car_inputs(composition, list(composition.vehicles), DEFAULT_CAR_WEB_BRIDGE_PORT)
+    inputs = _car_inputs(
+        composition, list(composition.vehicles), DEFAULT_CAR_WEB_BRIDGE_PORT, _ground(composition, ground)
+    )
     return _car_config(composition, recipe_id, inputs)
 
 
 # --- Drone (tools/drone_one.py) -----------------------------------------------
 
-def city_terrain_height(receipt: Path) -> Callable[[float, float], float]:
-    """Return ground(east_m, north_m) from the City terrain hfield.
-
-    This samples terrain only; buildings are added by the ray-based height in
-    asset-contract 7.1 step 3.
-    """
-    import multi_car
-
-    data = multi_car.load_json(receipt, "City World receipt")
-    return lambda east_m, north_m: multi_car.terrain_height_mjcf(data, north_m, -east_m)
-
-
 def _drone_recipe(
     composition: Composition,
     drone: Vehicle,
-    ground: Callable[[float, float], float] | None,
+    ground: Callable[[float, float], float],
 ) -> dict:
     receipt = city_receipt(composition)
     profile = drone.asset.data.get("source", {}).get("profile")
@@ -341,9 +383,8 @@ def _drone_recipe(
     mission = DRONE_DEFAULT_MISSION
     if drone.control == "api":
         mission = _param_path(composition, drone.params["mission"])
-    ground = ground or city_terrain_height(receipt)
     spawn = drone.spawn
-    surface = round(ground(spawn["east_m"], spawn["north_m"]), 6)
+    surface = _surface(drone, ground)
     clearance = float(drone.asset.data["spawn"]["ground_clearance_m"])
     return {
         "version": 1,
@@ -379,7 +420,7 @@ def to_drone_recipe(
         raise CompositionError("the Drone adapter runs exactly one Drone (tools/drone_one.py)")
     if composition.interactions:
         raise CompositionError("interactions need Cars; this Composition has one Drone only")
-    return _drone_recipe(composition, composition.vehicles[0], ground)
+    return _drone_recipe(composition, composition.vehicles[0], _ground(composition, ground))
 
 
 # --- Car + Drone (tools/urban_composer.py) --------------------------------------
@@ -402,7 +443,9 @@ def to_integrated(
         raise CompositionError("the Car + Drone adapter runs exactly one Drone (tools/urban_composer.py)")
     drone = drones[0]
     cars = composition.by_simulator(CAR_SIMULATOR)
-    inputs = _car_inputs(composition, cars, DEFAULT_INTEGRATED_WEB_BRIDGE_PORT)
+    # One World model serves every vehicle's spawn height.
+    ground = _ground(composition, ground)
+    inputs = _car_inputs(composition, cars, DEFAULT_INTEGRATED_WEB_BRIDGE_PORT, ground)
     mirrors = []
     for interaction in composition.interactions:
         mirror = drone.asset.data["interactions"]["drone-mirror"]
