@@ -195,7 +195,7 @@ def precompile_height(receipt: Path) -> None:
     try:
         import world_height
 
-        world_height.load_model(mjcf)
+        world_height.load_models(mjcf)
     except ImportError:
         print("MuJoCo Python is not installed; the City model compiles at the first configure instead.")
         return

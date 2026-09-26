@@ -282,14 +282,27 @@ passed through. The same rule applies to Cars and Drones; the builders
 receive the result as an absolute height.
 
 `tools/world_height.py` implements the ray on the City World MJCF named by
-the receipt. The compiled model is cached as an MJB under
-`work/urban/cache/world-height/`, keyed by a fingerprint of the MJCF and the
-files it references (issue #5 principle 3). A City compiles once, which can
-take minutes; `urban_assets.py register-city` does it at registration
-(`--no-precompile` skips it), so the placement loop only loads the cache.
-Without MuJoCo Python (the managed Recipe configure installs it), the
-height falls back to the terrain hfield with a warning that rooftops are
-ignored.
+the receipt. The City World workflow converts PLATEAU into MJCF, but the ray
+needs that MJCF compiled into a MuJoCo model, and a compile grows faster than
+linearly with the mesh count (Shizuoka, 18k meshes: 116 s in one piece). The
+height only needs the highest hit, so the World is split into up to 8 chunks
+(meshes and primitive geoms spread evenly, the terrain in chunk 0) compiled
+in parallel child processes; the ray is cast on every chunk and the highest
+colliding hit wins (Shizuoka: 6.8 s, identical heights).
+
+The compiled chunks are cached as MJBs under
+`work/urban/cache/world-height/<fingerprint>/`, keyed by the MJCF and the
+files it references (issue #5 principle 3), and belong to the City Asset
+(section 6.1). The compile reports progress as plain lines and as
+`[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
+events, the City World job progress format. Without MuJoCo Python (the
+managed Recipe configure installs it), the height falls back to the terrain
+hfield with a warning that rooftops are ignored.
+
+The simulation itself still compiles the City together with the vehicles
+into one MJB at `configure` (`multi_car.py`, `drone_one.py`); compiled
+models cannot be merged afterwards, so the height model and the simulation
+model are separate compiles.
 
 Spawn edits do not recompile the World; like the current `spawn_pose_enu`,
 they are applied to the runtime configuration before start.
@@ -342,6 +355,13 @@ The receipt remains the source of MJCF, GLB, origin, extent, and coordinate
 systems. The City step of the browser produces a receipt through the existing
 City World workflow (Business Pack / `hakoniwa-envsim`), then registers this
 manifest.
+
+A registered City is ready for placement: registration
+(`urban_assets.py register-city`) also compiles the City height model of
+section 5.4, reporting progress, so the placement loop only loads it.
+`--no-precompile` defers it to the first `configure`. A later option is for
+the City World workflow itself to emit that model and list it in the
+receipt.
 
 ### 6.2 Plain (`kind: plain`)
 
