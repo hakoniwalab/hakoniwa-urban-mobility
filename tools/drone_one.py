@@ -22,7 +22,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
-DRONE_SHOW_ROOT = WORKSPACE / "hakoniwa-drone-show"
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
 URBAN_DRONE_RECIPE_ID = "urban-drone-one"
@@ -41,12 +40,11 @@ for path in (
     ROOT / "tools",
     BUSINESS_PACK_ROOT / "tools" / "recipe",
     BUSINESS_PACK_ROOT / "tools",
-    DRONE_SHOW_ROOT / "tools" / "recipe",
 ):
     sys.path.insert(0, str(path))
 
 import drone_fleet_single_host as base
-import drone_fleet_mujoco_city as city
+import drone_fleet_city as city
 import urban_lifecycle
 
 

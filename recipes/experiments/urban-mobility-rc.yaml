@@ -259,16 +259,10 @@ recipe_local_requirements:
       - {path: config/controller/param-api-mixer-mujoco.txt, kind: file}
       - {path: drone_api/rc/rc-custom.py, kind: file}
       - {path: drone_api/rc/rc_config/ps4-control.json, kind: file}
-  hakoniwa-drone-show:
-    root:
-      default_path: ../hakoniwa-drone-show
-      override_env: HAKONIWA_DRONE_SHOW_ROOT
-      relative_to: recipe_repository
-    source:
-      type: git
-      url: https://github.com/hakoniwalab/hakoniwa-drone-show.git
-    required_artifacts:
-      - {path: tools/recipe/drone_fleet_mujoco_city.py, kind: file}
+      # City fleet model (tools/drone_fleet_city.py)
+      - {path: tools/gen_mujoco_multidrone_xml.py, kind: file}
+      - {path: config/drone/fleets/types/mujoco-scene.xml.template, kind: file}
+      - {path: config/drone/fleets/types/mujoco-drone.xml.template, kind: file}
   hakoniwa-pdu-registry:
     root:
       default_path: ../hakoniwa-pdu-registry

@@ -270,6 +270,7 @@ interest and lightweight ground, road, building, curb, and bridge colliders.
 | Repository | Owns |
 | --- | --- |
 | [`hakoniwa-drone-show`](https://github.com/hakoniwalab/hakoniwa-drone-show) | Virtual Drone Show Fleet, show plans, Fleet API integration, Drone presentation state |
+| `hakoniwa-urban-mobility` (this repository) | Compositions and Urban Studio; placing Drone Core drones in a City World (`tools/drone_fleet_city.py`: fleet MJCF, MJBs, spawn layout, fleet config), without importing drone-show tools |
 | [`hakoniwa-drone-core`](https://github.com/toppers/hakoniwa-drone-core) | Public v4.1.1 native Drone physics, flight control, RC client, and runtime configuration |
 | [`hakoniwa-robot-runtime`](https://github.com/hakoniwalab/hakoniwa-robot-runtime) | Generic actuator runtime, Ackermann controller, and JointState / MultiDOF state contracts |
 | [`hakoniwa-mujoco-robots`](https://github.com/hakoniwalab/hakoniwa-mujoco-robots) | MuJoCo physics and Viewer backend, mirror bodies, and local contact-to-impulse support |

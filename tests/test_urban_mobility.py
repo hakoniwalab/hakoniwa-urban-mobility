@@ -119,10 +119,9 @@ class UrbanMobilityToolTest(unittest.TestCase):
         )
         self.assertIn("apps/car/urban-car-hakoniwa-asset.cpp", recipe)
         self.assertIn("use_case: drone-car-distributed", recipe)
-        self.assertIn(
-            "url: https://github.com/hakoniwalab/hakoniwa-drone-show.git",
-            recipe,
-        )
+        # The City fleet model is Urban's own (tools/drone_fleet_city.py).
+        self.assertNotIn("hakoniwa-drone-show", recipe)
+        self.assertIn("path: tools/gen_mujoco_multidrone_xml.py", recipe)
         self.assertIn(
             "url: https://github.com/toppers/hakoniwa-drone-core.git",
             recipe,
