@@ -120,6 +120,12 @@ def validate(asset: Asset) -> None:
             raise AssetError(f"Asset {asset.id} control {name} scope must be vehicle or composition")
         if not isinstance(control.get("args", []), list):
             raise AssetError(f"Asset {asset.id} control {name} args must be a list")
+    import asset_preview
+
+    try:
+        asset_preview.validate(data.get("preview"), asset.id)
+    except asset_preview.PreviewError as exc:
+        raise AssetError(str(exc)) from exc
     fleet = data.get("fleet")
     if fleet is not None:
         # A fleet-capable Drone (Composition `fleets`, asset-contract 5.8).

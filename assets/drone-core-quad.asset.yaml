@@ -15,6 +15,11 @@ model:
   # Expanded once per drone by Drone Core's multi-drone generator.
   physics: ${repo:hakoniwa-drone-core}/config/drone/fleets/types/mujoco-drone.xml.template
   dynamics: ${repo:hakoniwa-drone-core}/config/drone/fleets/types/api-mujoco.json
+# Urban Studio preview (tools/asset_preview.py): the Viewer's display model.
+preview:
+  format: drone-type
+  path: ${repo:hakoniwa-threejs-drone}/config/drone_types-quadrotor_base.json
+  type: quadrotor_base
 spawn:
   # tools/drone_fleet_city.py LANDING_GEAR_CLEARANCE_M.
   ground_clearance_m: 0.5

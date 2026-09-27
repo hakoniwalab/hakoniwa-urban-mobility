@@ -87,6 +87,20 @@ class StudioServerTest(StudioTestBase):
         self.assertIn("scenario", cart["controls"]["api"]["params"])
         hexa = next(asset for asset in assets if asset["id"] == "eams-hexa")
         self.assertIn("drone-mirror", hexa["interactions"])
+        self.assertTrue(hexa["preview"])
+
+    def test_a_vehicle_preview_lists_its_parts_and_serves_only_those(self):
+        status, info = self.call("GET", "/api/assets/golf-cart/preview")
+        self.assertEqual(status, 200)
+        self.assertEqual(info["parts"][0]["url"], "/api/assets/golf-cart/preview/0")
+        self.assertEqual(info["parts"][0]["basis"], "flu")
+        with urlopen(f"http://127.0.0.1:{self.port}/api/assets/golf-cart/preview/0", timeout=10) as response:
+            self.assertEqual(response.headers["Content-Type"], "model/gltf-binary")
+            self.assertEqual(response.read(4), b"glTF")
+        for path in ("/api/assets/golf-cart/preview/99", "/api/assets/golf-cart/preview/..%2F..",
+                     "/api/assets/plain-ground/preview", "/api/assets/nope/preview"):
+            with self.subTest(path=path):
+                self.assertEqual(self.call("GET", path)[0], 404)
 
     def test_examples_are_listed_read_only_and_saving_makes_an_editable_copy(self):
         _, listed = self.call("GET", "/api/compositions")

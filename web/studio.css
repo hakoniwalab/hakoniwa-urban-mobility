@@ -150,3 +150,22 @@ code { font-family: ui-monospace, Consolas, monospace; }
 .field.inline { flex-direction: row; align-items: center; gap: 6px; }
 .conflicts { color: var(--danger); font-size: 13px; margin: 4px 0; padding-left: 1.2em; }
 .conflicts[hidden] { display: none; }
+
+/* Asset cards (web/asset_preview.js) */
+.asset-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.asset-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.asset-preview {
+  --preview-ground: #e8edf3; --preview-building: #7b8798;
+  width: 100%; aspect-ratio: 240 / 170; display: grid; place-items: center;
+  background: linear-gradient(#dfe8f3, #f4f7fb);
+}
+@media (prefers-color-scheme: dark) {
+  .asset-preview { --preview-ground: #1d2633; --preview-building: #8d9bb0; background: linear-gradient(#1b2431, #111823); }
+}
+.asset-preview-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.asset-preview-canvas:active { cursor: grabbing; }
+.asset-preview-empty { color: var(--muted); font-size: 12px; }
+.asset-card-body { padding: 8px 10px; }
+.asset-card-title { font-weight: 600; }
+.asset-card-meta { color: var(--muted); font-size: 12px; display: grid; gap: 1px; margin-top: 4px; }
+.asset-card-meta code { font-size: 11px; }
