@@ -11,6 +11,13 @@ A vehicle manifest may declare how its display model is assembled:
       format: view-model            # hakoniwa-mbody-registry hako_viewer_model
       path: ${repo:hakoniwa-mbody-registry}/bodies/.../view-model.json
 
+    preview:
+      format: fpv-assembly          # hakoniwa-fpv-drone Assembly Graph
+      path: ${repo:hakoniwa-fpv-drone}/recipes/examples/<name>.assembly.json
+
+An FPV Assembly is turned into GLBs and a drone type once, by the FPV
+generator's Three.js exporter, and kept under work/urban/cache/preview/.
+
 preview_parts() flattens either into GLB parts, each placed in the vehicle
 frame (ROS / MuJoCo: X forward, Y left, Z up) by a position, a quaternion
 (x, y, z, w) and a uniform scale. A part's basis says how its GLB is
@@ -20,11 +27,17 @@ Z up, the MuJoCo view models). The Studio renders them in three.js.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
+import sys
 
-FORMATS = {"drone-type", "view-model"}
+import urban_assets
+
+FORMATS = {"drone-type", "view-model", "fpv-assembly"}
+FPV_ROOT = urban_assets.WORKSPACE / "hakoniwa-fpv-drone"
+CACHE_ROOT = urban_assets.BUSINESS_PACK / "work/urban/cache/preview"
 
 
 class PreviewError(RuntimeError):
@@ -110,12 +123,13 @@ def _drone_type_parts(path: Path, type_name: str) -> list[dict]:
             "three",
             frame.get("scale", 1.0),
         ))
-    for rotor in drone.get("rotors", []):
-        model = rotor.get("model")
+    # Rotors and mounted cameras: the mount pose, then the model's own offset.
+    for mounted in [*drone.get("rotors", []), *drone.get("cameras", [])]:
+        model = mounted.get("model")
         if not model:
             continue
         pose = _compose(
-            _pose(rotor.get("pos"), rotor.get("hpr"), degrees=True),
+            _pose(mounted.get("pos"), mounted.get("hpr"), degrees=True),
             _pose(model.get("pos"), model.get("hpr"), degrees=True),
         )
         parts.append(_part((base / model["model_path"]).resolve(), pose, "three", model.get("scale", 1.0)))
@@ -148,6 +162,35 @@ def _view_model_parts(path: Path) -> list[dict]:
     return parts
 
 
+def _fpv_assembly_types(assembly: Path, asset_id: str) -> tuple[Path, str]:
+    """Export an FPV Assembly's display model once; return (drone types, type name)."""
+    if not assembly.is_file():
+        raise PreviewError(f"FPV Assembly not found: {assembly}")
+    exporter = FPV_ROOT / "src/fpv_drone_generator/threejs_assets.py"
+    digest = hashlib.sha256()
+    for path in (assembly, exporter):
+        if not path.is_file():
+            raise PreviewError(f"FPV generator not found: {path}")
+        digest.update(path.read_bytes())
+    output = CACHE_ROOT / f"{asset_id}-{digest.hexdigest()[:16]}"
+    types_path = output / "drone-types.json"
+    if not types_path.is_file():
+        source = str(FPV_ROOT / "src")
+        if source not in sys.path:
+            sys.path.insert(0, source)
+        try:
+            from fpv_drone_generator.assembly import load_assembly_graph, resolve_assembly
+            from fpv_drone_generator.catalog import load_catalogs
+            from fpv_drone_generator.threejs_assets import export_threejs_assets
+
+            resolved = resolve_assembly(load_assembly_graph(assembly), load_catalogs(FPV_ROOT / "catalogs"))
+            export_threejs_assets(resolved, output)
+        except Exception as error:  # noqa: BLE001 - any generator failure means no preview
+            raise PreviewError(f"FPV preview generation failed for {asset_id}: {error}") from error
+    types = _load_json(types_path, "FPV drone types")
+    return types_path, next(iter(types))
+
+
 def validate(preview, asset_id: str) -> None:
     if preview is None:
         return
@@ -168,6 +211,8 @@ def preview_parts(asset) -> list[dict]:
     path = asset.resolve(preview["path"])
     if preview["format"] == "drone-type":
         parts = _drone_type_parts(path, preview["type"])
+    elif preview["format"] == "fpv-assembly":
+        parts = _drone_type_parts(*_fpv_assembly_types(path, asset.id))
     else:
         parts = _view_model_parts(path)
     missing = [str(part["path"]) for part in parts if not part["path"].is_file()]

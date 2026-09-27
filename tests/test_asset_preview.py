@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -72,6 +73,22 @@ class AssetPreviewTest(PreviewFixture):
         # The steer mount turns 90° left, so the wheel's 1 m forward lands 1 m to the left.
         self.assertEqual(parts[1]["position"], [0.5, 1.5, 0.0])
 
+    def test_an_fpv_assembly_is_exported_once_into_the_cache(self):
+        asset = urban_assets.catalog()["fpv-drone-master3x"]
+        with mock.patch.object(asset_preview, "CACHE_ROOT", self.root / "cache"):
+            parts = asset_preview.preview_parts(asset)
+            cached = sorted((self.root / "cache").iterdir())
+            with mock.patch.object(asset_preview, "_drone_type_parts", wraps=asset_preview._drone_type_parts):
+                import fpv_drone_generator.threejs_assets as exporter
+                with mock.patch.object(exporter, "export_threejs_assets") as export:
+                    self.assertEqual(asset_preview.preview_parts(asset), parts)
+                    export.assert_not_called()
+        self.assertEqual(len(cached), 1)
+        self.assertTrue(cached[0].name.startswith("fpv-drone-master3x-"))
+        # Body, four propellers and the camera.
+        self.assertEqual(len(parts), 6)
+        self.assertTrue(all(part["path"].is_relative_to(cached[0].resolve()) for part in parts))
+
     def test_an_asset_without_a_preview_has_no_parts(self):
         self.assertEqual(asset_preview.preview_parts(self.asset(None)), [])
 
@@ -93,7 +110,8 @@ class AssetPreviewTest(PreviewFixture):
 
     def test_the_urban_vehicles_declare_previews(self):
         catalog = urban_assets.catalog()
-        for asset_id, count in (("eams-hexa", 7), ("drone-core-quad", 5), ("golf-cart", 5)):
+        # Drones: frame, rotors and the mounted camera; the cart: body and four wheels.
+        for asset_id, count in (("eams-hexa", 8), ("drone-core-quad", 6), ("golf-cart", 5)):
             with self.subTest(asset=asset_id):
                 self.assertEqual(len(asset_preview.preview_parts(catalog[asset_id])), count)
 

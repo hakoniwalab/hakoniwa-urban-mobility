@@ -127,8 +127,8 @@ model:
   physics: <MJCF path or generated-model reference>
   visual: <Three.js view model / GLB manifest>
 preview:                        # optional Urban Studio 3D preview
-  format: drone-type | view-model
-  path: <drone_types-*.json | hako_viewer_model JSON>
+  format: drone-type | view-model | fpv-assembly
+  path: <drone_types-*.json | hako_viewer_model JSON | FPV Assembly Graph>
   type: <drone type name, drone-type only>
 spawn:
   ground_clearance_m: <base-frame height above the ground at spawn>
@@ -144,8 +144,10 @@ controls:
 `spawn.ground_clearance_m` is the only height input; see section 5.4.
 
 `preview` names the display model the Studio's Assets tab turns in 3D
-(`tools/asset_preview.py`): a hakoniwa-threejs-drone drone type (frame and
-rotors) or a hakoniwa-mbody-registry view model. Without it the card shows
+(`tools/asset_preview.py`): a hakoniwa-threejs-drone drone type (frame,
+rotors and camera), a hakoniwa-mbody-registry view model, or an FPV Assembly
+(exported once by the FPV generator into `work/urban/cache/preview/`).
+Without it the card shows
 "プレビューなし". Worlds need no field: a City shows its building outlines,
 a plain World its display GLB.
 
