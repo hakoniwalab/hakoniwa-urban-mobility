@@ -94,6 +94,14 @@ The target placement is the Asset's source repository. For v1:
   `work/urban/assets/cities/<id>.asset.yaml`, written by
   `tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
   The id defaults to the City World job name.
+  `tools/urban_assets.py unregister-city --id <id>` removes a registration
+  (the City World job is kept). `tools/urban_assets.py prune-cities`
+  unregisters Cities whose City World Web UI job was deleted; Urban Studio
+  does this on every City page refresh. Only Cities registered from a job
+  under `work/recipes/city-world-web-ui/runtime/jobs/` are pruned, so a City
+  registered from another location is never removed silently. A City whose
+  receipt is missing stays in the catalog but is marked unavailable and cannot
+  be selected as a World.
 
 The catalog reads this repository's `assets/` (recursively), the top level of
 every workspace repository's `assets/` (`<repo>/assets/*.asset.yaml`; those
@@ -362,7 +370,7 @@ environment. The tabs follow issue #5:
 
 | Tab | Does | API |
 |---|---|---|
-| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile) | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop` |
+| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile), and a City whose job was deleted in the Web UI is unregistered | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop` |
 | Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
 | Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
 | Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>` |

@@ -92,6 +92,10 @@ def asset_catalog() -> list[dict]:
             "title": data.get("title", asset.id),
             "path": str(asset.path),
         }
+        if asset.kind == "city":
+            # A City whose receipt is gone (its City World job was deleted
+            # elsewhere) stays listed but cannot be used as a World.
+            entry["available"] = urban_assets.city_receipt_available(asset)
         if asset.kind == "vehicle":
             entry.update({
                 "category": asset.category,
@@ -196,6 +200,11 @@ def world_receipt(world_id: str) -> tuple[object, Path]:
     if asset is None or asset.kind not in {"city", "plain"}:
         raise StudioError(f"World {world_id} not found", HTTPStatus.NOT_FOUND)
     if asset.kind == "city":
+        if not urban_assets.city_receipt_available(asset):
+            raise StudioError(
+                f"City {world_id} の City World receipt がありません（ジョブが削除された可能性があります）",
+                HTTPStatus.NOT_FOUND,
+            )
         return asset, asset.resolve(asset.data["receipt"])
     import plain_world
 
@@ -344,6 +353,8 @@ class JobRunner:
         self.python = python
         self.simulation = simulation
         self.jobs: dict[str, Job] = {}
+        # City registration key -> receipt mtime_ns when that registration started.
+        self.city_receipt_versions: dict[str, int] = {}
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -453,16 +464,32 @@ def city_jobs() -> list[dict]:
 
 
 def city_state(runner: "JobRunner") -> dict:
-    """The City page state; starts registering any finished, unregistered job."""
+    """The City page state; starts registering any finished, unregistered job.
+
+    Cities registered from a City World job that was deleted in the Web UI
+    are unregistered first, so the registered list follows the job list.
+    """
+    import urban_assets
+
+    unregistered = urban_assets.prune_missing_cities(CITY_RECIPE_ROOT / "runtime/jobs")
     jobs = city_jobs()
     for job in jobs:
         key = f"city:{job['id']}"
         previous = runner.latest(key)
-        # Register once per Studio run: a failed registration is shown, not retried.
-        if job["finished"] and not job["registered"] and previous is None:
+        version = Path(job["receipt"]).stat().st_mtime_ns if job["finished"] else None
+        # A failed registration is shown, not retried. A succeeded one is
+        # redone only for a new World: the receipt changed since (regenerated,
+        # or deleted and recreated under the same id) or it was just pruned.
+        retry = (
+            previous is not None
+            and previous.state == "succeeded"
+            and (job["id"] in unregistered or runner.city_receipt_versions.get(key) != version)
+        )
+        if job["finished"] and not job["registered"] and (previous is None or retry):
             previous = runner.launch(key, "register", [[
                 runner.python, "-u", str(URBAN_ASSETS), "register-city", "--receipt", job["receipt"],
             ]])
+            runner.city_receipt_versions[key] = version
         job["registration"] = previous.snapshot() if previous else None
     web = runner.latest("city:web-ui")
     return {
@@ -472,6 +499,7 @@ def city_state(runner: "JobRunner") -> dict:
             "job": web.snapshot() if web else None,
         },
         "jobs": jobs,
+        "unregistered": unregistered,
     }
 
 

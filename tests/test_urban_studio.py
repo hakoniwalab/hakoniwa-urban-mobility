@@ -219,6 +219,22 @@ class StudioServerTest(StudioTestBase):
         status, _ = self.call("GET", "/api/worlds/no-such-world")
         self.assertEqual(status, 404)
 
+    def test_a_city_without_its_receipt_is_listed_unavailable_and_not_loadable(self):
+        import urban_assets
+
+        receipt = self.work / "jobs/gone/build/world/city-world-receipt.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("{}", encoding="utf-8")
+        manifest = urban_assets.register_city(receipt, directory=self.work / "user-assets")
+        receipt.unlink()
+        catalog = {"gone": urban_assets.load_manifest(manifest)}
+        with mock.patch("urban_assets.catalog", return_value=catalog):
+            _, assets = self.call("GET", "/api/assets")
+            status, body = self.call("GET", "/api/worlds/gone")
+        self.assertEqual([(asset["id"], asset["available"]) for asset in assets], [("gone", False)])
+        self.assertEqual(status, 404)
+        self.assertIn("receipt", body["error"])
+
 
 class CityPageTest(StudioTestBase):
     """GET /api/cities and the City World Web UI commands, on a fake jobs folder."""
@@ -237,6 +253,10 @@ class CityPageTest(StudioTestBase):
             patch.start()
             self.addCleanup(patch.stop)
         patch = mock.patch("urban_assets.catalog", side_effect=lambda: self.registered)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.user_assets = self.work / "user-assets"
+        patch = mock.patch("urban_assets.USER_ASSETS", self.user_assets)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -288,6 +308,39 @@ class CityPageTest(StudioTestBase):
         receipt = self.make_job("osaka")
         self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns - 1)
         self.assertEqual(self.wait_registration("osaka")["state"], "succeeded")
+
+    def test_a_deleted_job_unregisters_its_city(self):
+        import shutil
+        import urban_assets
+
+        receipt = self.make_job("hokkaido-a")
+        manifest = urban_assets.register_city(receipt, directory=self.user_assets)
+        shutil.rmtree(self.jobs / "hokkaido-a")
+
+        _, state = self.call("GET", "/api/cities")
+
+        self.assertEqual(state["unregistered"], ["hokkaido-a"])
+        self.assertFalse(manifest.exists())
+        _, state = self.call("GET", "/api/cities")
+        self.assertEqual(state["unregistered"], [])
+
+    def test_a_city_recreated_under_the_same_id_is_registered_again(self):
+        import os
+        import shutil
+
+        self.make_job("sapporo")
+        self.assertEqual(self.wait_registration("sapporo")["state"], "succeeded")
+        runner = self.server.RequestHandlerClass.runner
+        count = lambda: len([job for job in runner.jobs.values() if job.composition == "city:sapporo"])  # noqa: E731
+        # The fake registration writes no manifest; an unchanged receipt is not re-registered.
+        self.call("GET", "/api/cities")
+        self.assertEqual(count(), 1)
+        shutil.rmtree(self.jobs / "sapporo")
+        receipt = self.make_job("sapporo")
+        stat = receipt.stat()
+        os.utime(receipt, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        self.assertEqual(self.wait_registration("sapporo")["state"], "succeeded")
+        self.assertEqual(count(), 2)
 
     def test_web_ui_start_configures_first_and_reports_not_running(self):
         self.recipe.rename(self.work / "moved")  # not configured yet

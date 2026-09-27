@@ -21,6 +21,8 @@ MANIFEST_SUFFIX = ".asset.yaml"
 # Tracked vehicle and plain-World manifests, then user-generated City Assets.
 REPOSITORY_ASSETS = ROOT / "assets"
 USER_ASSETS = BUSINESS_PACK / "work/urban/assets"
+# Jobs of the Business Pack City World Web UI; Urban Studio registers these.
+CITY_WORLD_JOBS = BUSINESS_PACK / "work/recipes/city-world-web-ui/runtime/jobs"
 
 KINDS = {"vehicle", "city", "plain"}
 CATEGORIES = {"car", "drone"}
@@ -199,6 +201,50 @@ def register_city(receipt: Path, asset_id: str | None = None, directory: Path = 
     return path
 
 
+def city_receipt_available(asset: Asset) -> bool:
+    """A City Asset is usable only while its City World receipt still exists."""
+    return asset.kind == "city" and asset.resolve(str(asset.data["receipt"])).is_file()
+
+
+def _user_city_manifests(directory: Path | None) -> list[Asset]:
+    cities = (directory or USER_ASSETS) / "cities"
+    if not cities.is_dir():
+        return []
+    return [load_manifest(path) for path in sorted(cities.glob(f"*{MANIFEST_SUFFIX}"))]
+
+
+def unregister_city(asset_id: str, directory: Path | None = None) -> Path:
+    """Remove a registered City Asset manifest; the City World job is left untouched."""
+    for asset in _user_city_manifests(directory):
+        if asset.id == asset_id:
+            asset.path.unlink()
+            return asset.path
+    raise AssetError(
+        f"registered City Asset {asset_id!r} not found under {(directory or USER_ASSETS) / 'cities'}"
+    )
+
+
+def prune_missing_cities(jobs_root: Path, directory: Path | None = None) -> list[str]:
+    """Unregister Cities whose City World job under jobs_root was deleted.
+
+    Only manifests registered from a job under jobs_root (the City World Web
+    UI's own jobs) are removed. A City registered from another location is
+    kept even when its receipt is missing, so it is never removed silently.
+    """
+    jobs_root = jobs_root.expanduser().resolve()
+    removed = []
+    for asset in _user_city_manifests(directory):
+        receipt = asset.resolve(str(asset.data["receipt"]))
+        try:
+            receipt.relative_to(jobs_root)
+        except ValueError:
+            continue
+        if not receipt.is_file():
+            asset.path.unlink()
+            removed.append(asset.id)
+    return removed
+
+
 def register_world(world: Path, asset_id: str | None = None, directory: Path = USER_ASSETS) -> Path:
     """Register a prepared environment (World YAML) as a plain World Asset."""
     world = world.expanduser().resolve()
@@ -229,6 +275,14 @@ def parser() -> argparse.ArgumentParser:
         "--no-precompile",
         action="store_true",
         help="skip compiling the City model for spawn heights (otherwise done once here)",
+    )
+    unregister = commands.add_parser(
+        "unregister-city", help="remove a registered City Asset (its City World job is kept)"
+    )
+    unregister.add_argument("--id", required=True, help="City Asset id")
+    commands.add_parser(
+        "prune-cities",
+        help="unregister Cities whose City World Web UI job was deleted",
     )
     world = commands.add_parser("register-world", help="register a prepared environment (World YAML)")
     world.add_argument("--world", type=Path, required=True)
@@ -269,6 +323,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Registered City Asset: {register_city(args.receipt, args.id)}")
         if not args.no_precompile:
             precompile_height(args.receipt.expanduser().resolve())
+        return 0
+    if args.command == "unregister-city":
+        print(f"Unregistered City Asset: {unregister_city(args.id)}")
+        return 0
+    if args.command == "prune-cities":
+        removed = prune_missing_cities(CITY_WORLD_JOBS)
+        print(f"Unregistered Cities with a deleted City World job: {', '.join(removed) or 'none'}")
         return 0
     if args.command == "register-world":
         print(f"Registered plain World Asset: {register_world(args.world, args.id)}")

@@ -51,6 +51,9 @@ It serves `http://127.0.0.1:8090/` and saves Compositions under
   including the one-time height model compile. Without the Studio, register
   a City with
   `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+  Deleting a job in the City World Web UI unregisters its City on the next
+  City page refresh; `python tools/urban_assets.py unregister-city --id <id>`
+  removes a registration by hand.
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
   obstacles included) plus the vehicle's clearance.

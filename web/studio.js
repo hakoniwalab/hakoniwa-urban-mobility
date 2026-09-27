@@ -48,6 +48,9 @@ const round2 = (value) => Math.round(value * 100) / 100;
 const assetById = (id) => state.assets.find((asset) => asset.id === id);
 const vehicles = () => state.assets.filter((asset) => asset.kind === "vehicle");
 const worlds = () => state.assets.filter((asset) => asset.kind === "city" || asset.kind === "plain");
+// A City whose City World receipt is gone is listed but cannot be selected.
+const usableWorlds = () => worlds().filter((world) => world.available !== false);
+const MISSING_RECEIPT = "receipt がありません（City World のジョブが削除されています）";
 
 // --- Tabs ---------------------------------------------------------------------------
 
@@ -66,7 +69,8 @@ function showTab(name) {
 function renderAssets() {
   const worldBody = $("#world-table tbody");
   worldBody.replaceChildren(...worlds().map((world) => el("tr", {},
-    el("td", {}, el("code", {}, world.id)), el("td", {}, world.kind === "city" ? "City" : "プレーン"), el("td", {}, world.title))));
+    el("td", {}, el("code", {}, world.id)), el("td", {}, world.kind === "city" ? "City" : "プレーン"),
+    el("td", {}, world.available === false ? `${world.title}（${MISSING_RECEIPT}）` : world.title))));
   const vehicleBody = $("#vehicle-table tbody");
   vehicleBody.replaceChildren(...vehicles().map((vehicle) => el("tr", {},
     el("td", {}, el("code", {}, vehicle.id)),
@@ -78,12 +82,15 @@ function renderAssets() {
   const cityBody = $("#city-table tbody");
   const cities = state.assets.filter((asset) => asset.kind === "city");
   cityBody.replaceChildren(...(cities.length ? cities.map((city) => el("tr", {},
-    el("td", {}, el("code", {}, city.id)), el("td", {}, el("code", {}, city.path)))) :
-    [el("tr", {}, el("td", { colspan: 2, class: "hint" }, "登録済みの City はありません"))]));
+    el("td", {}, el("code", {}, city.id)), el("td", {}, el("code", {}, city.path)),
+    city.available === false
+      ? el("td", { class: "city-state error" }, MISSING_RECEIPT)
+      : el("td", { class: "city-state ok" }, "利用可能"))) :
+    [el("tr", {}, el("td", { colspan: 3, class: "hint" }, "登録済みの City はありません"))]));
 
   const worldSelect = $("#world-select");
   const groups = [["City", "city"], ["プレーン", "plain"]].map(([label, kind]) => el("optgroup", { label },
-    ...worlds().filter((world) => world.kind === kind).map((world) => el("option", { value: world.id }, `${world.title} (${world.id})`))));
+    ...usableWorlds().filter((world) => world.kind === kind).map((world) => el("option", { value: world.id }, `${world.title} (${world.id})`))));
   worldSelect.replaceChildren(...groups);
   // Fleet-only Assets are placed as fleets, not one vehicle at a time.
   $("#add-asset").replaceChildren(...vehicles().filter((vehicle) => !vehicle.fleet).map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
@@ -141,7 +148,9 @@ async function pollCities() {
     // A registration that finished since the last poll adds a World: reload the catalog.
     const wasRegistering = new Set((previous?.jobs || [])
       .filter((job) => job.registration?.state === "running").map((job) => job.id));
-    if (state.cities.jobs.some((job) => wasRegistering.has(job.id) && job.registration?.state === "succeeded")) {
+    // So does a City unregistered because its City World job was deleted.
+    if (state.cities.unregistered?.length
+      || state.cities.jobs.some((job) => wasRegistering.has(job.id) && job.registration?.state === "succeeded")) {
       state.assets = await api("GET", "assets");
       renderAssets();
     }
@@ -370,7 +379,7 @@ async function initPlacement() {
 }
 
 function newComposition() {
-  const world = worlds().find((item) => item.kind === "plain") || worlds()[0];
+  const world = usableWorlds().find((item) => item.kind === "plain") || usableWorlds()[0];
   state.current = {
     id: "", editable: true,
     composition: { schema: "hakoniwa.composition/v1", id: "", world: world?.id, vehicles: [] },
