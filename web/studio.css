@@ -148,3 +148,5 @@ code { font-family: ui-monospace, Consolas, monospace; }
 #route-points tr.selected { background: rgba(255, 179, 0, 0.15); }
 .route-vehicle { display: flex; gap: 6px; align-items: flex-end; }
 .field.inline { flex-direction: row; align-items: center; gap: 6px; }
+.conflicts { color: var(--danger); font-size: 13px; margin: 4px 0; padding-left: 1.2em; }
+.conflicts[hidden] { display: none; }

@@ -198,6 +198,16 @@ class StudioServerTest(StudioTestBase):
         _, listed = self.call("GET", "/api/scenarios")
         self.assertIn("my-loop", [item["id"] for item in listed])
 
+    def test_saving_a_route_reports_segments_blocked_by_buildings(self):
+        building = {"id": "bldg_a", "vertices": [[-5, -5], [5, -5], [5, 5], [-5, 5]], "holes": []}
+        with mock.patch.object(urban_studio, "world_footprints", return_value={"buildings": [building]}):
+            status, saved = self.call("PUT", "/api/scenarios/through-a-building", self.route())
+            _, loaded = self.call("GET", "/api/scenarios/through-a-building")
+        self.assertEqual(status, 200)
+        self.assertTrue(saved["conflicts"])
+        self.assertEqual(saved["conflicts"][0]["building"], "bldg_a")
+        self.assertEqual(loaded["conflicts"], saved["conflicts"])
+
     def test_an_invalid_route_is_rejected_and_not_saved(self):
         status, body = self.call("PUT", "/api/scenarios/short", self.route(points=2))
         self.assertEqual(status, 400)

@@ -723,7 +723,7 @@ async function openRoute(id) {
   const scenario = loaded.scenario;
   scenario.meta = scenario.meta || {};
   scenario.route.points = scenario.route.points || [];
-  state.route = { id, editable: loaded.editable, scenario };
+  state.route = { id, editable: loaded.editable, scenario, conflicts: loaded.conflicts || [], checked: true };
   state.routePoint = -1;
   renderRouteList();
   renderRoute();
@@ -735,7 +735,7 @@ async function openRoute(id) {
 function newRoute() {
   const world = state.current?.composition.world
     || (usableWorlds().find((item) => item.kind === "city") || usableWorlds()[0])?.id;
-  state.route = { id: "", editable: true, scenario: newRouteScenario(world) };
+  state.route = { id: "", editable: true, scenario: newRouteScenario(world), conflicts: [], checked: false };
   state.routePoint = -1;
   renderRouteList();
   renderRoute();
@@ -763,7 +763,7 @@ async function loadRouteWorld() {
   if (hasMap) {
     state.routeMap.show();
     await showRouteFootprints(worldId);
-    state.routeMap.setRoute(state.route.scenario.route.points, state.routePoint);
+    state.routeMap.setRoute(state.route.scenario.route.points, state.routePoint, state.route.conflicts || []);
   }
 }
 
@@ -785,7 +785,13 @@ function routeNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+// A point edit makes the last building check stale until the next save.
+function routeEdited() {
+  if (state.route) { state.route.conflicts = []; state.route.checked = false; }
+}
+
 function addRoutePoint(east, north) {
+  routeEdited();
   const points = state.route.scenario.route.points;
   points.push({ name: `p${points.length + 1}`, east_m: round2(east), north_m: round2(north) });
   state.routePoint = points.length - 1;
@@ -827,7 +833,7 @@ function renderRoute() {
   $("#route-points tbody").replaceChildren(...(points.length ? points.map((point, index) => {
     const cell = (key, step) => el("td", {}, el("input", {
       type: "number", step, value: String(point[key] ?? 0),
-      onchange: (event) => { point[key] = routeNumber(event.target.value, 0); renderRoute(); },
+      onchange: (event) => { point[key] = routeNumber(event.target.value, 0); routeEdited(); renderRoute(); },
     }));
     return el("tr", {
       class: index === state.routePoint ? "selected" : "",
@@ -839,12 +845,21 @@ function renderRoute() {
       el("td", {}, el("button", {
         class: "icon", title: "削除", onclick: () => {
           points.splice(index, 1);
+          routeEdited();
           state.routePoint = Math.min(state.routePoint, points.length - 1);
           renderRoute();
         },
       }, "✕")));
   }) : [el("tr", {}, el("td", { colspan: 6, class: "hint" }, "点がありません"))]));
-  if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint);
+  const conflictList = $("#route-conflicts");
+  const conflicts = route.conflicts || [];
+  conflictList.hidden = !conflicts.length && route.checked;
+  conflictList.replaceChildren(...(conflicts.length
+    ? conflicts.map((conflict) => el("li", {},
+      `点${conflict.from}→点${conflict.to}：${conflict.reason === "inside" ? "建物の中に入ります" : "建物の壁に近すぎます（車の幅を考えると通れません）"}`
+      + `（${conflict.at[0]}E, ${conflict.at[1]}N）`))
+    : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりは、保存すると再チェックします")]));
+  if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts);
 }
 
 async function saveRoute() {
@@ -861,11 +876,18 @@ async function saveRoute() {
   });
   setStatus(status, "検証中…");
   try {
-    await api("PUT", `scenarios/${route.id}`, scenario);
+    const saved = await api("PUT", `scenarios/${route.id}`, scenario);
     route.editable = true;
+    route.conflicts = saved.conflicts || [];
+    route.checked = true;
     await loadScenarios();
     renderEditor(); // Compose selectors list the new or renamed route
-    setStatus(status, "保存しました。Compose の API の車で、このルートを選べます。", "ok");
+    renderRoute();
+    if (route.conflicts.length) {
+      setStatus(status, `保存しました。ただし ${route.conflicts.length} 区間が建物の壁にぶつかります（赤い破線）。点を動かして保存し直してください。`, "error");
+    } else {
+      setStatus(status, "保存しました。建物にぶつかる区間はありません。Compose の API の車で、このルートを選べます。", "ok");
+    }
   } catch (error) {
     setStatus(status, error.message, "error");
   }
@@ -879,6 +901,7 @@ async function initRoute() {
     onMove: (index, east, north) => {
       const point = state.route?.scenario.route.points[index];
       if (!point) return;
+      routeEdited();
       point.east_m = round2(east);
       point.north_m = round2(north);
       state.routePoint = index;

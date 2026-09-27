@@ -309,6 +309,21 @@ def _load_route_scenarios() -> dict[str, tuple[Path, dict, bool]]:
     return found
 
 
+def route_conflicts_for(scenario: dict) -> list[dict]:
+    """Segments of a route blocked by City World building walls (tools/route_check.py)."""
+    import route_check
+
+    world_id = (scenario.get("meta") or {}).get("world")
+    points = ((scenario.get("route") or {}).get("points")) or []
+    if not world_id or len(points) < 3:
+        return []
+    try:
+        buildings = world_footprints(world_id)["buildings"]
+    except StudioError:
+        return []
+    return route_check.route_conflicts(points, buildings)
+
+
 def list_scenarios() -> list[dict]:
     return sorted(
         (_route_scenario_entry(path, data, editable) for path, data, editable in _load_route_scenarios().values()),
@@ -322,7 +337,7 @@ def read_scenario(scenario_id: str) -> dict:
     if found is None:
         raise StudioError(f"route scenario {scenario_id} not found", HTTPStatus.NOT_FOUND)
     path, data, editable = found
-    return {**_route_scenario_entry(path, data, editable), "scenario": data}
+    return {**_route_scenario_entry(path, data, editable), "scenario": data, "conflicts": route_conflicts_for(data)}
 
 
 def save_scenario(scenario_id: str, scenario: dict) -> dict:
@@ -349,7 +364,8 @@ def save_scenario(scenario_id: str, scenario: dict) -> dict:
     finally:
         sys.path.remove(str(ROOT / "apps/car"))
     staging.replace(path)
-    return _route_scenario_entry(path, scenario, True)
+    # A blocked segment is reported, not refused: the user may still be editing.
+    return {**_route_scenario_entry(path, scenario, True), "conflicts": route_conflicts_for(scenario)}
 
 
 def repair_saved_composition(path: Path) -> list[str]:
