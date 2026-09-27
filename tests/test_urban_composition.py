@@ -1299,6 +1299,21 @@ class RealtimePacerTest(IntegratedFixture):
         with self.assertRaisesRegex(urban_realtime.RealtimeError, "no Conductor owner"):
             urban_realtime.apply_pacer({"assets": []}, pacer)
 
+    def test_apply_pacer_stops_web_bridge_wall_sleeps_once(self):
+        bridge = {"name": "urban-vehicle-web-bridge", "command": "/install/bin/hakoniwa-pdu-web-bridge",
+                  "args": ["--config-root", "web-bridge", "--delta-time-step-usec", "20000"]}
+        launcher = {"assets": [{"name": "urban-car-fleet-plant", "args": []}, bridge]}
+        pacer = urban_realtime.pacer_asset("/python", "urban-car-fleet-plant")
+        urban_realtime.apply_pacer(launcher, pacer)
+        urban_realtime.apply_pacer(launcher, pacer)
+        args = next(asset for asset in launcher["assets"] if asset["name"] == "urban-vehicle-web-bridge")["args"]
+        self.assertEqual(args.count("--disable-real-sleep"), 1)
+        # A Windows WebBridge executable is recognised too.
+        launcher = {"assets": [{"name": "urban-car-fleet-plant", "args": []},
+                               {**bridge, "command": "C:/install/bin/hakoniwa-pdu-web-bridge.exe", "args": []}]}
+        urban_realtime.apply_pacer(launcher, pacer)
+        self.assertEqual(launcher["assets"][-1]["args"], ["--disable-real-sleep"])
+
     def test_integrated_route_paces_from_the_drone_service(self):
         work = self.work / "recipe"
         (work / "config").mkdir(parents=True)
