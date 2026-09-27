@@ -32,9 +32,9 @@ PID_PITCH_RATE_Ki                            0.6000000000000001
 PID_PITCH_RATE_Kp                            3.0
 PID_PITCH_RPM_MAX                            11.1111111
 PID_PITCH_TORQUE_MAX                         10
-PID_POS_MAX_PITCH                            20
-PID_POS_MAX_ROLL                             20
-PID_POS_MAX_SPD                              5
+PID_POS_MAX_PITCH                            30
+PID_POS_MAX_ROLL                             30
+PID_POS_MAX_SPD                              8
 PID_POS_VX_Kd                                0.0
 PID_POS_VX_Ki                                2.0
 PID_POS_VX_Kp                                8.0
@@ -60,9 +60,9 @@ PID_YAW_Ki                                   0.0
 PID_YAW_Kp                                   1.0
 PID_YAW_RATE_Kd                              0.0
 PID_YAW_RATE_Ki                              0.0
-PID_YAW_RATE_Kp                              0.8
-PID_YAW_RPM_MAX                              10
-PID_YAW_TORQUE_MAX                           1.4
+PID_YAW_RATE_Kp                              1.2
+PID_YAW_RPM_MAX                              25
+PID_YAW_TORQUE_MAX                           4.0
 POS_CONTROL_CYCLE                            0
 POS_DIST_CONTROL                             0
 SIMULATION_DELTA_TIME                        0.001
