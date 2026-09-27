@@ -196,6 +196,16 @@ class CarCompositionTest(Fixture):
         self.assertEqual([vehicle["control_mode"] for vehicle in vehicles["vehicles"]],
                          ["external_python", "ps5"])
 
+    def test_path_params_accept_a_repository_reference(self):
+        reference = "${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-loop.yaml"
+        config = urban_composition.to_car_config(self.load(self.composition(vehicles=[
+            self.car("Car-1", "api", reference),
+        ])), "urban-car-rc")
+        self.assertEqual(
+            config["inputs"]["ackermann_vehicles"]["route_scenario"]["path"],
+            str((ROOT / "recipes/scenarios/golf-cart-demo-loop.yaml").resolve()),
+        )
+
     def test_car_height_is_world_surface_plus_clearance(self):
         config = urban_composition.to_car_config(
             self.load(self.composition()), "urban-car-rc", ground=lambda east, north: 21.054

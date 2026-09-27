@@ -109,6 +109,26 @@ class StudioServerTest(StudioTestBase):
         [fleet] = by_id["plain-drone-fleet"]["fleets"]
         self.assertEqual((fleet["asset"], fleet["count"], fleet["control"]), ("drone-core-quad", 10, "api"))
 
+    def test_saving_an_example_copy_keeps_its_relative_path_params_valid(self):
+        import urban_assets
+
+        catalog = urban_assets.catalog()
+        composition = {"world": "plain-ground", "vehicles": [
+            {"name": "Car-1", "asset": "golf-cart", "control": "api",
+             "params": {"scenario": "../scenarios/golf-cart-demo-convoy.yaml"}},
+        ]}
+        urban_studio.relocate_path_params(composition, catalog, self.work / "compositions")
+        self.assertEqual(
+            composition["vehicles"][0]["params"]["scenario"],
+            "${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-convoy.yaml",
+        )
+        # An already valid reference is left alone; a missing file is rejected.
+        urban_studio.relocate_path_params(composition, catalog, self.work / "compositions")
+        self.assertTrue(composition["vehicles"][0]["params"]["scenario"].startswith("${repo:"))
+        composition["vehicles"][0]["params"]["scenario"] = "../scenarios/no-such-scenario.yaml"
+        with self.assertRaisesRegex(urban_studio.StudioError, "no-such-scenario"):
+            urban_studio.relocate_path_params(composition, catalog, self.work / "compositions")
+
     def test_composition_summary_keeps_unknown_assets_recognisable(self):
         summary = urban_studio.composition_summary(
             {"world": "no-such-world", "vehicles": [{"name": "X", "asset": "no-such-asset", "control": "rc"}]}, {}

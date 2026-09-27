@@ -221,6 +221,47 @@ def read_composition(composition_id: str) -> dict:
     return {"id": composition_id, "editable": path.parent == USER_COMPOSITIONS, "composition": data}
 
 
+def _repo_reference(path: Path) -> str:
+    """${repo:NAME}/... for a file inside a workspace repository, else the absolute path."""
+    import urban_assets
+
+    try:
+        relative = path.relative_to(urban_assets.WORKSPACE.resolve())
+    except ValueError:
+        return path.as_posix()
+    return f"${{repo:{relative.parts[0]}}}/{Path(*relative.parts[1:]).as_posix()}"
+
+
+def relocate_path_params(composition: dict, catalog: dict, target_dir: Path = USER_COMPOSITIONS) -> dict:
+    """Keep path params valid once the Composition is saved under target_dir.
+
+    Relative paths resolve against the Composition file, so an example copied
+    from recipes/compositions/ would point elsewhere. A relative path that
+    only exists next to the examples becomes a ${repo:...} reference; a path
+    that exists nowhere is rejected so the save fails instead of configure.
+    """
+    import urban_assets
+
+    for group in ("vehicles", "fleets"):
+        for entry in composition.get(group) or []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("params"), dict):
+                continue
+            asset = catalog.get(entry.get("asset"))
+            declared = asset.controls().get(entry.get("control"), {}).get("params", {}) if asset else {}
+            for name, definition in declared.items():
+                value = entry["params"].get(name)
+                if definition.get("type") != "path" or not isinstance(value, str) or not value:
+                    continue
+                if urban_assets.resolve_reference(value, target_dir).is_file():
+                    continue
+                example = urban_assets.resolve_reference(value, EXAMPLE_COMPOSITIONS)
+                if not value.startswith("${") and not Path(value).is_absolute() and example.is_file():
+                    entry["params"][name] = _repo_reference(example)
+                    continue
+                raise StudioError(f"{entry.get('name')} の {name} のファイルが見つかりません: {value}")
+    return composition
+
+
 def save_composition(composition_id: str, composition: dict) -> dict:
     """Validate and save a Composition under the user directory; return its plan."""
     import urban_simulation
@@ -230,6 +271,12 @@ def save_composition(composition_id: str, composition: dict) -> dict:
     if not isinstance(composition, dict):
         raise StudioError("the request body must be a Composition object")
     composition = {**composition, "schema": "hakoniwa.composition/v1", "id": composition_id}
+    import urban_assets
+
+    try:
+        relocate_path_params(composition, _catalog_or_empty())
+    except urban_assets.AssetError as exc:  # a malformed reference such as ${runtime.*}
+        raise StudioError(str(exc)) from exc
     USER_COMPOSITIONS.mkdir(parents=True, exist_ok=True)
     path = USER_COMPOSITIONS / f"{composition_id}.yaml"
     staging = path.with_suffix(".partial.yaml")

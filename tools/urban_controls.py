@@ -79,8 +79,13 @@ def _param_values(composition: Composition, vehicle: Vehicle, declared: dict) ->
             continue
         kind = definition.get("type", "string")
         if kind == "path":
-            path = Path(str(value)).expanduser()
-            value = str((path if path.is_absolute() else composition.path.parent / path).resolve())
+            import urban_assets
+
+            # ${repo:NAME}/..., absolute, or relative to the Composition file.
+            try:
+                value = str(urban_assets.resolve_reference(str(value), composition.path.parent))
+            except urban_assets.AssetError as exc:
+                raise ControlError(f"vehicle {vehicle.name} param {name}: {exc}") from exc
         elif kind == "number":
             try:
                 value = float(value)

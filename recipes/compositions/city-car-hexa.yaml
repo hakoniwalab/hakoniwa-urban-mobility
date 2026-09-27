@@ -11,12 +11,12 @@ vehicles:
   - name: Car-1
     asset: golf-cart
     control: api
-    params: {scenario: ../scenarios/golf-cart-demo-convoy.yaml}
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-convoy.yaml"}
     spawn: {east_m: 45.0, north_m: 7.5, yaw_deg: 0.0}
   - name: Car-2
     asset: golf-cart
     control: api
-    params: {scenario: ../scenarios/golf-cart-demo-convoy.yaml}
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-convoy.yaml"}
     # 6 m behind Car-1 on the loop, facing along it.
     spawn: {east_m: 47.9, north_m: 2.5, yaw_deg: 130.0}
   - name: Drone-1

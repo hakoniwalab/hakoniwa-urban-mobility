@@ -388,8 +388,8 @@ def _spawn_up(vehicle: Vehicle, ground: Callable[[float, float], float]) -> floa
 
 
 def _param_path(composition: Composition, value: object) -> Path:
-    path = Path(str(value)).expanduser()
-    return (path if path.is_absolute() else composition.path.parent / path).resolve()
+    """A path param: ${repo:NAME}/..., absolute, or relative to the Composition file."""
+    return urban_assets.resolve_reference(str(value), composition.path.parent)
 
 
 def _require_simulators(composition: Composition, expected: set[str], adapter: str) -> None:
