@@ -56,6 +56,12 @@ python tools/urban_studio.py --open-browser
 It serves `http://127.0.0.1:8090/` and saves Compositions under
 `hakoniwa-business-pack/work/urban/compositions/`.
 
+With an EAMS Hexa, the Viewer's left panel has a Fault Injection box: one
+thrust-scale slider per rotor (1.0 nominal, 0.0 failed) plus wind direction
+and speed, sent to the Drone's `disturb` PDU when a slider is released.
+The controller does not reallocate thrust, so a failed rotor makes the Hexa
+spin and tilt (`tools/urban_fault_injection.py`).
+
 - **City**: "新規作成" starts the Business Pack City World Web UI
   (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it
   in a new tab. Each finished City World job is registered automatically,

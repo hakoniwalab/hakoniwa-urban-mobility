@@ -45,6 +45,7 @@ for path in (
 
 import drone_fleet_single_host as base
 import drone_fleet_city as city
+import urban_fault_injection
 import urban_lifecycle
 
 
@@ -537,9 +538,54 @@ def urban_launcher_writer(
                 mission_path=recipe.mission,
                 mujoco_viewer=mujoco_viewer,
             )
-        return apply_composition_controls(path, paths)
+        path = apply_composition_controls(path, paths)
+        return apply_fault_injection(path, paths)
 
     return write
+
+
+FAULT_BRIDGE_DIR = "web-bridge-fleets"
+
+
+def apply_fault_injection(path: Path, paths: object) -> Path:
+    """Route the Viewer's rotor fault / wind panel to the Drone.
+
+    The fleet WebBridge config is shared by every Recipe in the Foundation, so
+    the Recipe gets its own copy with the browser -> shared memory route
+    (tools/urban_fault_injection.py). A Launcher without a WebBridge (no
+    visualization) is left as is.
+    """
+    launcher = json.loads(path.read_text(encoding="utf-8"))
+    bridge = next(
+        (asset for asset in launcher.get("assets", []) if asset.get("name") == "web-bridge-fleets"),
+        None,
+    )
+    if bridge is None:
+        return path
+    args = bridge["args"]
+    index = args.index("--config-root") + 1
+    source = Path(args[index])
+    target = paths.recipe_config / FAULT_BRIDGE_DIR
+    if source.resolve() != target.resolve():
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(source, target)
+    robot_name, disturb_type = urban_fault_injection.disturbance_target(
+        paths.recipe_config / "pdudef/drone-pdudef-current.json"
+    )
+    urban_fault_injection.add_to_bridge(target, robot_name, disturb_type)
+    args[index] = str(target)
+    path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+
+    rotors = urban_fault_injection.rotor_count(URBAN_HEXA_ROOT / "drone_config_0.json")
+    viewer_config = paths.recipe_root / "web/map-viewer/thirdparty/hakoniwa-threejs-drone/config"
+    for name in ("viewer-config-fleets.json", "viewer-config-fleets-colliders.json"):
+        viewer_path = viewer_config / name
+        if not viewer_path.is_file():
+            continue
+        urban_fault_injection.add_to_viewer(viewer_path, robot_name, rotors)
+        pdudef = json.loads(viewer_path.read_text(encoding="utf-8"))["pdu"]["pduDefPath"]
+        urban_fault_injection.add_to_pdudef(viewer_path.parent / pdudef, robot_name, disturb_type)
+    return path
 
 
 def apply_composition_controls(path: Path, paths: object) -> Path:
