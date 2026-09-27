@@ -13,6 +13,8 @@ inherit the Workspace environment:
 
 API (all JSON):
   GET  /api/assets                       Asset catalog
+  GET  /api/assets/<id>/preview          a vehicle's preview parts (GLB URL and pose in its frame)
+  GET  /api/assets/<id>/preview/<n>      one preview GLB
   GET  /api/compositions                 saved and example Compositions
   GET  /api/compositions/<id>            one Composition
   PUT  /api/compositions/<id>            save a Composition; returns its plan
@@ -121,6 +123,7 @@ def asset_catalog() -> list[dict]:
                 },
                 "interactions": sorted(data.get("interactions", {})),
                 "fleet": data.get("fleet"),
+                "preview": data.get("preview") is not None,
             })
         assets.append(entry)
     order = {"city": 0, "plain": 1, "vehicle": 2}
@@ -471,6 +474,49 @@ def world_info(world_id: str) -> dict:
     if asset.kind == "city":
         info["origin"] = {key: frame["origin"][key] for key in ("latitude", "longitude")}
     return info
+
+
+def _vehicle_asset(asset_id: str):
+    import urban_assets
+
+    asset = urban_assets.catalog().get(asset_id)
+    if asset is None or asset.kind != "vehicle":
+        raise StudioError(f"vehicle Asset {asset_id} not found", HTTPStatus.NOT_FOUND)
+    return asset
+
+
+def _preview_parts(asset_id: str) -> list[dict]:
+    import asset_preview
+
+    try:
+        parts = asset_preview.preview_parts(_vehicle_asset(asset_id))
+    except asset_preview.PreviewError as exc:
+        raise StudioError(str(exc), HTTPStatus.NOT_FOUND) from exc
+    if not parts:
+        raise StudioError(f"Asset {asset_id} has no preview", HTTPStatus.NOT_FOUND)
+    return parts
+
+
+def asset_preview_info(asset_id: str) -> dict:
+    """A vehicle Asset's preview parts in the vehicle frame (X forward, Y left, Z up)."""
+    return {"parts": [
+        {
+            "url": f"/api/assets/{asset_id}/preview/{index}",
+            "position": part["position"],
+            "quaternion": part["quaternion"],
+            "scale": part["scale"],
+            "basis": part["basis"],
+        }
+        for index, part in enumerate(_preview_parts(asset_id))
+    ]}
+
+
+def asset_preview_model(asset_id: str, index: str) -> Path:
+    """One preview GLB; only files the manifest's preview names are served."""
+    parts = _preview_parts(asset_id)
+    if not index.isdigit() or int(index) >= len(parts):
+        raise StudioError(f"Asset {asset_id} has no preview part {index}", HTTPStatus.NOT_FOUND)
+    return parts[int(index)]["path"]
 
 
 def world_footprints(world_id: str) -> dict:
@@ -889,6 +935,10 @@ class StudioHandler(SimpleHTTPRequestHandler):
         try:
             if method == "GET" and parts == ["assets"]:
                 return self._json(asset_catalog())
+            if method == "GET" and len(parts) == 3 and parts[0] == "assets" and parts[2] == "preview":
+                return self._json(asset_preview_info(parts[1]))
+            if method == "GET" and len(parts) == 4 and parts[0] == "assets" and parts[2] == "preview":
+                return self._file(asset_preview_model(parts[1], parts[3]), "model/gltf-binary")
             if method == "GET" and parts == ["compositions"]:
                 return self._json(list_compositions())
             if method == "GET" and len(parts) == 2 and parts[0] == "worlds":

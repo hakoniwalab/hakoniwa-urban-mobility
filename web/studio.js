@@ -131,19 +131,53 @@ function showTab(name) {
 
 // --- Assets and City ----------------------------------------------------------------
 
+function assetCard(preview, title, meta) {
+  return el("div", { class: "asset-card" }, preview,
+    el("div", { class: "asset-card-body" },
+      el("div", { class: "asset-card-title" }, title),
+      el("div", { class: "asset-card-meta" }, ...meta.map((line) => el("div", {}, line)))));
+}
+
+async function mountAssetPreviews(items) {
+  const previews = await import("./asset_preview.js");
+  for (const [container, asset] of items) {
+    try {
+      if (asset.kind === "vehicle") {
+        if (!asset.preview) previews.showPreviewMessage(container, "プレビューなし");
+        else await previews.mountVehiclePreview(container, await api("GET", `assets/${asset.id}/preview`));
+      } else if (asset.available === false) {
+        previews.showPreviewMessage(container, MISSING_RECEIPT);
+      } else {
+        const info = await api("GET", `worlds/${asset.id}`);
+        if (asset.kind === "city") {
+          previews.drawCityPreview(container, await api("GET", `worlds/${asset.id}/footprints`), info.half_extent_m);
+        } else {
+          await previews.mountWorldPreview(container, info.glb);
+        }
+      }
+    } catch (error) {
+      console.warn(`[Studio] preview of ${asset.id} failed:`, error);
+      previews.showPreviewMessage(container, "プレビューを表示できません");
+    }
+  }
+}
+
 function renderAssets() {
-  const worldBody = $("#world-table tbody");
-  worldBody.replaceChildren(...worlds().map((world) => el("tr", {},
-    el("td", {}, el("code", {}, world.id)), el("td", {}, world.kind === "city" ? "City" : "プレーン"),
-    el("td", {}, world.available === false ? `${world.title}（${MISSING_RECEIPT}）` : world.title))));
-  const vehicleBody = $("#vehicle-table tbody");
-  vehicleBody.replaceChildren(...vehicles().map((vehicle) => el("tr", {},
-    el("td", {}, el("code", {}, vehicle.id)),
-    el("td", {}, vehicle.category),
-    el("td", {}, vehicle.title),
-    el("td", {}, vehicle.simulator),
-    el("td", {}, Object.keys(vehicle.controls).join(" / ")),
-    el("td", {}, String(vehicle.ground_clearance_m)))));
+  const previews = [];
+  const preview = (asset) => {
+    const container = el("div", { class: "asset-preview" });
+    previews.push([container, asset]);
+    return container;
+  };
+  $("#world-cards").replaceChildren(...worlds().map((world) => assetCard(preview(world),
+    world.available === false ? `${world.title}（${MISSING_RECEIPT}）` : world.title,
+    [el("code", {}, world.id), world.kind === "city" ? "City" : "プレーン"])));
+  $("#vehicle-cards").replaceChildren(...vehicles().map((vehicle) => assetCard(preview(vehicle), vehicle.title, [
+    el("code", {}, vehicle.id),
+    `${vehicle.category} ・ ${vehicle.simulator}`,
+    `制御: ${Object.keys(vehicle.controls).join(" / ")} ・ 地上高 ${vehicle.ground_clearance_m} m`,
+  ])));
+  mountAssetPreviews(previews);
   const cityBody = $("#city-table tbody");
   const cities = state.assets.filter((asset) => asset.kind === "city");
   cityBody.replaceChildren(...(cities.length ? cities.map((city) => el("tr", {},

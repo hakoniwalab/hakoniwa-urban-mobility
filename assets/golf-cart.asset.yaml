@@ -13,6 +13,10 @@ model:
   physics: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
   contract: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
   visual: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/view-model.json
+# Urban Studio preview (tools/asset_preview.py).
+preview:
+  format: view-model
+  path: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/view-model.json
 spawn:
   # Base-frame height above the ground at startup.
   ground_clearance_m: 0.45

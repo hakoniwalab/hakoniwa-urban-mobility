@@ -13,6 +13,11 @@ simulator: drone-core
 model:
   physics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone.xml
   dynamics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone_config_0.json
+# Urban Studio preview (tools/asset_preview.py): the Viewer's display model.
+preview:
+  format: drone-type
+  path: ${repo:hakoniwa-threejs-drone}/config/drone_types-hexa-eams.json
+  type: hexa_eams
 spawn:
   # The landing collider bottom is 0.48 m below the base frame
   # (drone_one.py EAMS_LANDING_COLLIDER_POSITION/SIZE).
