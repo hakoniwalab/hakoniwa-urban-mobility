@@ -385,14 +385,110 @@ function vehicleKind(asset) {
   return asset.id.includes("fpv") ? "fpv" : asset.category;
 }
 
+// --- Route Cars in the placement views ------------------------------------------------
+// An api Car on a route starts at the route start set back by its offset,
+// facing along the route (tools/urban_composition.py _assign_route_cars and
+// _route_start_spawn). The placement views show that pose, not the placed spawn.
+
+const ROUTE_SPACING_M = 6.0; // urban_composition.ADDED_CAR_SPACING_M
+
+function routeReferenceOf(vehicle) {
+  return vehicle.control === "api" ? vehicle.params?.scenario : undefined;
+}
+
+// The same geometry as route_geometry.RouteGeometry.sample / heading_rad.
+function routeSample(points, distance) {
+  const segments = points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return { start: point, end: next, length: Math.hypot(next.east_m - point.east_m, next.north_m - point.north_m) };
+  });
+  const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+  if (!(total > 0)) return null;
+  let remaining = ((distance % total) + total) % total;
+  for (const segment of segments) {
+    if (remaining <= segment.length || segment === segments.at(-1)) {
+      const ratio = segment.length > 0 ? remaining / segment.length : 0;
+      return {
+        east: segment.start.east_m + ratio * (segment.end.east_m - segment.start.east_m),
+        north: segment.start.north_m + ratio * (segment.end.north_m - segment.start.north_m),
+        yaw: Math.atan2(segment.end.north_m - segment.start.north_m, segment.end.east_m - segment.start.east_m) * 180 / Math.PI,
+      };
+    }
+    remaining -= segment.length;
+  }
+  return null;
+}
+
+// Offsets as the builder assigns them: route offsets for named Cars, unnamed
+// Cars 6 m behind, the leading Car at 0.
+function routeOffsets(scenario, names) {
+  const listed = new Map((scenario.vehicles || []).map((item) => [item.name, Number(item.route_offset_m || 0)]));
+  const offsets = new Map();
+  for (const name of names) if (listed.has(name)) offsets.set(name, listed.get(name));
+  for (const name of names) {
+    if (offsets.has(name)) continue;
+    offsets.set(name, offsets.size ? Math.min(...offsets.values()) - ROUTE_SPACING_M : 0);
+  }
+  const lead = Math.max(...offsets.values());
+  return new Map([...offsets].map(([name, offset]) => [name, offset - lead]));
+}
+
+async function loadRouteStarts() {
+  const vehicles = state.current?.composition.vehicles || [];
+  state.routeData = state.routeData || {};
+  const references = [...new Set(vehicles.map(routeReferenceOf).filter(Boolean))];
+  await Promise.all(references.map(async (reference) => {
+    if (reference in state.routeData) return;
+    const item = state.scenarios.find((scenario) => scenario.reference === reference);
+    try {
+      state.routeData[reference] = item ? (await api("GET", `scenarios/${item.id}`)).scenario : null;
+    } catch {
+      state.routeData[reference] = null;
+    }
+  }));
+  for (const vehicle of vehicles) vehicle._routeStart = undefined;
+  for (const reference of references) {
+    const scenario = state.routeData[reference];
+    const points = scenario?.route?.points || [];
+    if (points.length < 3) continue;
+    const riders = vehicles.filter((vehicle) => routeReferenceOf(vehicle) === reference);
+    const offsets = routeOffsets(scenario, riders.map((vehicle) => vehicle.name));
+    for (const vehicle of riders) vehicle._routeStart = routeSample(points, offsets.get(vehicle.name));
+  }
+}
+
+function composedRoutes() {
+  const vehicles = state.current?.composition.vehicles || [];
+  return [...new Set(vehicles.map(routeReferenceOf).filter(Boolean))]
+    .map((reference) => state.routeData?.[reference]?.route?.points || [])
+    .filter((points) => points.length >= 3);
+}
+
+// After a route or control change: move route Cars to their route starts.
+async function refreshRouteStarts() {
+  await loadRouteStarts();
+  refreshPlacement();
+  await Promise.all((state.current?.composition.vehicles || []).map(fetchHeight));
+  renderEditor();
+}
+
+function routeLocked(vehicle) {
+  if (!vehicle?._routeStart) return false;
+  setStatus($("#compose-status"), `${vehicle.name} はルートの開始点から出発します。位置を変えるには Route タブでルートを編集してください。`);
+  return true;
+}
+
 function placementVehicles() {
   return (state.current?.composition.vehicles || []).map((vehicle) => {
     const asset = assetById(vehicle.asset);
     const clearance = Number(asset?.ground_clearance_m ?? 0);
+    const start = vehicle._routeStart;
     return {
       name: vehicle.name, kind: vehicleKind(asset), clearance,
-      east: Number(vehicle.spawn?.east_m ?? 0), north: Number(vehicle.spawn?.north_m ?? 0),
-      yaw: Number(vehicle.spawn?.yaw_deg ?? 0), up: Number(vehicle._ground ?? 0) + clearance,
+      east: start ? start.east : Number(vehicle.spawn?.east_m ?? 0),
+      north: start ? start.north : Number(vehicle.spawn?.north_m ?? 0),
+      yaw: start ? start.yaw : Number(vehicle.spawn?.yaw_deg ?? 0),
+      up: Number(vehicle._ground ?? 0) + clearance,
     };
   });
 }
@@ -401,18 +497,22 @@ function refreshPlacement() {
   const vehicles = placementVehicles();
   state.placement?.setVehicles(vehicles, state.selected);
   state.map?.setVehicles(vehicles, state.selected);
+  state.map?.setRoutes(composedRoutes());
   const selected = state.current?.composition.vehicles[state.selected];
-  $("#placement-selected").textContent = selected
-    ? `選択中: ${selected.name}（east ${selected.spawn.east_m} m, north ${selected.spawn.north_m} m, yaw ${selected.spawn.yaw_deg}°）`
-    : "";
+  const start = selected?._routeStart;
+  $("#placement-selected").textContent = !selected ? ""
+    : start
+      ? `選択中: ${selected.name}（ルートの開始点から出発: east ${round2(start.east)} m, north ${round2(start.north)} m, yaw ${Math.round(start.yaw)}°）`
+      : `選択中: ${selected.name}（east ${selected.spawn.east_m} m, north ${selected.spawn.north_m} m, yaw ${selected.spawn.yaw_deg}°）`;
 }
 
 async function fetchHeight(vehicle) {
   const world = state.current?.composition.world;
   if (!world || !vehicle.spawn) return;
+  const east = vehicle._routeStart ? vehicle._routeStart.east : vehicle.spawn.east_m;
+  const north = vehicle._routeStart ? vehicle._routeStart.north : vehicle.spawn.north_m;
   try {
-    const { ground_m: ground, rooftops } = await api(
-      "GET", `worlds/${world}/height?east=${vehicle.spawn.east_m}&north=${vehicle.spawn.north_m}`);
+    const { ground_m: ground, rooftops } = await api("GET", `worlds/${world}/height?east=${east}&north=${north}`);
     vehicle._ground = ground;
     vehicle._rooftops = rooftops;
     vehicle._heightError = false;
@@ -449,7 +549,16 @@ async function loadWorld() {
   if (!state.world.map && state.view === "map") showPlacementView("three");
   state.placement?.setWorld(state.world).catch((error) =>
     setStatus($("#compose-status"), `World の表示に失敗しました: ${error.message}`, "error"));
-  if (state.world.map) state.map?.setWorld(state.world);
+  if (state.world.map) {
+    state.map?.setWorld(state.world);
+    state.footprints = state.footprints || {};
+    if (!(worldId in state.footprints)) {
+      try { state.footprints[worldId] = (await api("GET", `worlds/${worldId}/footprints`)).buildings; }
+      catch { state.footprints[worldId] = []; }
+    }
+    state.map?.setFootprints(state.footprints[worldId]);
+  }
+  await loadRouteStarts();
   refreshPlacement();
   await Promise.all(state.current.composition.vehicles.map(fetchHeight));
   renderEditor();
@@ -479,6 +588,7 @@ async function moveVehicle(index, east, north) {
   const vehicle = state.current?.composition.vehicles[index];
   if (!vehicle) return;
   state.selected = index;
+  if (routeLocked(vehicle)) { renderEditor(); return; }
   vehicle.spawn = { ...vehicle.spawn, east_m: round2(east), north_m: round2(north) };
   vehicle._ground = undefined;
   vehicle._heightError = false;
@@ -489,14 +599,14 @@ async function moveVehicle(index, east, north) {
 
 function setYaw(index, degrees) {
   const vehicle = state.current?.composition.vehicles[index];
-  if (!vehicle) return;
+  if (!vehicle || routeLocked(vehicle)) { renderEditor(); return; }
   vehicle.spawn.yaw_deg = ((Math.round(degrees) + 540) % 360) - 180;
   renderEditor();
 }
 
 function turnSelected(degrees) {
   const vehicle = state.current?.composition.vehicles[state.selected];
-  if (!vehicle) return;
+  if (!vehicle || routeLocked(vehicle)) return;
   vehicle.spawn.yaw_deg = ((Number(vehicle.spawn.yaw_deg) + degrees + 540) % 360) - 180;
   renderEditor();
 }
@@ -578,7 +688,7 @@ function renderVehicle(vehicle, index) {
   vehicle.params = vehicle.params || {};
 
   const controlSelect = el("select", {
-    onchange: (event) => { vehicle.control = event.target.value; vehicle.params = {}; renderEditor(); },
+    onchange: (event) => { vehicle.control = event.target.value; vehicle.params = {}; renderEditor(); refreshRouteStarts(); },
   }, ...controls.map((name) => el("option", { value: name, selected: name === vehicle.control }, name === "rc" ? "RC（コントローラ）" : "API（プログラム）")));
 
   const paramFields = Object.entries(params).map(([name, definition]) => definition.type === "path"
@@ -878,6 +988,7 @@ async function saveRoute() {
   try {
     const saved = await api("PUT", `scenarios/${route.id}`, scenario);
     route.editable = true;
+    state.routeData = {}; // Compose re-reads the saved route for its route starts
     route.conflicts = saved.conflicts || [];
     route.checked = true;
     await loadScenarios();
@@ -960,6 +1071,7 @@ function routeParamField(vehicle, name, definition) {
       if (event.target.value) vehicle.params[name] = event.target.value;
       else delete vehicle.params[name];
       renderEditor();
+      refreshRouteStarts();
     },
   },
     el("option", { value: "" }, "（ルートを選択）"),
