@@ -91,6 +91,51 @@ vehicles:
         self.assertEqual(cursor.distance_m, stopped_distance)
         self.assertAlmostEqual(cursor.hold_remaining_sec, 3.0)
 
+    def square_route(self):
+        points = tuple(
+            scenario_executor.RoutePoint(name, east, north)
+            for name, east, north in (("a", 0.0, 0.0), ("b", 50.0, 0.0), ("c", 50.0, 50.0), ("d", 0.0, 50.0))
+        )
+        return scenario_executor.RouteGeometry(points)  # 200 m loop
+
+    def route_control(self):
+        return scenario_executor.RouteControl(
+            speed_m_s=2.0, lookahead_m=2.5, position_gain=0.8, wheelbase_m=1.55,
+            max_steering_rad=math.radians(32.0),
+        )
+
+    def test_an_unbounded_lag_wraps_and_stops_the_vehicle(self):
+        # The failure the hold prevents: 110 m behind on a 200 m loop reads as ahead.
+        geometry = self.square_route()
+        control = self.route_control()
+        vehicle = scenario_executor.RouteVehicle(name="Car-2", offset_m=0.0)
+        cursor = scenario_executor.RouteCursor(geometry, control.speed_m_s, loop_count=None)
+        cursor.advance(60.0)  # target at 120 m
+        pose = scenario_executor.VehiclePose(10.0, 0.0, 0.5, 0.0)  # at 10 m
+        self.assertLess(scenario_executor.route_lag_m(geometry, cursor, vehicle, pose), 0.0)
+        speed, _ = scenario_executor.route_command(geometry, cursor, vehicle, pose, control)
+        self.assertEqual(speed, 0.0)
+
+    def test_a_vehicle_falling_behind_makes_the_target_wait(self):
+        geometry = self.square_route()
+        control = self.route_control()
+        vehicle = scenario_executor.RouteVehicle(name="Car-2", offset_m=0.0)
+        cursor = scenario_executor.RouteCursor(geometry, control.speed_m_s, loop_count=None)
+        cursor.advance(5.0)  # target at 10 m
+        pose = scenario_executor.VehiclePose(1.0, 0.0, 0.5, 0.0)  # at 1 m: 9 m behind
+        max_lead = scenario_executor.max_route_lead_m(control)
+        lag = scenario_executor.route_lag_m(geometry, cursor, vehicle, pose)
+        self.assertAlmostEqual(lag, 9.0)
+        self.assertGreater(lag, max_lead)
+        self.assertEqual(scenario_executor.hold_for_slowest({"Car-2": lag, "Car-1": 0.5}, max_lead), "Car-2")
+        # While held, the vehicle is still driven towards its target.
+        speed, _ = scenario_executor.route_command(geometry, cursor, vehicle, pose, control)
+        self.assertGreater(speed, 0.0)
+
+    def test_no_hold_while_every_vehicle_keeps_up(self):
+        self.assertIsNone(scenario_executor.hold_for_slowest({"Car-1": 1.0, "Car-2": -2.0}, 7.5))
+        self.assertIsNone(scenario_executor.hold_for_slowest({}, 7.5))
+
     def test_route_controller_drives_west_from_initial_spawn(self):
         scenario = scenario_executor.load_scenario(
             ROOT / "recipes/scenarios/hotel-convoy-loop.yaml"
