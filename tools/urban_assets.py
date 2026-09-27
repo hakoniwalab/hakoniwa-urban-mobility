@@ -118,6 +118,16 @@ def validate(asset: Asset) -> None:
             raise AssetError(f"Asset {asset.id} control {name} scope must be vehicle or composition")
         if not isinstance(control.get("args", []), list):
             raise AssetError(f"Asset {asset.id} control {name} args must be a list")
+    fleet = data.get("fleet")
+    if fleet is not None:
+        # A fleet-capable Drone (Composition `fleets`, asset-contract 5.8).
+        if asset.category != "drone" or not isinstance(fleet, dict):
+            raise AssetError(f"Asset {asset.id} fleet must be a mapping on a Drone Asset")
+        max_count, spacing = fleet.get("max_count"), fleet.get("default_spacing_m")
+        if not isinstance(max_count, int) or max_count < 1:
+            raise AssetError(f"Asset {asset.id} fleet.max_count must be a positive integer")
+        if not isinstance(spacing, (int, float)) or spacing <= 0:
+            raise AssetError(f"Asset {asset.id} fleet.default_spacing_m must be positive")
 
 
 def asset_dirs() -> list[Path]:

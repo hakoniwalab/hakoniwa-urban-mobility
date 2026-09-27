@@ -36,6 +36,11 @@ DRONE_CONTROL_MODES = {"rc": "ps4-rc", "api": "fleet-rpc"}
 DRONE_FLEET_EXPERIMENT = urban_assets.ROOT / "recipes/experiments/drone-one-fleet.yaml"
 DRONE_DEFAULT_MISSION = urban_assets.ROOT / "config/drone/city-one-mission.json"
 DRONE_LAUNCH_AREA = {"mode": "auto", "offset_m": [0.0, 0.0, 0.0], "search_radius_m": 100.0}
+AREA_KEYS = {"east_m", "north_m"}
+# tools/drone_fleet_city.py grid spacing bounds [m] (its SPAWN_CLEARANCE_RADIUS_M
+# is the effective minimum) and the drones one Drone service process runs.
+FLEET_SPACING_RANGE_M = (0.75, 5.0)
+FLEET_DRONES_PER_PROCESS = 50
 DRONE_MIRROR_PARAMS = {
     "restitution_coefficient": 0.3,
     "relative_normal_speed_threshold_mps": 0.2,
@@ -68,6 +73,23 @@ class Vehicle:
 
 
 @dataclass(frozen=True)
+class Fleet:
+    """Many drones of one Asset laid out automatically (asset-contract 5.8).
+
+    The user places only the launch area centre; the builder lays the drones
+    out on a grid with `spacing_m` around it and computes every height.
+    """
+
+    name: str
+    asset: Asset
+    control: str
+    params: dict
+    count: int
+    spacing_m: float
+    area: dict
+
+
+@dataclass(frozen=True)
 class Composition:
     id: str
     path: Path
@@ -75,9 +97,10 @@ class Composition:
     vehicles: tuple[Vehicle, ...]
     interactions: tuple[dict, ...]
     viewer: dict
+    fleets: tuple[Fleet, ...] = ()
 
     def simulators(self) -> set[str]:
-        return {vehicle.asset.simulator for vehicle in self.vehicles}
+        return {vehicle.asset.simulator for vehicle in (*self.vehicles, *self.fleets)}
 
     def by_simulator(self, simulator: str) -> list[Vehicle]:
         return [vehicle for vehicle in self.vehicles if vehicle.asset.simulator == simulator]
@@ -142,6 +165,44 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
     )
 
 
+def _fleet(entry: object, index: int, assets: dict[str, Asset]) -> Fleet:
+    if not isinstance(entry, dict):
+        raise CompositionError(f"fleets[{index}] must be a mapping")
+    name = str(entry.get("name", "")).strip()
+    if not name:
+        raise CompositionError(f"fleets[{index}] has no name")
+    unknown = set(entry) - {"name", "asset", "control", "params", "count", "spacing_m", "area"}
+    if unknown:
+        raise CompositionError(f"fleet {name} has unknown fields: {sorted(unknown)}")
+    asset = assets.get(entry.get("asset"))
+    if asset is None or asset.kind != "vehicle" or asset.data.get("fleet") is None:
+        raise CompositionError(f"fleet {name} references no fleet-capable Drone Asset: {entry.get('asset')!r}")
+    control = entry.get("control")
+    if control not in asset.controls():
+        raise CompositionError(
+            f"fleet {name}: Asset {asset.id} offers controls {sorted(asset.controls())}, not {control!r}"
+        )
+    params = entry.get("params", {})
+    declared = asset.controls()[control].get("params", {})
+    if not isinstance(params, dict) or set(params) - set(declared):
+        raise CompositionError(f"fleet {name} params must be a mapping of {sorted(declared)}")
+    count = entry.get("count")
+    max_count = asset.data["fleet"]["max_count"]
+    if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= max_count:
+        raise CompositionError(f"fleet {name} count must be an integer in [1, {max_count}]")
+    spacing = _finite(entry.get("spacing_m", asset.data["fleet"]["default_spacing_m"]), f"fleet {name} spacing_m")
+    low, high = FLEET_SPACING_RANGE_M
+    if not low <= spacing <= high:
+        raise CompositionError(f"fleet {name} spacing_m must be in [{low}, {high}]")
+    area = entry.get("area")
+    if not isinstance(area, dict) or set(area) != AREA_KEYS:
+        raise CompositionError(
+            f"fleet {name} area must have exactly {sorted(AREA_KEYS)}; the layout and heights are computed"
+        )
+    area = {key: _finite(area[key], f"fleet {name} area.{key}") for key in sorted(AREA_KEYS)}
+    return Fleet(name=name, asset=asset, control=control, params=params, count=count, spacing_m=spacing, area=area)
+
+
 def _interaction(entry: object, index: int, vehicles: dict[str, Vehicle]) -> dict:
     if not isinstance(entry, dict) or entry.get("type") != "drone-mirror":
         raise CompositionError(f"interactions[{index}] must be a drone-mirror mapping")
@@ -183,13 +244,17 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         )
     if world.kind not in {"city", "plain"}:
         raise CompositionError(f"Composition world is not a City or plain World Asset: {data.get('world')!r}")
-    entries = data.get("vehicles")
-    if not isinstance(entries, list) or not entries:
-        raise CompositionError("Composition needs at least one vehicle")
+    entries = data.get("vehicles", [])
+    fleet_entries = data.get("fleets", [])
+    if not isinstance(entries, list) or not isinstance(fleet_entries, list):
+        raise CompositionError("Composition vehicles and fleets must be lists")
+    if not entries and not fleet_entries:
+        raise CompositionError("Composition needs at least one vehicle or fleet")
     vehicles = tuple(_vehicle(entry, index, assets) for index, entry in enumerate(entries))
-    names = [vehicle.name for vehicle in vehicles]
+    fleets = tuple(_fleet(entry, index, assets) for index, entry in enumerate(fleet_entries))
+    names = [item.name for item in (*vehicles, *fleets)]
     if len(set(names)) != len(names):
-        raise CompositionError(f"vehicle names must be unique: {names}")
+        raise CompositionError(f"vehicle and fleet names must be unique: {names}")
     interaction_entries = data.get("interactions", [])
     if not isinstance(interaction_entries, list):
         raise CompositionError("Composition interactions must be a list")
@@ -202,7 +267,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         raise CompositionError("Composition viewer must be a mapping")
     return Composition(
         id=composition_id, path=path, world=world, vehicles=vehicles,
-        interactions=interactions, viewer=viewer,
+        interactions=interactions, viewer=viewer, fleets=fleets,
     )
 
 
@@ -490,6 +555,32 @@ def to_drone_recipe(
     if composition.interactions:
         raise CompositionError("interactions need Cars; this Composition has one Drone only")
     return _drone_recipe(composition, composition.vehicles[0], _ground(composition, ground))
+
+
+# --- Drone fleet (tools/drone_fleet.py) -------------------------------------------
+
+def to_fleet_recipe(composition: Composition) -> dict:
+    """Return the tools/drone_fleet.py recipe for a World + one Drone fleet Composition."""
+    if composition.vehicles or len(composition.fleets) != 1:
+        raise CompositionError("the fleet route runs exactly one fleet and no other vehicles (yet)")
+    fleet = composition.fleets[0]
+    profile = fleet.asset.data.get("source", {}).get("profile")
+    if profile != "drone-core-quad":
+        raise CompositionError(f"fleet {fleet.name}: tools/drone_fleet.py runs the drone-core-quad profile only")
+    return {
+        "version": 1,
+        "id": composition.id,
+        "fleet": fleet.name,
+        "city_receipt": city_receipt(composition).as_posix(),
+        "drone_count": fleet.count,
+        "process_count": math.ceil(fleet.count / FLEET_DRONES_PER_PROCESS),
+        "spacing_m": fleet.spacing_m,
+        # The builder lays the grid out around this centre and raycasts each
+        # drone's ground (roofs included) itself.
+        "area": dict(fleet.area),
+        "ground_clearance_m": float(fleet.asset.data["spawn"]["ground_clearance_m"]),
+        "control": fleet.control,
+    }
 
 
 # --- Car + Drone (tools/urban_composer.py) --------------------------------------

@@ -1207,8 +1207,15 @@ def materialize_fleet_config(
     formation_rotation_deg: float = 90.0,
     formation_tilt_deg: float = 15.0,
     launch_area: dict[str, Any] | None = None,
+    character_show: bool = False,
 ) -> dict[str, Any]:
-    """Replace a configured non-ICRA fleet with its MuJoCo equivalent."""
+    """Replace a configured non-ICRA fleet with its MuJoCo equivalent.
+
+    The generated scenario (the Business Pack HAKONIWA word) is kept unless
+    character_show selects the three character-face formations. Those are
+    Drone Show content carried over from hakoniwa-drone-show; show content
+    belongs to the show plugin and is removed from this module later.
+    """
     if not math.isfinite(formation_rotation_deg):
         raise FleetMujocoError("formation_rotation_deg must be finite")
     if not math.isfinite(formation_tilt_deg) or not -85.0 <= formation_tilt_deg <= 85.0:
@@ -1320,11 +1327,12 @@ def materialize_fleet_config(
     if not show_path.is_file():
         raise FleetMujocoError(f"generated show configuration not found: {show_path}")
     show = json.loads(show_path.read_text(encoding="utf-8"))
-    _materialize_three_phase_city_show(
-        show,
-        show_path=show_path,
-        drone_count=drone_count,
-    )
+    if character_show:
+        _materialize_three_phase_city_show(
+            show,
+            show_path=show_path,
+            drone_count=drone_count,
+        )
     _rotate_formation_files(
         show,
         show_path=show_path,
@@ -1521,7 +1529,11 @@ def materialize_fleet_config(
         "formation_targets": [list(point) for point in targets],
         "formation_rotation_deg_clockwise": formation_rotation_deg,
         "formation_audience_tilt_deg": formation_tilt_deg,
-        "show_phases": ["CHIIKAWA", "HACHIWARE", "USAGI"],
+        "show_phases": (
+            ["CHIIKAWA", "HACHIWARE", "USAGI"] if character_show
+            else [str(step.get("formation", step.get("id", "HAKONIWA")))
+                  for step in show.get("timeline", []) if isinstance(step, dict)] or ["HAKONIWA"]
+        ),
     }
     marker = {
         "schema_version": 1,
@@ -1571,6 +1583,7 @@ def configure_single_host_fleet(
     formation_rotation_deg: float = 90.0,
     formation_tilt_deg: float = 15.0,
     launch_area: dict[str, Any] | None = None,
+    character_show: bool = False,
 ) -> dict[str, Any]:
     spawn_spacing_m = _validate_spawn_spacing(spawn_spacing_m)
     if process_count < 1 or process_count > drone_count:
@@ -1593,6 +1606,7 @@ def configure_single_host_fleet(
         formation_rotation_deg=formation_rotation_deg,
         formation_tilt_deg=formation_tilt_deg,
         launch_area=launch_area,
+        character_show=character_show,
     )
 
 

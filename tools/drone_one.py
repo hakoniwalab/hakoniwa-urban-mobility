@@ -545,23 +545,8 @@ def apply_composition_controls(path: Path, paths: object) -> Path:
     none.
     """
     import urban_controls
-    import urban_realtime
 
-    config = getattr(paths, "recipe_config", None)
-    controls = None if config is None else config / urban_controls.CONTROLS_FILE
-    if controls is None or not controls.is_file():
-        return path
-    launcher = json.loads(path.read_text(encoding="utf-8"))
-    selected = json.loads(controls.read_text(encoding="utf-8"))
-    if isinstance(selected, list):
-        selected = {"processes": selected}
-    urban_controls.apply_controls(launcher, selected["processes"])
-    if selected.get("pacer") is not None:
-        urban_realtime.apply_pacer(
-            launcher, selected["pacer"], drone_services=tuple(selected.get("drone_services", ())),
-        )
-    path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
-    return path
+    return urban_controls.apply_controls_file(path, getattr(paths, "recipe_config", None))
 
 
 def _paths(recipe_id: str = URBAN_DRONE_RECIPE_ID):

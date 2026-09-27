@@ -104,6 +104,7 @@ def asset_catalog() -> list[dict]:
                     for name, control in asset.controls().items()
                 },
                 "interactions": sorted(data.get("interactions", {})),
+                "fleet": data.get("fleet"),
             })
         assets.append(entry)
     order = {"city": 0, "plain": 1, "vehicle": 2}

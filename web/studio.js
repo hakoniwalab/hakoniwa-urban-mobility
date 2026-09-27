@@ -84,7 +84,8 @@ function renderAssets() {
   const groups = [["City", "city"], ["プレーン", "plain"]].map(([label, kind]) => el("optgroup", { label },
     ...worlds().filter((world) => world.kind === kind).map((world) => el("option", { value: world.id }, `${world.title} (${world.id})`))));
   worldSelect.replaceChildren(...groups);
-  $("#add-asset").replaceChildren(...vehicles().map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
+  // Fleet-only Assets are placed as fleets, not one vehicle at a time.
+  $("#add-asset").replaceChildren(...vehicles().filter((vehicle) => !vehicle.fleet).map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
 }
 
 // --- City World Web UI -------------------------------------------------------------------

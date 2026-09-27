@@ -1,0 +1,33 @@
+# Asset manifest (docs/asset-contract.md) for Drone Core's standard MuJoCo
+# quadcopter, placed as a fleet (Composition `fleets`, section 5.8).
+schema: hakoniwa.asset/v1
+id: drone-core-quad
+kind: vehicle
+category: drone
+version: 0.1.0
+title: Drone Core Quad (fleet)
+source:
+  repository: hakoniwa-drone-core
+  # Drone profile understood by tools/drone_fleet.py.
+  profile: drone-core-quad
+simulator: drone-core
+model:
+  # Expanded once per drone by Drone Core's multi-drone generator.
+  physics: ${repo:hakoniwa-drone-core}/config/drone/fleets/types/mujoco-drone.xml.template
+  dynamics: ${repo:hakoniwa-drone-core}/config/drone/fleets/types/api-mujoco.json
+spawn:
+  # tools/drone_fleet_city.py LANDING_GEAR_CLEARANCE_M.
+  ground_clearance_m: 0.5
+fleet:
+  max_count: 200
+  # Grid spacing between drones [m]; tools/drone_fleet_city.py accepts (0, 5].
+  default_spacing_m: 1.5
+controls:
+  api:
+    # Drone Core's RPC show runner: synchronized takeoff, then the HAKONIWA
+    # formation. The fleet builder generates its arguments (show JSON, drone
+    # count, processes), so the manifest declares none.
+    program: ${repo:hakoniwa-drone-core}/drone_api/external_rpc/apps/show_asset_runner.py
+    scope: composition
+    generated_by: tools/drone_fleet.py
+    args: []

@@ -1265,5 +1265,87 @@ class RealtimePacerTest(IntegratedFixture):
         self.assertEqual([process["name"] for process in data["processes"]], ["control-drone-1-rc"])
 
 
+
+class FleetCompositionTest(Fixture):
+    def fleet(self, vehicles=(), **fleet) -> Path:
+        entry = {"name": "Fleet", "asset": "drone-core-quad", "control": "api",
+                 "count": 10, "spacing_m": 1.5, "area": {"east_m": 10.0, "north_m": -4.0}}
+        entry.update(fleet)
+        return self.composition(world="test-city", vehicles=list(vehicles), fleets=[entry])
+
+    def test_a_fleet_places_its_area_and_count_only(self):
+        [fleet] = self.load(self.fleet()).fleets
+        self.assertEqual((fleet.name, fleet.asset.id, fleet.count, fleet.spacing_m), ("Fleet", "drone-core-quad", 10, 1.5))
+        self.assertEqual(fleet.area, {"east_m": 10.0, "north_m": -4.0})
+
+    def test_spacing_defaults_to_the_asset(self):
+        path = self.fleet()
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        del data["fleets"][0]["spacing_m"]
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        self.assertEqual(self.load(path).fleets[0].spacing_m, 1.5)
+
+    def test_invalid_fleets_are_rejected(self):
+        for fleet, message in (
+            ({"count": 0}, "count must be an integer"),
+            ({"count": 201}, "count must be an integer"),
+            ({"count": 2.5}, "count must be an integer"),
+            ({"spacing_m": 0.1}, "spacing_m must be in"),
+            ({"area": {"east_m": 0, "north_m": 0, "up_m": 3}}, "layout and heights are computed"),
+            ({"asset": "eams-hexa"}, "no fleet-capable Drone Asset"),
+            ({"control": "rc"}, "offers controls"),
+            ({"layout": "ring"}, "unknown fields"),
+        ):
+            with self.subTest(fleet=fleet), self.assertRaisesRegex(urban_composition.CompositionError, message):
+                self.load(self.fleet(**fleet))
+
+    def test_fleet_and_vehicle_names_share_one_namespace(self):
+        car = {"name": "Fleet", "asset": "golf-cart", "control": "rc",
+               "spawn": {"east_m": 0.0, "north_m": 0.0, "yaw_deg": 0.0}}
+        with self.assertRaisesRegex(urban_composition.CompositionError, "names must be unique"):
+            self.load(self.fleet(vehicles=[car]))
+
+    def test_fleet_recipe_converts_the_composition(self):
+        recipe = urban_composition.to_fleet_recipe(self.load(self.fleet(count=120)))
+        self.assertEqual(recipe["city_receipt"], self.receipt.resolve().as_posix())
+        self.assertEqual((recipe["drone_count"], recipe["process_count"]), (120, 3))
+        self.assertEqual(recipe["area"], {"east_m": 10.0, "north_m": -4.0})
+        self.assertEqual((recipe["spacing_m"], recipe["ground_clearance_m"]), (1.5, 0.5))
+
+    def test_the_fleet_route_runs_one_fleet_alone(self):
+        with self.catalog():
+            selected = urban_simulation.plan(self.fleet())
+            self.assertEqual(selected.route, "fleet")
+            self.assertEqual(selected.to_json()["fleets"][0]["count"], 10)
+            car = {"name": "Car-1", "asset": "golf-cart", "control": "rc",
+                   "spawn": {"east_m": 0.0, "north_m": 0.0, "yaw_deg": 0.0}}
+            with self.assertRaisesRegex(urban_simulation.SimulationError, "exactly one fleet"):
+                urban_simulation.plan(self.fleet(vehicles=[car]))
+
+    def test_fleet_launch_area_is_in_the_city_world_frame(self):
+        import drone_fleet
+
+        area = drone_fleet.launch_area({"area": {"east_m": 10.0, "north_m": -4.0}})
+        self.assertEqual(area, {"mode": "manual", "offset_m": [-4.0, -10.0, 0.0]})
+
+    def test_fleet_configure_writes_the_recipe_then_the_pacer(self):
+        composition = self.fleet()
+        workspace = self.work / "fleet-workspace"
+        calls = []
+
+        def run(command, **_):
+            calls.append(command[2:])
+            return mock.Mock(returncode=0)
+
+        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run", side_effect=run), \
+                mock.patch("multi_car.foundation_python", return_value=Path("python")):
+            self.assertEqual(urban_simulation.fleet_command("configure", composition, workspace), 0)
+        recipe = workspace / "config" / urban_simulation.FLEET_RECIPE_FILE
+        self.assertEqual(calls, [["configure", "--recipe", str(recipe)]])
+        controls = json.loads((workspace / "config/urban-composition-controls.json").read_text(encoding="utf-8"))
+        self.assertEqual(controls["processes"], [])
+        self.assertEqual(controls["drone_services"], ["drone-service-1"])
+        self.assertEqual(controls["pacer"]["depends_on"], ["drone-service-1"])
+
 if __name__ == "__main__":
     unittest.main()

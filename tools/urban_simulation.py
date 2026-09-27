@@ -41,6 +41,9 @@ for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
 
 URBAN_MOBILITY = ROOT / "tools/urban_mobility.py"
 DRONE_ONE = ROOT / "tools/drone_one.py"
+DRONE_FLEET = ROOT / "tools/drone_fleet.py"
+FLEET_WORKSPACE_ID = "urban-drone-fleet"
+FLEET_RECIPE_FILE = "urban-composition-fleet.json"
 FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
 FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
 FPV_SELECTION_FILE = "urban-composition.json"
@@ -101,6 +104,10 @@ class Plan:
                 {"name": vehicle.name, "asset": vehicle.asset.id, "control": vehicle.control}
                 for vehicle in composition.vehicles
             ],
+            "fleets": [
+                {"name": fleet.name, "asset": fleet.asset.id, "control": fleet.control, "count": fleet.count}
+                for fleet in composition.fleets
+            ],
             "simulators": sorted(composition.simulators()),
             "managed_recipe": None if self.managed_recipe is None else str(self.managed_recipe),
             "workspace": str(self.workspace),
@@ -113,6 +120,12 @@ def plan(composition_path: Path) -> Plan:
 
     composition = load_composition(composition_path)
     simulators = frozenset(composition.simulators())
+    if composition.fleets:
+        try:
+            urban_composition.to_fleet_recipe(composition)
+        except urban_composition.CompositionError as exc:
+            raise SimulationError(str(exc)) from exc
+        return Plan(composition, "fleet", None, _recipe_root(FLEET_WORKSPACE_ID))
     fpv = [vehicle for vehicle in composition.vehicles if urban_composition.is_fpv(vehicle)]
     if fpv:
         try:
@@ -148,6 +161,13 @@ def viewer_url(selected: Plan) -> str | None:
             f"http://127.0.0.1:{int(ports['http'])}/hakoniwa-threejs-drone/index.html"
             f"?viewerConfigPath=/{config.as_posix()}"
         )
+    if selected.route == "fleet":
+        configured = selected.workspace / "config" / FLEET_RECIPE_FILE
+        if not configured.is_file():
+            return None
+        import drone_fleet
+
+        return drone_fleet.viewer_url(json.loads(configured.read_text(encoding="utf-8"))["drone_count"])
     if not (selected.workspace / "config" / DRONE_RECIPE_FILE).is_file():
         return None
     import drone_one
@@ -166,6 +186,8 @@ def run(command: str, composition_path: Path) -> int:
         return fpv_command(command, composition_path)
     if selected.route == "drone":
         return drone_command(command, composition_path)
+    if selected.route == "fleet":
+        return fleet_command(command, composition_path, selected.workspace)
     # The managed Recipe lifecycle lives in tools/urban_mobility.py.
     return subprocess.run(
         [sys.executable, str(URBAN_MOBILITY), command,
@@ -421,6 +443,52 @@ def drone_command(command: str, composition_path: Path) -> int:
         write_drone_controls(composition_path)
     if command not in {"start", "status", "stop", "open-viewer", "doctor", "prepare-native"}:
         raise SimulationError(f"{command} is not supported for a City + Drone Composition")
+    return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
+
+
+# --- Fleet route (tools/drone_fleet.py) ---------------------------------------------------
+
+def write_fleet_recipe(composition_path: Path, workspace: Path) -> Path:
+    import urban_composition
+
+    try:
+        recipe = urban_composition.to_fleet_recipe(load_composition(composition_path))
+    except urban_composition.CompositionError as exc:
+        raise SimulationError(str(exc)) from exc
+    path = workspace / "config" / FLEET_RECIPE_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(recipe, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_fleet_controls(recipe_path: Path) -> Path:
+    """The pacer for tools/drone_fleet.py; the show runner control is generated with the Launcher."""
+    import multi_car
+    import urban_controls
+    import urban_realtime
+
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    services = [f"drone-service-{index}" for index in range(1, int(recipe["process_count"]) + 1)]
+    path = recipe_path.parent / urban_controls.CONTROLS_FILE
+    multi_car.write_json(path, {
+        "processes": [],
+        "pacer": urban_realtime.pacer_asset(str(multi_car.foundation_python()), services[0]),
+        "drone_services": services,
+    })
+    return path
+
+
+def fleet_command(command: str, composition_path: Path, workspace: Path) -> int:
+    """Run a World + Drone fleet Composition through tools/drone_fleet.py."""
+    tool = [sys.executable, str(DRONE_FLEET)]
+    if command in {"configure", "start"}:
+        recipe = write_fleet_recipe(composition_path, workspace)
+        result = subprocess.run([*tool, command, "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
+        if command == "configure" and result == 0:
+            write_fleet_controls(recipe)
+        return result
+    if command not in {"status", "stop", "doctor"}:
+        raise SimulationError(f"{command} is not supported for a Drone fleet Composition")
     return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
 
 

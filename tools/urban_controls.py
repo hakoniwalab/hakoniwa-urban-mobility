@@ -17,6 +17,7 @@ keep access to the same placeholders.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import TYPE_CHECKING
@@ -220,3 +221,30 @@ def apply_controls(launcher: dict, processes: list[dict]) -> dict:
     position -= sum(1 for asset in assets[:position] if is_control_asset(asset))
     launcher["assets"] = kept[:position] + list(processes) + kept[position:]
     return launcher
+
+
+def apply_controls_file(launcher_path: Path, recipe_config: Path | None) -> Path:
+    """Apply a tool workspace's CONTROLS_FILE (controls and pacer) to its Launcher.
+
+    The file is {"processes", "pacer", "drone_services"}; an older file is the
+    bare process list. A workspace configured without a Composition has none.
+    Replacing the controls only happens when the file lists processes, so a
+    tool whose control the builder generates (the fleet show runner) keeps it.
+    """
+    import urban_realtime
+
+    controls = None if recipe_config is None else Path(recipe_config) / CONTROLS_FILE
+    if controls is None or not controls.is_file():
+        return launcher_path
+    launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
+    selected = json.loads(controls.read_text(encoding="utf-8"))
+    if isinstance(selected, list):
+        selected = {"processes": selected}
+    if selected.get("processes"):
+        apply_controls(launcher, selected["processes"])
+    if selected.get("pacer") is not None:
+        urban_realtime.apply_pacer(
+            launcher, selected["pacer"], drone_services=tuple(selected.get("drone_services", ())),
+        )
+    launcher_path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+    return launcher_path
