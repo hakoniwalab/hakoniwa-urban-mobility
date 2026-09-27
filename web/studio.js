@@ -336,6 +336,13 @@ async function moveVehicle(index, east, north) {
   renderEditor();
 }
 
+function setYaw(index, degrees) {
+  const vehicle = state.current?.composition.vehicles[index];
+  if (!vehicle) return;
+  vehicle.spawn.yaw_deg = ((Math.round(degrees) + 540) % 360) - 180;
+  renderEditor();
+}
+
 function turnSelected(degrees) {
   const vehicle = state.current?.composition.vehicles[state.selected];
   if (!vehicle) return;
@@ -346,7 +353,7 @@ function turnSelected(degrees) {
 async function initPlacement() {
   try {
     const { PlacementView } = await import("./placement.js");
-    state.placement = new PlacementView($("#placement-three"), { onSelect: selectVehicle, onMove: moveVehicle });
+    state.placement = new PlacementView($("#placement-three"), { onSelect: selectVehicle, onMove: moveVehicle, onTurn: setYaw });
   } catch (error) {
     $("#placement-three").replaceChildren(el("p", { class: "hint", style: "padding: 12px" },
       `3D 表示を読み込めませんでした（three.js の取得にネットワークが必要です）: ${error.message}`));

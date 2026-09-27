@@ -4,6 +4,8 @@
 // Dragging raycasts the World meshes, so a marker rides on roofs and
 // obstacles while it moves; the backend height API gives the final height.
 // Dropping on a wall places the vehicle on that building's roof.
+// The selected vehicle has a handle ahead of its nose: dragging it turns the
+// vehicle to face the pointer (yaw: east = 0°, counterclockwise).
 // Camera: left drag orbits, right drag (or Shift + drag) pans, the wheel
 // zooms, and a double click focuses on the point under the cursor.
 
@@ -19,10 +21,11 @@ const FOCUS_DISTANCE_M = 30;
 const FOCUS_ANIMATION_MS = 400;
 
 export class PlacementView {
-  constructor(container, { onSelect, onMove }) {
+  constructor(container, { onSelect, onMove, onTurn }) {
     this.container = container;
     this.onSelect = onSelect;
     this.onMove = onMove;
+    this.onTurn = onTurn;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x9fc2e8);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
@@ -48,6 +51,7 @@ export class PlacementView {
     this.ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.vehicles = [];
     this.dragging = null;
+    this.turning = null;
 
     const canvas = this.renderer.domElement;
     canvas.addEventListener("pointerdown", (event) => this.pointerDown(event));
@@ -166,11 +170,30 @@ export class PlacementView {
         );
         ring.position.y = -vehicle.clearance + 0.05; // on the ground under the marker
         marker.add(ring);
+        // Turn handle ahead of the nose, joined to the marker by a thin bar.
+        const reach = size * 2.6;
+        const handle = new THREE.Mesh(
+          new THREE.SphereGeometry(size * 0.45, 16, 12),
+          new THREE.MeshStandardMaterial({ color: 0xffee55, emissive: 0x554400 }),
+        );
+        handle.position.x = reach;
+        handle.userData.turn = index;
+        marker.add(handle);
+        const bar = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, reach, 6).rotateZ(Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: 0xffee55 }),
+        );
+        bar.position.x = reach / 2;
+        marker.add(bar);
       }
       marker.position.set(vehicle.east, vehicle.up, -vehicle.north);
       marker.rotation.y = THREE.MathUtils.degToRad(vehicle.yaw);
       this.markerGroup.add(marker);
     });
+    if (this.turning) {
+      this.turning.marker = this.markerGroup.children[this.turning.index];
+      if (this.turning.yaw !== undefined) this.turning.marker.rotation.y = THREE.MathUtils.degToRad(this.turning.yaw);
+    }
     if (this.dragging) {
       // Selecting on pointerdown re-renders the markers; keep dragging the new one.
       const { index, point } = this.dragging;
@@ -202,8 +225,17 @@ export class PlacementView {
 
   pointerDown(event) {
     this.ray(event);
-    const hit = this.raycaster.intersectObjects(this.markerGroup.children, true)
-      .find((intersection) => intersection.object.userData.index !== undefined);
+    const hits = this.raycaster.intersectObjects(this.markerGroup.children, true);
+    const handle = hits.find((intersection) => intersection.object.userData.turn !== undefined);
+    if (handle) {
+      const index = handle.object.userData.turn;
+      const marker = this.markerGroup.children[index];
+      this.turning = { index, marker, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -marker.position.y) };
+      this.controls.enabled = false;
+      this.renderer.domElement.setPointerCapture(event.pointerId);
+      return;
+    }
+    const hit = hits.find((intersection) => intersection.object.userData.index !== undefined);
     if (!hit) return;
     const index = hit.object.userData.index;
     this.dragging = { index, marker: this.markerGroup.children[index] };
@@ -213,6 +245,19 @@ export class PlacementView {
   }
 
   pointerMove(event) {
+    if (this.turning) {
+      this.ray(event);
+      const point = new THREE.Vector3();
+      if (!this.raycaster.ray.intersectPlane(this.turning.plane, point)) return;
+      const { marker } = this.turning;
+      const east = point.x - marker.position.x;
+      const north = -(point.z - marker.position.z);
+      if (Math.hypot(east, north) < 0.2) return;
+      this.turning.yaw = Math.round(THREE.MathUtils.radToDeg(Math.atan2(north, east)));
+      marker.rotation.y = THREE.MathUtils.degToRad(this.turning.yaw);
+      this.onTurning?.(this.turning.index, this.turning.yaw);
+      return;
+    }
     if (!this.dragging) return;
     this.ray(event);
     const point = this.surfacePoint();
@@ -223,6 +268,14 @@ export class PlacementView {
   }
 
   pointerUp(event) {
+    if (this.turning) {
+      const { index, yaw } = this.turning;
+      this.turning = null;
+      this.controls.enabled = true;
+      this.renderer.domElement.releasePointerCapture(event.pointerId);
+      if (yaw !== undefined) this.onTurn(index, yaw);
+      return;
+    }
     if (!this.dragging) return;
     const { index, point } = this.dragging;
     this.dragging = null;
