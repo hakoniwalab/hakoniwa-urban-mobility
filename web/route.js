@@ -12,10 +12,16 @@ export class RouteMapView extends MapView {
     this.line = null;
   }
 
-  setRoute(points, selected) {
+  setRoute(points, selected, conflicts = []) {
     if (!this.map) return;
     for (const marker of this.markers) marker.remove();
     this.line?.remove();
+    this.blocked?.remove();
+    // Segments that run into a building wall (from the last save's check).
+    this.blocked = conflicts.length ? L.layerGroup(conflicts.map((conflict) => L.polyline(
+      [conflict.from - 1, conflict.to - 1].map((index) => this.toLatLng(points[index].east_m, points[index].north_m)),
+      { color: "#d32f2f", weight: 6, dashArray: "8 6", interactive: false },
+    ))).addTo(this.map) : null;
     const latlngs = points.map((point) => this.toLatLng(point.east_m, point.north_m));
     this.line = latlngs.length > 1
       ? L.polygon(latlngs, { color: "#2e7dd7", weight: 3, fill: false, interactive: false }).addTo(this.map)

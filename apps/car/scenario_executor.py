@@ -446,6 +446,48 @@ def hold_for_slowest(lags: dict[str, float], max_lead: float) -> str | None:
     return slowest if lags[slowest] > max_lead else None
 
 
+# A vehicle stops while another one is this close in front of it.
+YIELD_DISTANCE_M = 5.0
+YIELD_CONE_DEG = 40.0
+
+
+def _ahead(pose: VehiclePose, other: VehiclePose) -> float | None:
+    """Distance to other when it is inside pose's forward cone and range, else None."""
+    east, north = other.east_m - pose.east_m, other.north_m - pose.north_m
+    distance = math.hypot(east, north)
+    if distance > YIELD_DISTANCE_M or distance < 1e-6:
+        return None
+    bearing = math.atan2(north, east)
+    offset = math.degrees(abs(math.atan2(math.sin(bearing - pose.yaw_rad), math.cos(bearing - pose.yaw_rad))))
+    return distance if offset <= YIELD_CONE_DEG else None
+
+
+def yield_to(name: str, poses: dict[str, VehiclePose]) -> tuple[str, float] | None:
+    """The vehicle `name` must stop for, with its distance, or None.
+
+    Any vehicle in the fleet counts, including Cars driven by other route
+    executors, so crossing routes do not collide. When two vehicles are in
+    each other's cone (head-on), only the one with the later name yields, so
+    they never both wait for ever.
+    """
+    pose = poses[name]
+    blockers = []
+    for other_name, other in poses.items():
+        if other_name == name:
+            continue
+        distance = _ahead(pose, other)
+        if distance is None:
+            continue
+        mutual = _ahead(other, pose) is not None
+        if mutual and name < other_name:
+            continue  # the other vehicle yields to this one
+        blockers.append((distance, other_name))
+    if not blockers:
+        return None
+    distance, other_name = min(blockers)
+    return other_name, distance
+
+
 def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
     robots = tuple(vehicle.name for vehicle in scenario.vehicles)
     geometry = RouteGeometry(scenario.points)
@@ -466,6 +508,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
         previous_lap = 0
         max_lead = max_route_lead_m(scenario.control)
         waiting_for: str | None = None
+        yielding: dict[str, tuple[str, float] | None] = {}
         next_status = last_simulation_time
         commands: dict[str, float] = {}
         try:
@@ -533,6 +576,17 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
                     speed, steering = route_command(
                         geometry, cursor, vehicle, poses[vehicle.name], scenario.control
                     )
+                    blocker = yield_to(vehicle.name, poses)
+                    if blocker is not None:
+                        speed = 0.0
+                    # Log only when the vehicle starts or stops yielding.
+                    if (blocker is None) != (yielding.get(vehicle.name) is None):
+                        if blocker is not None:
+                            message = f"{vehicle.name} stops for {blocker[0]} {blocker[1]:.1f} m ahead"
+                        else:
+                            message = f"{vehicle.name} moves on; the way ahead is clear"
+                        print(f"[{simulation_time:9.3f}] {message}", flush=True)
+                    yielding[vehicle.name] = blocker
                     commands[vehicle.name] = speed
                     fleet.send(vehicle.name, speed, steering)
 

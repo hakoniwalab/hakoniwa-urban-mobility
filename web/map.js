@@ -104,6 +104,16 @@ export class MapView {
     this.fit();
   }
 
+  // Closed route loops (lists of {east_m, north_m}) drawn under the markers.
+  setRoutes(routes) {
+    if (!this.map) return;
+    this.routes?.remove();
+    this.routes = routes?.length ? L.layerGroup(routes.map((points) => L.polygon(
+      points.map((point) => this.toLatLng(point.east_m, point.north_m)),
+      { color: "#2e7dd7", weight: 3, fill: false, dashArray: "6 4", interactive: false },
+    ))).addTo(this.map) : null;
+  }
+
   // Building outlines (City World collision walls) drawn under the markers.
   setFootprints(buildings, visible = true) {
     if (!this.map) return;
