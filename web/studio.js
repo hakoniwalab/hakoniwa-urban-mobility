@@ -191,8 +191,8 @@ function renderAssets() {
   const groups = [["City", "city"], ["プレーン", "plain"]].map(([label, kind]) => el("optgroup", { label },
     ...usableWorlds().filter((world) => world.kind === kind).map((world) => el("option", { value: world.id }, `${world.title} (${world.id})`))));
   worldSelect.replaceChildren(...groups);
-  // Fleet-only Assets are placed as fleets, not one vehicle at a time.
-  $("#add-asset").replaceChildren(...vehicles().filter((vehicle) => !vehicle.fleet).map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
+  // A fleet-capable Asset is added as a fleet (many drones in a grid).
+  $("#add-asset").replaceChildren(...vehicles().map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
 }
 
 // --- City World Web UI -------------------------------------------------------------------
@@ -397,6 +397,8 @@ async function loadCompositions() {
 
 async function openComposition(id) {
   state.current = await api("GET", `compositions/${id}`);
+  // A fleet-only Composition may have no vehicles list.
+  state.current.composition.vehicles = state.current.composition.vehicles || [];
   state.savedSnapshot = snapshot(state.current);
   state.selected = 0;
   renderEditor();
@@ -531,6 +533,9 @@ function refreshPlacement() {
   const vehicles = placementVehicles();
   state.placement?.setVehicles(vehicles, state.selected);
   state.map?.setVehicles(vehicles, state.selected);
+  const fleetPoints = (state.current?.composition.fleets || []).flatMap(fleetGrid);
+  state.placement?.setFleets(fleetPoints);
+  state.map?.setFleets(fleetPoints);
   state.map?.setRoutes(composedRoutes());
   const selected = state.current?.composition.vehicles[state.selected];
   const start = selected?._routeStart;
@@ -656,10 +661,23 @@ async function initPlacement() {
   const { MapView } = await import("./map.js");
   state.map = new MapView($("#placement-map"), {
     onSelect: selectVehicle,
-    onPick: (east, north) => moveVehicle(state.selected, east, north),
+    onPick: pickOnMap,
     onMove: moveVehicle,
   });
   if (!window.L) $('#placement-views [data-view="map"]').disabled = true;
+}
+
+// A map click moves the selected vehicle; with a fleet only, the fleet centre.
+function pickOnMap(east, north) {
+  const composition = state.current?.composition;
+  if (!composition) return;
+  const fleets = composition.fleets || [];
+  if (!composition.vehicles.length && fleets.length) {
+    fleets[0].area = { east_m: round2(east), north_m: round2(north) };
+    renderEditor();
+    return;
+  }
+  moveVehicle(state.selected, east, north);
 }
 
 function newComposition() {
@@ -681,9 +699,25 @@ function defaultControl(asset) {
   return Object.keys(asset.controls)[0];
 }
 
+function addFleet(asset) {
+  const composition = state.current.composition;
+  composition.fleets = composition.fleets || [];
+  let index = 1;
+  const name = () => (index === 1 ? "Fleet" : `Fleet-${index}`);
+  while (composition.fleets.some((fleet) => fleet.name === name())) index += 1;
+  composition.fleets.push({
+    name: name(), asset: asset.id, control: defaultControl(asset),
+    count: Math.min(FLEET_DEFAULT_COUNT, asset.fleet.max_count),
+    spacing_m: asset.fleet.default_spacing_m,
+    area: { east_m: 0, north_m: 0 },
+  });
+  renderEditor();
+}
+
 function addVehicle() {
   const asset = assetById($("#add-asset").value);
   if (!asset || !state.current) return;
+  if (asset.fleet) return addFleet(asset);
   const list = state.current.composition.vehicles;
   const prefix = asset.category === "car" ? "Car" : "Drone";
   let index = 1;
@@ -695,6 +729,90 @@ function addVehicle() {
   state.selected = list.length - 1;
   renderEditor();
   fetchHeight(list[state.selected]).then(renderEditor);
+}
+
+// --- Fleets (asset-contract 5.8) ----------------------------------------------------
+
+// urban_composition.py FLEET_SPACING_RANGE_M.
+const FLEET_SPACING_RANGE_M = [0.75, 5.0];
+const FLEET_DEFAULT_COUNT = 10;
+// drone_fleet_city.py SPAWN_CLEARANCE_RADIUS_M: the tightest grid pitch.
+const FLEET_MIN_PITCH_M = 0.75;
+
+// The spawn grid tools/drone_fleet_city.py lays out around the fleet area
+// (_grid_spawn_offsets): columns run north, rows run west. The builder may
+// shift the whole grid a little when its first choice is unsafe.
+function fleetGrid(fleet) {
+  const count = Math.max(0, Math.floor(Number(fleet.count) || 0));
+  if (!count) return [];
+  const spacing = Math.max(Number(fleet.spacing_m) || 0, FLEET_MIN_PITCH_M);
+  const columns = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / columns);
+  const width = (columns - 1) * spacing;
+  const depth = (rows - 1) * spacing;
+  const clearance = Number(assetById(fleet.asset)?.ground_clearance_m ?? 0);
+  const points = [];
+  for (let row = 0; row < rows && points.length < count; row += 1) {
+    for (let column = 0; column < columns && points.length < count; column += 1) {
+      const north = column * spacing - width / 2;
+      const west = row * spacing - depth / 2;
+      points.push({
+        east: Number(fleet.area?.east_m ?? 0) - west,
+        north: Number(fleet.area?.north_m ?? 0) + north,
+        clearance,
+      });
+    }
+  }
+  return points;
+}
+
+function renderFleet(fleet, index) {
+  const composition = state.current.composition;
+  const asset = assetById(fleet.asset);
+  const controls = asset ? Object.keys(asset.controls) : [fleet.control];
+  const maxCount = asset?.fleet?.max_count ?? 1;
+  const [minSpacing, maxSpacing] = FLEET_SPACING_RANGE_M;
+  fleet.area = fleet.area || { east_m: 0, north_m: 0 };
+  const field = (label, input) => el("label", { class: "field" }, label, input);
+  const number = (value, attributes, onchange) => el("input", {
+    type: "number", value: String(value), ...attributes,
+    onchange: (event) => { onchange(Number(event.target.value)); renderEditor(); },
+  });
+  // tools/urban_composition.py to_fleet_recipe: one fleet and nothing else (for now).
+  const conflict = composition.vehicles.length > 0 || (composition.fleets || []).length > 1;
+  return el("div", { class: "vehicle fleet" },
+    el("div", { class: "row" },
+      field("名前", el("input", { value: fleet.name, onchange: (event) => { fleet.name = event.target.value.trim(); } })),
+      el("label", { class: "field grow" }, "Asset", el("span", {}, asset ? `${asset.title} (${asset.id})` : fleet.asset)),
+      field("制御", el("select", { onchange: (event) => { fleet.control = event.target.value; } },
+        ...controls.map((name) => el("option", { value: name, selected: name === fleet.control },
+          name === "rc" ? "RC（コントローラ）" : "API（プログラム）")))),
+      field(`台数 (1–${maxCount})`, number(fleet.count, { min: 1, max: maxCount, step: 1 },
+        (value) => { fleet.count = Math.max(1, Math.min(maxCount, Math.round(value) || 1)); })),
+      field(`間隔 (m, ${minSpacing}–${maxSpacing})`, number(fleet.spacing_m, { min: minSpacing, max: maxSpacing, step: 0.25 },
+        (value) => { fleet.spacing_m = Math.max(minSpacing, Math.min(maxSpacing, value || minSpacing)); })),
+      field("中心 east (m)", number(fleet.area.east_m, { step: 0.5 }, (value) => { fleet.area.east_m = value || 0; })),
+      field("中心 north (m)", number(fleet.area.north_m, { step: 0.5 }, (value) => { fleet.area.north_m = value || 0; })),
+      field("プロセス", el("input", {
+        value: fleet.processes ?? "", placeholder: "自動",
+        onchange: (event) => {
+          const raw = event.target.value.trim();
+          if (raw === "" || raw === "auto") delete fleet.processes;
+          else fleet.processes = Math.round(Number(raw));
+          renderEditor();
+        },
+      })),
+      el("button", {
+        class: "icon", title: "削除", "aria-label": `${fleet.name} を削除`,
+        onclick: () => {
+          composition.fleets.splice(index, 1);
+          if (!composition.fleets.length) delete composition.fleets;
+          renderEditor();
+        },
+      }, "✕")),
+    el("p", { class: "hint" }, `${fleet.count} 機を ${fleet.spacing_m} m 間隔のグリッドで中心の周りに並べます（地図と 3D の点）。`
+      + "高さは屋上も含めて起動時に計算します。" + (conflict ? "" : "地図をクリックすると中心を移動できます。")),
+    conflict ? el("p", { class: "hint warn" }, "フリートは 1 つだけで、ほかの車両とは同じ Composition に入れられません（今の実行経路の制約）。") : null);
 }
 
 function numberInput(label, value, onchange, step = "0.1") {
@@ -802,8 +920,9 @@ function renderEditor() {
     worldSelect.prepend(el("option", { value: composition.world, "data-missing": true }, `（未登録）${composition.world}`));
   }
   worldSelect.value = composition.world;
-  $("#vehicles").replaceChildren(...(composition.vehicles.length
-    ? composition.vehicles.map(renderVehicle)
+  const fleets = composition.fleets || [];
+  $("#vehicles").replaceChildren(...(composition.vehicles.length || fleets.length
+    ? [...composition.vehicles.map(renderVehicle), ...fleets.map(renderFleet)]
     : [el("p", { class: "hint" }, "車両を追加してください")]));
   refreshPlacement();
 }

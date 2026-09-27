@@ -114,6 +114,16 @@ export class MapView {
     ))).addTo(this.map) : null;
   }
 
+  // Fleet drones ({east, north} grid points) as small dots under the markers.
+  setFleets(points) {
+    if (!this.map) return;
+    this.fleets?.remove();
+    this.fleets = points?.length ? L.layerGroup(points.map((point) => L.circleMarker(
+      this.toLatLng(point.east, point.north),
+      { radius: 3, color: "#e08a1e", weight: 1, fillColor: "#e08a1e", fillOpacity: 0.8, interactive: false },
+    ))).addTo(this.map) : null;
+  }
+
   // Building outlines (City World collision walls) drawn under the markers.
   setFootprints(buildings, visible = true) {
     if (!this.map) return;

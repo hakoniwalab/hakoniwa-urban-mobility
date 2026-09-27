@@ -169,3 +169,5 @@ code { font-family: ui-monospace, Consolas, monospace; }
 .asset-card-title { font-weight: 600; }
 .asset-card-meta { color: var(--muted); font-size: 12px; display: grid; gap: 1px; margin-top: 4px; }
 .asset-card-meta code { font-size: 11px; }
+.hint.warn { color: var(--danger); }
+.vehicle.fleet { border-style: dashed; }

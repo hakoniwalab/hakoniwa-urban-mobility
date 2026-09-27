@@ -102,6 +102,19 @@ class StudioServerTest(StudioTestBase):
             with self.subTest(path=path):
                 self.assertEqual(self.call("GET", path)[0], 404)
 
+    def test_a_fleet_composition_counts_its_drones_and_saves_as_the_fleet_route(self):
+        _, listed = self.call("GET", "/api/compositions")
+        self.assertEqual(next(item for item in listed if item["id"] == "city-drone-fleet")["vehicles"], 30)
+        # As Compose saves it: an empty vehicles list next to the fleet.
+        composition = {"world": "plain-ground", "vehicles": [], "fleets": [{
+            "name": "Fleet", "asset": "drone-core-quad", "control": "api", "count": 12,
+            "spacing_m": 1.5, "area": {"east_m": -5.0, "north_m": 3.0},
+        }]}
+        status, plan = self.call("PUT", "/api/compositions/studio-fleet", composition)
+        self.assertEqual((status, plan["route"]), (200, "fleet"))
+        _, listed = self.call("GET", "/api/compositions")
+        self.assertEqual(next(item for item in listed if item["id"] == "studio-fleet")["vehicles"], 12)
+
     def test_examples_are_listed_read_only_and_saving_makes_an_editable_copy(self):
         _, listed = self.call("GET", "/api/compositions")
         example = next(item for item in listed if item["id"] == "plain-hexa-rc")

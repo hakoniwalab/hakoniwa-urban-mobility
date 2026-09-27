@@ -80,7 +80,10 @@ spin and tilt (`tools/urban_fault_injection.py`).
   Car picks its route from a selector.
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
-  obstacles included) plus the vehicle's clearance.
+  obstacles included) plus the vehicle's clearance. Adding the Drone Core
+  Quad adds a fleet: its count, spacing, and grid centre are set on its card,
+  the grid is drawn as dots, and a map click moves the centre. A fleet runs
+  alone (no other vehicles in the same Composition, for now).
 
 ## Cache cleanup
 
