@@ -144,6 +144,16 @@ def plan(composition_path: Path) -> Plan:
     return Plan(composition, route, ROOT / recipe, _recipe_root(recipe_id))
 
 
+def collider_viewer_url(selected: Plan) -> str | None:
+    """The Viewer URL that overlays the collision geometry, when the route writes one."""
+    if selected.route not in {"car", "integrated"}:
+        return None
+    contract = selected.workspace / "config/viewer-url.json"
+    if not contract.is_file():
+        return None
+    return json.loads(contract.read_text(encoding="utf-8")).get("collider_url")
+
+
 def viewer_url(selected: Plan) -> str | None:
     """Return the browser Viewer URL of a configured plan, or None before configure."""
     if selected.route in {"car", "integrated"}:

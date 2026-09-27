@@ -147,3 +147,4 @@ code { font-family: ui-monospace, Consolas, monospace; }
 #route-points input { width: 7em; }
 #route-points tr.selected { background: rgba(255, 179, 0, 0.15); }
 .route-vehicle { display: flex; gap: 6px; align-items: flex-end; }
+.field.inline { flex-direction: row; align-items: center; gap: 6px; }

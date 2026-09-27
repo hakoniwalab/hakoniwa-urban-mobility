@@ -26,6 +26,7 @@ API (all JSON):
   PUT  /api/scenarios/<id>               validate and save a route scenario
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
+  GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
   GET  /api/cities                       City World Web UI state and its jobs; a finished,
                                          unregistered job starts its registration
@@ -456,6 +457,27 @@ def world_info(world_id: str) -> dict:
     return info
 
 
+def world_footprints(world_id: str) -> dict:
+    """Building footprints of a City World in local ENU metres (the collision walls).
+
+    City World builds buildings as walls standing on these outlines, so a Car
+    route crossing one is blocked even where the map shows a driveway.
+    """
+    asset, receipt_path = world_receipt(world_id)
+    if asset.kind != "city":
+        return {"id": world_id, "buildings": []}
+    lod1 = receipt_path.parent.parent / "city-world-lod1.json"
+    if not lod1.is_file():
+        return {"id": world_id, "buildings": []}
+    data = json.loads(lod1.read_text(encoding="utf-8"))
+    buildings = [
+        {"id": item.get("id"), "vertices": item.get("vertices") or [], "height_m": item.get("zmax")}
+        for item in data.get("polygons") or []
+        if isinstance(item, dict) and len(item.get("vertices") or []) >= 3
+    ]
+    return {"id": world_id, "buildings": buildings}
+
+
 def world_glb(world_id: str) -> Path:
     _, receipt_path = world_receipt(world_id)
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -507,7 +529,7 @@ def viewer(composition_id: str) -> dict:
         selected = urban_simulation.plan(composition_path(composition_id))
     except urban_simulation.SimulationError as exc:
         raise StudioError(str(exc)) from exc
-    return {"url": urban_simulation.viewer_url(selected)}
+    return {"url": urban_simulation.viewer_url(selected), "collider_url": urban_simulation.collider_viewer_url(selected)}
 
 
 def realtime_factor(composition_id: str) -> dict:
@@ -849,6 +871,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(list_compositions())
             if method == "GET" and len(parts) == 2 and parts[0] == "worlds":
                 return self._json(world_info(parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "footprints":
+                return self._json(world_footprints(parts[1]))
             if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "glb":
                 return self._file(world_glb(parts[1]), "model/gltf-binary")
             if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "height":

@@ -103,4 +103,16 @@ export class MapView {
     this.map.invalidateSize();
     this.fit();
   }
+
+  // Building outlines (City World collision walls) drawn under the markers.
+  setFootprints(buildings, visible = true) {
+    if (!this.map) return;
+    this.footprints?.remove();
+    this.footprints = null;
+    if (!visible || !buildings?.length) return;
+    this.footprints = L.layerGroup(buildings.map((building) => L.polygon(
+      building.vertices.map(([east, north]) => this.toLatLng(east, north)),
+      { color: "#d32f2f", weight: 1, fillColor: "#d32f2f", fillOpacity: 0.25, interactive: false },
+    ))).addTo(this.map);
+  }
 }

@@ -762,8 +762,22 @@ async function loadRouteWorld() {
     : "この World には地図がありません。「点を追加」で点を増やし、east / north を数値で入力してください（World の中心からのメートル）。";
   if (hasMap) {
     state.routeMap.show();
+    await showRouteFootprints(worldId);
     state.routeMap.setRoute(state.route.scenario.route.points, state.routePoint);
   }
+}
+
+// Building outlines are the collision walls a Car cannot drive through.
+async function showRouteFootprints(worldId) {
+  state.footprints = state.footprints || {};
+  if (!(worldId in state.footprints)) {
+    try {
+      state.footprints[worldId] = (await api("GET", `worlds/${worldId}/footprints`)).buildings;
+    } catch {
+      state.footprints[worldId] = [];
+    }
+  }
+  state.routeMap.setFootprints(state.footprints[worldId], $("#route-show-buildings").checked);
 }
 
 function routeNumber(value, fallback) {
@@ -872,6 +886,10 @@ async function initRoute() {
     },
   });
   $("#new-route").addEventListener("click", newRoute);
+  $("#route-show-buildings").addEventListener("change", () => {
+    const worldId = state.route?.scenario.meta.world;
+    if (worldId && !$("#route-map").hidden) showRouteFootprints(worldId);
+  });
   $("#route-save").addEventListener("click", saveRoute);
   $("#route-add-point").addEventListener("click", () => {
     if (!state.route) return;
@@ -1009,15 +1027,19 @@ async function refreshViewer(show) {
   const id = $("#run-composition").value;
   const link = $("#viewer-link");
   try {
-    const { url } = await api("GET", `compositions/${id}/viewer`);
+    const { url, collider_url: colliderUrl } = await api("GET", `compositions/${id}/viewer`);
     link.hidden = !url;
     if (url) link.href = url;
+    const colliderLink = $("#viewer-collider-link");
+    colliderLink.hidden = !colliderUrl;
+    if (colliderUrl) colliderLink.href = colliderUrl;
     if (url && show) {
       $("#viewer-panel").hidden = false;
       $("#viewer-frame").src = url;
     }
   } catch {
     link.hidden = true;
+    $("#viewer-collider-link").hidden = true;
   }
 }
 

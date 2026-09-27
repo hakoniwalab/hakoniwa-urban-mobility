@@ -159,6 +159,7 @@
           </div>
           <p class="hint">どの車がこのルートを走るかは、Composition の車ごとに選びます。ここでは、同じルートを複数台で走るときの間隔（先頭から何 m 後ろか、負の値）を決めます。ここに名前がない車がこのルートを選んだ場合は、6 m 間隔で後ろにつきます。</p>
           <div id="route-vehicles" class="row params"></div>
+          <label class="field inline"><input id="route-show-buildings" type="checkbox" checked> 建物の当たり判定を表示（赤。車はこの中を通れません）</label>
           <div id="route-map" class="placement-view"></div>
           <p id="route-map-hint" class="hint">地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。</p>
           <div class="row between">
@@ -191,6 +192,7 @@
           <button data-command="stop" class="secondary">Stop</button>
           <button data-command="status" class="secondary">Status</button>
           <a id="viewer-link" class="button-link" target="_blank" rel="noopener" hidden>Viewer を開く</a>
+          <a id="viewer-collider-link" class="button-link" target="_blank" rel="noopener" hidden title="建物・地面の当たり判定を重ねて表示">Viewer（当たり判定）を開く</a>
         </div>
         <div class="progress-block">
           <div class="progress"><div id="progress-bar"></div></div>
