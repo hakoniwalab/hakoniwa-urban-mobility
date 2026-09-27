@@ -395,13 +395,15 @@ registers an environment under `work/urban/assets/worlds/`; like
 Cars and the EAMS Hexa run on a plain World through a generated City World
 job (`tools/plain_world.py`, cached under `work/urban/worlds/`): the ground
 becomes a flat hfield terrain, the obstacles keep the FPV generator's
-geometry (yaw as quaternions, since City World MJCFs use radians), a GLB of
+geometry (yaw as quaternions, which no compiler angle setting of the MJCF they
+are composed into can reinterpret), a GLB of
 the same geometry serves Three.js and the collider view, and the receipt
 carries `"kind": "plain"` with no geographic origin. The City routes then run
 unchanged; for a plain receipt the Car and integrated viewers open Three.js
-directly instead of the Map Viewer. The FPV Drone keeps its own route on
-plain Worlds (`fpv`), because tools/fpv.py already generates the vehicle on
-the World YAML.
+directly instead of the Map Viewer. The FPV Drone keeps its own route
+(`fpv`) on plain Worlds, because tools/fpv.py already generates the vehicle
+on the World YAML; in a City the same route composes the vehicle into the
+City World (section 7.1, step 3.4 D).
 
 ```yaml
 schema: hakoniwa.asset/v1
@@ -513,17 +515,24 @@ The migration keeps a running reference at every step:
         (`launch_area`, the RC mission file, the `rooftop` field) stay
         inside it and `tools/urban_composition.py`.
       - C. Plain Worlds for Cars and the EAMS Hexa (done, section 6.2).
-      - D. The FPV Drone in a City.
+      - D. The FPV Drone in a City (done): the `fpv` route generates the
+        vehicle with tools/fpv.py on open ground (`worlds/plain-ground.yaml`),
+        composes its `drone_base` body with the City MJCF
+        (hakoniwa-mbody-registry `compose_mujoco_world.py`, as for the Urban
+        Hexa), compiles the result once into an MJB that Drone Core loads
+        (`droneDynamics.mujoco.modelPath`; reused while the composed model is
+        unchanged), and shows the City GLB in Three.js. Shizuoka: 119 s to
+        compile, spawn on a 21 m rooftop verified.
       Rewriting the builders' internals to read the Composition directly is
       deferred: the adapters are tested for parity, so it would add risk
       without adding capability.
    5. Several Drones per Composition.
 
-   Remaining limits: one Drone per Composition, the `eams-nominal-9kg` Drone
-   profile only for the City Drone adapters, and the FPV Drone only on plain
-   Worlds (alone). The Drone-only route still opens the Map Viewer on a plain
-   World (with no map origin). Drone `api` together with Cars is configured
-   but not yet run end to end.
+   Remaining limits: one Drone per Composition, the FPV Drone only alone
+   (no Cars or other Drones with it), and the `eams-nominal-9kg` profile for
+   the other City Drone. The Drone-only route still opens the Map Viewer on
+   a plain World (with no map origin). Drone `api` together with Cars is
+   configured but not yet run end to end.
 
 ## 8. Examples
 

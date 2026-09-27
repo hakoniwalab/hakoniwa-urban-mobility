@@ -542,9 +542,7 @@ def is_fpv(vehicle: Vehicle) -> bool:
 
 
 def fpv_vehicle(composition: Composition) -> Vehicle:
-    """Return the one FPV Drone of a plain World + FPV Drone Composition."""
-    if composition.world.kind != "plain":
-        raise CompositionError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
+    """Return the one FPV Drone of a World (City or plain) + FPV Drone Composition."""
     if len(composition.vehicles) != 1 or not is_fpv(composition.vehicles[0]):
         raise CompositionError("the FPV adapter runs exactly one FPV Drone (tools/fpv.py)")
     if composition.interactions:

@@ -78,10 +78,12 @@ def _yaw_quat(euler: str) -> str:
 
 
 def _obstacle_bodies(world, scratch: Path) -> list[ET.Element]:
-    """Return the course obstacle bodies with radian-free (quaternion) rotations.
+    """Return the course obstacle bodies with their yaw as quaternions.
 
-    City World MJCFs use the default radian angles, so the FPV generator's
-    degree Euler angles are rewritten before the bodies are merged.
+    The FPV generator writes Euler angles and relies on its own
+    compiler angle="degree"; the obstacles are later composed into other
+    MJCFs (the Car fleet, the Drone fleet) whose compiler settings differ, so
+    they carry quaternions, which no angle unit setting reinterprets.
     """
     _, generate_world_mujoco = _fpv_generator()
     generated = scratch / "fpv-world.xml"

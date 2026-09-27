@@ -887,17 +887,32 @@ class FpvCompositionTest(Fixture):
                 self.assertRaisesRegex(urban_simulation.SimulationError, "update"):
             urban_simulation.apply_fpv_composition(self.fpv(), output_root / "test")
 
-    def test_plain_world_needs_the_fpv_drone_and_fpv_needs_a_plain_world(self):
+    def test_fpv_route_needs_exactly_one_fpv_drone(self):
         hexa = self.composition(world="fpv-training-course", viewer={}, vehicles=[{
             "name": "Drone-1", "asset": "eams-hexa", "control": "rc",
             "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
         with self.assertRaisesRegex(urban_composition.CompositionError, "exactly one FPV Drone"):
             urban_composition.fpv_vehicle(self.load(hexa))
-        city_fpv = self.composition(world=CITY_ID, viewer={}, vehicles=[{
+
+    def city_fpv(self) -> Path:
+        return self.composition(world="test-city", viewer={}, vehicles=[{
             "name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
             "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
-        with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds only"):
-            urban_composition.fpv_vehicle(self.load(city_fpv))
+
+    def test_city_fpv_is_generated_on_open_ground_then_composed(self):
+        with self.catalog():
+            _, output, selection = urban_simulation.fpv_selection(self.city_fpv())
+            self.assertEqual(urban_simulation.plan(self.city_fpv()).route, "fpv")
+        self.assertEqual(Path(selection["world"]), urban_simulation.FPV_CITY_GROUND)
+        self.assertEqual(Path(selection["city_receipt"]), self.receipt.resolve())
+
+    def test_city_fpv_configure_composes_before_applying_the_spawn(self):
+        output_root, calls = self.work / "fpv", []
+        with mock.patch.object(urban_simulation, "compose_fpv_city") as compose:
+            self.assertEqual(self.run_fpv("configure", self.city_fpv(), output_root, calls), 0)
+        compose.assert_called_once_with(output_root / "test", self.receipt.resolve())
+        world = calls[0][calls[0].index("--world") + 1]
+        self.assertEqual(Path(world), urban_simulation.FPV_CITY_GROUND)
 
 
 class PlanTest(IntegratedFixture):
@@ -936,11 +951,6 @@ class PlanTest(IntegratedFixture):
         json.dumps(selected)
 
     def test_unsupported_shapes_name_the_limit(self):
-        city_fpv = self.composition(world=CITY_ID, viewer={}, vehicles=[{
-            "name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
-            "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
-        with self.assertRaisesRegex(urban_simulation.SimulationError, "plain Worlds only"):
-            self.plan(city_fpv)
         fpv_with_car = self.composition(world="fpv-training-course", viewer={}, vehicles=[
             {"name": "Car-1", "asset": "golf-cart", "control": "rc",
              "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}},
@@ -1011,7 +1021,7 @@ class PlainWorldTest(IntegratedFixture):
 
         mjcf, _, _ = multi_car.city_inputs(plain_world.materialize(self.COURSE))
         root = ET.parse(mjcf).getroot()
-        self.assertIsNone(root.find("./compiler"), "City World MJCFs use radians")
+        self.assertIsNone(root.find("./compiler"), "a City World MJCF carries no compiler settings")
         tower = root.find("./worldbody/body[@name='course_tower']")
         self.assertIsNone(tower.get("euler"))
         w, _, _, z = (float(value) for value in tower.get("quat").split())
@@ -1069,6 +1079,73 @@ class PlainWorldTest(IntegratedFixture):
         self.assertAlmostEqual(ground(4.0, 17.0), 5.0, places=6)
         self.assertAlmostEqual(ground(-3.5, 11.0), 1.3, places=6)
         self.assertAlmostEqual(ground(20.0, -20.0), 0.0, places=6)
+
+
+def _drone_core_mujoco() -> Path | None:
+    try:
+        from mujoco_model_compiler import find_mujoco_library
+
+        return find_mujoco_library(urban_simulation.DRONE_CORE)
+    except Exception:  # noqa: BLE001 - the runtime is optional for this test
+        return None
+
+
+class FpvCityCompositionTest(Fixture):
+    """compose_fpv_city puts the generated FPV vehicle into a City World."""
+
+    VEHICLE = """<mujoco model="fpv">
+  <compiler angle="degree" inertiafromgeom="true" inertiagrouprange="5 5"/>
+  <option timestep="0.001" integrator="RK4"/>
+  <worldbody>
+    <light name="sun" pos="0 0 4"/>
+    <geom name="ground" type="plane" size="5 5 0.1"/>
+    <body name="drone_base" pos="0 0 0.016">
+      <freejoint name="drone_freejoint"/>
+      <geom name="frame" type="box" size="0.1 0.1 0.02" mass="0" group="2"/>
+      <geom name="frame_inertial" type="box" size="0.1 0.1 0.02" mass="0.5" group="5" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>
+"""
+
+    def fpv_output(self) -> Path:
+        output = self.work / "fpv-out"
+        vehicle = output / "runtime/vehicle"
+        (output / "runtime/threejs/assets").mkdir(parents=True)
+        vehicle.mkdir(parents=True)
+        (vehicle / "drone.xml").write_text(self.VEHICLE, encoding="utf-8")
+        (vehicle / "drone_config_0.json").write_text(json.dumps({"components": {"droneDynamics": {
+            "mujoco": {"modelPath": "drone.xml"}}}}), encoding="utf-8")
+        (output / "runtime/threejs/scene-config.json").write_text(json.dumps({
+            "environments": [{"name": "fpv-training-course", "type": "fpv-course", "model": "./fpv-course.json"}],
+            "main_camera": {"far": 1000}}), encoding="utf-8")
+        return output
+
+    @unittest.skipIf(_drone_core_mujoco() is None, "Drone Core MuJoCo runtime is not installed")
+    def test_vehicle_joins_the_city_as_a_compiled_model_and_the_view_shows_the_city(self):
+        import xml.etree.ElementTree as ET
+
+        # A plain World job has the City World layout; it stands in for a City here.
+        receipt = plain_world.materialize(FPV_ASSETS.parent / "recipes/environments/fpv-training-course.yaml")
+        output = self.fpv_output()
+        with contextlib.redirect_stdout(io.StringIO()):
+            mjb = urban_simulation.compose_fpv_city(output, receipt)
+        vehicle = output / "runtime/vehicle"
+        body_only = ET.parse(vehicle / "fpv-body.xml").getroot()
+        self.assertEqual([child.tag for child in body_only.find("worldbody")], ["body"], "ground and light removed")
+        composed = ET.parse(vehicle / "fpv-city.xml").getroot()
+        self.assertIsNotNone(composed.find(".//body[@name='drone_base']"))
+        self.assertIsNotNone(composed.find(".//body[@name='course_tower']"))
+        self.assertTrue(mjb.is_file())
+        config = json.loads((vehicle / "drone_config_0.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["components"]["droneDynamics"]["mujoco"]["modelPath"], str(mjb))
+        scene = json.loads((output / "runtime/threejs/scene-config.json").read_text(encoding="utf-8"))
+        self.assertEqual(scene["environments"], [{"name": "city", "model": "./assets/city-world.glb"}])
+        self.assertTrue((output / "runtime/threejs/assets/city-world.glb").is_file())
+        output_text = io.StringIO()
+        with contextlib.redirect_stdout(output_text):
+            urban_simulation.compose_fpv_city(output, receipt)
+        self.assertIn("Reusing compiled FPV City model", output_text.getvalue())
 
 
 if __name__ == "__main__":

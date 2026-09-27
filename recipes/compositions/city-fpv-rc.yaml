@@ -1,0 +1,15 @@
+# City + FPV Drone (docs/asset-contract.md): the Master3X FPV Drone in a
+# PLATEAU City, flown with a PS5 controller. tools/fpv.py generates the
+# vehicle on open ground; it is then composed with the City World and
+# compiled once (a few minutes for a large City).
+#   python tools/urban_assets.py register-city --receipt <city-world-receipt.json>
+#   python tools/urban_mobility.py configure --composition recipes/compositions/city-fpv-rc.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/city-fpv-rc.yaml
+schema: hakoniwa.composition/v1
+id: city-fpv-rc
+world: shizuoka-22203-lat35.099-lon138.859
+vehicles:
+  - name: Drone-1
+    asset: fpv-drone-master3x
+    control: rc
+    spawn: {east_m: 45.0, north_m: 7.5, yaw_deg: 90.0}

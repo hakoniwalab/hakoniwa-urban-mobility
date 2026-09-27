@@ -7,7 +7,8 @@ plan() decides how a Composition runs (asset-contract 7.1):
   car          City + Cars                      tools/multi_car.py    urban-car-rc
   drone        City + one Drone                 tools/drone_one.py    - (own workspace)
   integrated   City + Cars + one Drone          tools/urban_composer  urban-mobility-rc
-  fpv          plain World + one FPV Drone      hakoniwa-fpv-drone/tools/fpv.py
+  fpv          City or plain World + one FPV     hakoniwa-fpv-drone/tools/fpv.py
+               Drone
 
 run() executes a lifecycle command for a plan. Every route re-reads the
 Composition at start, so placement, control param, and program edits need no
@@ -43,6 +44,10 @@ DRONE_ONE = ROOT / "tools/drone_one.py"
 FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
 FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
 FPV_SELECTION_FILE = "urban-composition.json"
+# The open ground an FPV vehicle is generated on before it is composed into a City.
+FPV_CITY_GROUND = ROOT / "worlds/plain-ground.yaml"
+MBODY_COMPOSE = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
+DRONE_CORE = WORKSPACE / "hakoniwa-drone-core"
 DRONE_RECIPE_FILE = "urban-composition-drone.yaml"
 DRONE_WORKSPACE_ID = "urban-drone-one"
 
@@ -108,11 +113,8 @@ def plan(composition_path: Path) -> Plan:
 
     composition = load_composition(composition_path)
     simulators = frozenset(composition.simulators())
-    plain = composition.world.kind == "plain"
     fpv = [vehicle for vehicle in composition.vehicles if urban_composition.is_fpv(vehicle)]
     if fpv:
-        if not plain:
-            raise SimulationError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
         try:
             urban_composition.fpv_vehicle(composition)
         except urban_composition.CompositionError as exc:
@@ -392,13 +394,84 @@ def fpv_selection(composition_path: Path) -> tuple[object, Path, dict]:
     composition = load_composition(composition_path)
     try:
         vehicle = urban_composition.fpv_vehicle(composition)
-        world = urban_composition.plain_world_yaml(composition)
+        if composition.world.kind == "plain":
+            world, city = urban_composition.plain_world_yaml(composition), None
+        else:
+            # In a City the vehicle is generated on open ground, then composed
+            # with the City World (compose_fpv_city).
+            world, city = FPV_CITY_GROUND, urban_composition.city_receipt(composition)
     except urban_composition.CompositionError as exc:
         raise SimulationError(str(exc)) from exc
     generator = vehicle.asset.data["source"]["generator"]
     assembly = (WORKSPACE / vehicle.asset.data["source"]["repository"] / generator["assembly"]).resolve()
-    selection = {"world": str(world), "asset": vehicle.asset.id, "assembly": str(assembly)}
+    selection = {
+        "world": str(world),
+        "city_receipt": None if city is None else str(city),
+        "asset": vehicle.asset.id,
+        "assembly": str(assembly),
+    }
     return composition, FPV_OUTPUT_ROOT / composition.id, selection
+
+
+def compose_fpv_city(output: Path, receipt: Path) -> Path:
+    """Put the generated FPV vehicle into a City World.
+
+    The vehicle body is composed with the City MJCF (hakoniwa-mbody-registry
+    compose_mujoco_world.py, as for the Urban Hexa), compiled once into an MJB
+    that Drone Core loads, and the Three.js view switches from the course to
+    the City GLB. The MJB is reused while the composed model is unchanged.
+    """
+    import hashlib
+    import shutil
+    import xml.etree.ElementTree as ET
+
+    import multi_car
+    from mujoco_model_compiler import compile_mujoco_xml, find_mujoco_library
+
+    vehicle = output / "runtime/vehicle"
+    city_mjcf, city_glb, _ = multi_car.city_inputs(receipt)
+    tree = ET.parse(vehicle / "drone.xml")
+    worldbody = tree.getroot().find("worldbody")
+    body = worldbody.find("./body[@name='drone_base']") if worldbody is not None else None
+    if body is None:
+        raise SimulationError(f"generated FPV vehicle has no drone_base: {vehicle / 'drone.xml'}")
+    for item in list(worldbody):
+        if item is not body:
+            worldbody.remove(item)  # the open ground and lights of the generation World
+    body.set("pos", "0 0 0")  # Drone Core places the body from droneDynamics.position_meter
+    ET.indent(tree, space="  ")
+    body_only = vehicle / "fpv-body.xml"
+    tree.write(body_only, encoding="utf-8", xml_declaration=True)
+    composed = vehicle / "fpv-city.xml"
+    subprocess.run(
+        [sys.executable, str(MBODY_COMPOSE), str(body_only), str(city_mjcf), "--output", str(composed), "--no-validate"],
+        cwd=ROOT, check=True,
+    )
+    mjb = composed.with_suffix(".mjb")
+    stamp = composed.with_suffix(".mjb.json")
+    digest = hashlib.sha256(composed.read_bytes()).hexdigest()
+    try:
+        reusable = mjb.is_file() and json.loads(stamp.read_text(encoding="utf-8")).get("xml_sha256") == digest
+    except (OSError, json.JSONDecodeError):
+        reusable = False
+    if reusable:
+        print(f"Reusing compiled FPV City model: {mjb}")
+    else:
+        compile_mujoco_xml(composed, mjb, find_mujoco_library(DRONE_CORE))
+        multi_car.write_json(stamp, {"xml_sha256": digest})
+    config_path = vehicle / "drone_config_0.json"
+    config = multi_car.load_json(config_path, "FPV Drone config")
+    config["components"]["droneDynamics"]["mujoco"]["modelPath"] = str(mjb)
+    multi_car.write_json(config_path, config)
+
+    threejs = output / "runtime/threejs"
+    shutil.copy2(city_glb, threejs / "assets/city-world.glb")
+    scene_path = threejs / "scene-config.json"
+    scene = multi_car.load_json(scene_path, "FPV Three.js scene")
+    scene["environments"] = [{"name": "city", "model": "./assets/city-world.glb"}]
+    scene.setdefault("main_camera", {})["far"] = 20000
+    multi_car.write_json(scene_path, scene)
+    return mjb
 
 
 def apply_fpv_composition(composition_path: Path, output: Path) -> None:
@@ -435,11 +508,12 @@ def apply_fpv_composition(composition_path: Path, output: Path) -> None:
 
 
 def fpv_command(command: str, composition_path: Path) -> int:
-    """Run a plain World + FPV Drone Composition through tools/fpv.py.
+    """Run a World + FPV Drone Composition through tools/fpv.py.
 
-    configure generates the vehicle on the plain World; configure and start
-    apply the Composition spawn and controls. A different World or Asset
-    needs configure.
+    configure generates the vehicle on the plain World (in a City: on open
+    ground, then composed with the City, compose_fpv_city); configure and
+    start apply the Composition spawn and controls. A different World or
+    Asset needs configure.
     """
     import multi_car
 
@@ -453,6 +527,8 @@ def fpv_command(command: str, composition_path: Path) -> int:
         ).returncode
         if result != 0:
             return result
+        if selection["city_receipt"] is not None:
+            compose_fpv_city(output, Path(selection["city_receipt"]))
         multi_car.write_json(selected, selection)
         apply_fpv_composition(composition_path, output)
         return 0
@@ -463,7 +539,7 @@ def fpv_command(command: str, composition_path: Path) -> int:
             raise SimulationError("the Composition changed its World or FPV Asset; run configure --composition")
         apply_fpv_composition(composition_path, output)
     if command not in {"start", "status", "stop", "open-viewer"}:
-        raise SimulationError(f"{command} is not supported for a plain World + FPV Drone Composition")
+        raise SimulationError(f"{command} is not supported for an FPV Drone Composition")
     return subprocess.run(tool, cwd=FPV_TOOL.parents[1], check=False).returncode
 
 
