@@ -101,6 +101,17 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
     source_drones = drone_scene.get("drones")
     if not isinstance(source_drones, list) or len(source_drones) != 1:
         raise UrbanComposeError("generated Drone scene must contain one template")
+    drone_types_value = drone_scene.get("droneTypesPath")
+    if not isinstance(drone_types_value, str) or not drone_types_value:
+        raise UrbanComposeError("generated Drone scene must reference drone types")
+    drone_types_source = (drone_scene_path.parent / drone_types_value).resolve()
+    multi_car.required(drone_types_source, "generated Drone type definitions")
+    try:
+        drone_types_url = f"/{drone_types_source.relative_to(WORKSPACE).as_posix()}"
+    except ValueError as exc:
+        raise UrbanComposeError(
+            "generated Drone type definitions must be inside the Workspace"
+        ) from exc
 
     scene_paths = [three / "scene-config.json"]
     collider_scene = three / "scene-config-colliders.json"
@@ -108,6 +119,11 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
         scene_paths.append(collider_scene)
     for scene_path in scene_paths:
         scene = multi_car.load_json(scene_path, "integrated scene")
+        # Keep the type definition at its generated Viewer location.  Its GLB
+        # paths are relative to that directory, so copying only the JSON into
+        # the integrated scene would make every Drone model path resolve below
+        # config/threejs/assets instead of the embedded Viewer's assets.
+        scene["droneTypesPath"] = drone_types_url
         scene["drones"] = copy.deepcopy(source_drones)
         scene["main_camera"]["target"] = "Drone"
         multi_car.write_json(scene_path, scene)
