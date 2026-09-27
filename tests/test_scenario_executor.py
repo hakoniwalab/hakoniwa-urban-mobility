@@ -132,6 +132,33 @@ vehicles:
         speed, _ = scenario_executor.route_command(geometry, cursor, vehicle, pose, control)
         self.assertGreater(speed, 0.0)
 
+    def test_a_vehicle_ahead_in_range_makes_it_yield(self):
+        east = 0.0  # heading east
+        poses = {
+            "Car-1": scenario_executor.VehiclePose(0.0, 0.0, 0.5, east),
+            "Car-2": scenario_executor.VehiclePose(3.0, 0.5, 0.5, math.pi / 2),  # 3 m ahead, crossing
+        }
+        self.assertEqual(scenario_executor.yield_to("Car-1", poses)[0], "Car-2")
+        # Car-2 heads north; Car-1 is behind its left side, outside its cone.
+        self.assertIsNone(scenario_executor.yield_to("Car-2", poses))
+
+    def test_vehicles_out_of_range_or_behind_do_not_block(self):
+        poses = {
+            "Car-1": scenario_executor.VehiclePose(0.0, 0.0, 0.5, 0.0),
+            "Car-2": scenario_executor.VehiclePose(-3.0, 0.0, 0.5, 0.0),   # behind
+            "Car-3": scenario_executor.VehiclePose(8.0, 0.0, 0.5, 0.0),    # too far
+            "Car-4": scenario_executor.VehiclePose(2.0, 3.0, 0.5, 0.0),    # outside the cone
+        }
+        self.assertIsNone(scenario_executor.yield_to("Car-1", poses))
+
+    def test_head_on_vehicles_do_not_both_wait(self):
+        poses = {
+            "Car-1": scenario_executor.VehiclePose(0.0, 0.0, 0.5, 0.0),
+            "Car-2": scenario_executor.VehiclePose(4.0, 0.0, 0.5, math.pi),
+        }
+        self.assertIsNone(scenario_executor.yield_to("Car-1", poses))
+        self.assertEqual(scenario_executor.yield_to("Car-2", poses)[0], "Car-1")
+
     def test_no_hold_while_every_vehicle_keeps_up(self):
         self.assertIsNone(scenario_executor.hold_for_slowest({"Car-1": 1.0, "Car-2": -2.0}, 7.5))
         self.assertIsNone(scenario_executor.hold_for_slowest({}, 7.5))
