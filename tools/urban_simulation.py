@@ -167,7 +167,7 @@ def viewer_url(selected: Plan) -> str | None:
             return None
         import drone_fleet
 
-        return drone_fleet.viewer_url(json.loads(configured.read_text(encoding="utf-8"))["drone_count"])
+        return drone_fleet.viewer_url(json.loads(configured.read_text(encoding="utf-8")))
     if not (selected.workspace / "config" / DRONE_RECIPE_FILE).is_file():
         return None
     import drone_one

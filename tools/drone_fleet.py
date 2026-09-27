@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shutil
 import sys
 
 
@@ -33,8 +34,14 @@ RECIPE_FILE = "urban-fleet-recipe.json"
 EXPERIMENT_FILE = "urban-fleet-experiment.yaml"
 RECIPE_KEYS = {
     "version", "id", "fleet", "city_receipt", "drone_count", "process_count",
-    "spacing_m", "area", "ground_clearance_m", "control",
+    "spacing_m", "area", "ground_clearance_m", "control", "web_bridge_port",
 }
+# The Business Pack fleet WebBridge configuration and its fixed port.
+BRIDGE_ASSET = "web-bridge-fleets"
+BRIDGE_SERVER_CONFIG = "comm/visual-state-websocket-server.json"
+BUSINESS_PACK_BRIDGE_URI = "ws://127.0.0.1:8765"
+# The Viewer the Business Pack Launcher writer materializes for a City fleet.
+VIEWER_CONFIG = Path("web/map-viewer/thirdparty/hakoniwa-threejs-drone/config/viewer-config-fleets.json")
 # The Business Pack scenario the show runner flies (letters sampled to the
 # drone count; 52 or more drones show the whole word).
 SCENARIO = {
@@ -149,28 +156,78 @@ def configure(drone_root: Path, recipe_path: Path) -> int:
     return 0
 
 
+def materialize_bridge_config(paths, port: int) -> Path:
+    """Copy the fleet WebBridge configuration with the Composition's port.
+
+    Its files reference each other relatively, so the copy is complete.
+    """
+    target = paths.recipe_config / BRIDGE_ASSET
+    shutil.rmtree(target, ignore_errors=True)
+    shutil.copytree(base.bridge_config_root(paths), target)
+    server = target / BRIDGE_SERVER_CONFIG
+    config = json.loads(server.read_text(encoding="utf-8"))
+    config["local"]["port"] = port
+    server.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def bridge_uri(port: int) -> str:
+    return f"ws://127.0.0.1:{port}"
+
+
+def use_viewer_bridge(recipe_root: Path, port: int) -> None:
+    """Point the materialized Viewer config at the Composition's WebBridge."""
+    path = recipe_root / VIEWER_CONFIG
+    if not path.is_file():
+        return  # headless
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config.setdefault("pdu", {})["wsUri"] = bridge_uri(port)
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+
+def use_bridge_config(launcher_path: Path, config_root: Path) -> None:
+    launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
+    # As tools/drone_one.py: shared memory left by another Recipe's run
+    # (another asset layout) must not be reused.
+    launcher["runtime"] = {"cleanup_mmap_on_start": True}
+    bridge = next((asset for asset in launcher.get("assets", []) if asset.get("name") == BRIDGE_ASSET), None)
+    if bridge is None:
+        return  # headless
+    args = bridge["args"]
+    args[args.index("--config-root") + 1] = str(config_root)
+    launcher_path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+
+
 def launcher_writer():
-    """Business Pack Launcher plus the Composition's pacer (urban_controls file)."""
+    """Business Pack Launcher with the Composition's WebBridge port and pacer."""
 
     def write(paths, drone_root, viewer_root, experiment, system_name):
         path = base.write_launcher(paths, drone_root, viewer_root, experiment, system_name)
+        recipe = configured_recipe(paths)
+        use_bridge_config(path, materialize_bridge_config(paths, recipe["web_bridge_port"]))
+        use_viewer_bridge(paths.recipe_root, recipe["web_bridge_port"])
         return urban_controls.apply_controls_file(path, paths.recipe_config)
 
     return write
 
 
-def lifecycle_spec(paths, drone_count: int) -> urban_lifecycle.LifecycleSpec:
+def lifecycle_spec(paths, recipe: dict) -> urban_lifecycle.LifecycleSpec:
     return urban_lifecycle.LifecycleSpec(
         recipe_id=RECIPE_ID,
         recipe_root=paths.recipe_root,
         launcher=paths.recipe_config / "launcher.json",
         session=paths.recipe_root / "runtime/launcher-session.json",
-        viewer_url=viewer_url(drone_count),
+        viewer_url=viewer_url(recipe),
+        websocket_port=recipe["web_bridge_port"],
+        ports=(8000, recipe["web_bridge_port"], 54111),
     )
 
 
-def viewer_url(drone_count: int) -> str:
-    return base.viewer_url(drone_count, map_viewer=True) + "&layout=three-main"
+def viewer_url(recipe: dict) -> str:
+    url = base.viewer_url(recipe["drone_count"], map_viewer=True) + "&layout=three-main"
+    uri = bridge_uri(recipe["web_bridge_port"])
+    url = url.replace(BUSINESS_PACK_BRIDGE_URI, uri)
+    return url if "wsUri=" in url else f"{url}&wsUri={uri}"
 
 
 def start(drone_root: Path, viewer_root: Path, recipe_path: Path | None) -> int:
@@ -179,7 +236,7 @@ def start(drone_root: Path, viewer_root: Path, recipe_path: Path | None) -> int:
     if recipe_path is not None and load_recipe(recipe_path) != configured:
         # The layout and heights are built at configure (tools/drone_fleet_city.py).
         raise FleetError("the fleet changed since configure (count, area, or spacing); run configure first")
-    urban_lifecycle.preflight_start(lifecycle_spec(paths, configured["drone_count"]))
+    urban_lifecycle.preflight_start(lifecycle_spec(paths, configured))
     return base.start(experiment_path(paths), drone_root, viewer_root, workspace=paths,
                       launcher_writer=launcher_writer())
 
@@ -206,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = workspace_paths()
     recipe = configured_recipe(paths)
     if args.command == "viewer-url":
-        print(viewer_url(recipe["drone_count"]))
+        print(viewer_url(recipe))
         return 0
     if args.command == "doctor":
         return base.doctor(experiment_path(paths), drone_root, viewer_root, workspace=paths,
@@ -215,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         return base.control(experiment_path(paths), drone_root, "status", workspace=paths)
     rc = base.control(experiment_path(paths), drone_root, "terminate", workspace=paths)
     if rc == 0:
-        urban_lifecycle.verify_stopped(lifecycle_spec(paths, recipe["drone_count"]))
+        urban_lifecycle.verify_stopped(lifecycle_spec(paths, recipe))
     return rc
 
 

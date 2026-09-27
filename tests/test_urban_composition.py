@@ -1311,6 +1311,37 @@ class FleetCompositionTest(Fixture):
         self.assertEqual((recipe["drone_count"], recipe["process_count"]), (120, 3))
         self.assertEqual(recipe["area"], {"east_m": 10.0, "north_m": -4.0})
         self.assertEqual((recipe["spacing_m"], recipe["ground_clearance_m"]), (1.5, 0.5))
+        # The fixture Composition sets viewer.web_bridge_port.
+        self.assertEqual(recipe["web_bridge_port"], 18765)
+
+    def test_fleet_viewer_and_bridge_use_the_composition_port(self):
+        import drone_fleet
+
+        recipe = {"drone_count": 10, "web_bridge_port": 18766}
+        url = drone_fleet.viewer_url(recipe)
+        self.assertIn("wsUri=ws://127.0.0.1:18766", url)
+        self.assertNotIn(":8765", url)
+        source = self.work / "bridge-source"
+        (source / "comm").mkdir(parents=True)
+        (source / drone_fleet.BRIDGE_SERVER_CONFIG).write_text(
+            json.dumps({"local": {"port": 8765}}), encoding="utf-8")
+        paths = mock.Mock(recipe_config=self.work / "config")
+        with mock.patch.object(drone_fleet.base, "bridge_config_root", return_value=source):
+            root = drone_fleet.materialize_bridge_config(paths, 18766)
+        server = json.loads((root / drone_fleet.BRIDGE_SERVER_CONFIG).read_text(encoding="utf-8"))
+        self.assertEqual(server["local"]["port"], 18766)
+        launcher = self.work / "launcher.json"
+        launcher.write_text(json.dumps({"assets": [
+            {"name": "web-bridge-fleets", "args": ["--config-root", str(source), "--node-name", "n"]},
+        ]}), encoding="utf-8")
+        drone_fleet.use_bridge_config(launcher, root)
+        args = json.loads(launcher.read_text(encoding="utf-8"))["assets"][0]["args"]
+        self.assertEqual(args, ["--config-root", str(root), "--node-name", "n"])
+        viewer = self.work / "recipe" / drone_fleet.VIEWER_CONFIG
+        viewer.parent.mkdir(parents=True)
+        viewer.write_text(json.dumps({"pdu": {"wsUri": "ws://127.0.0.1:8765"}}), encoding="utf-8")
+        drone_fleet.use_viewer_bridge(self.work / "recipe", 18766)
+        self.assertEqual(json.loads(viewer.read_text(encoding="utf-8"))["pdu"]["wsUri"], "ws://127.0.0.1:18766")
 
     def test_the_fleet_route_runs_one_fleet_alone(self):
         with self.catalog():
