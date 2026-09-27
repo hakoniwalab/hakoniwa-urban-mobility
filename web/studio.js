@@ -27,9 +27,20 @@ const state = {
   assets: [],
   compositions: [],
   current: null, // { id, editable, composition }
+  selected: 0,   // index of the selected vehicle in the placement views
+  world: null,   // /api/worlds/<id> of the current Composition
+  placement: null,
+  map: null,
+  view: "three",
   job: null,
   pollTimer: null,
 };
+
+// Placement-only vehicle fields (the ground height under the vehicle) are
+// prefixed with "_" and never saved.
+const withoutTransient = (vehicle) =>
+  Object.fromEntries(Object.entries(vehicle).filter(([key]) => !key.startsWith("_")));
+const round2 = (value) => Math.round(value * 100) / 100;
 
 const assetById = (id) => state.assets.find((asset) => asset.id === id);
 const vehicles = () => state.assets.filter((asset) => asset.kind === "vehicle");
@@ -95,9 +106,127 @@ async function loadCompositions() {
 
 async function openComposition(id) {
   state.current = await api("GET", `compositions/${id}`);
+  state.selected = 0;
   renderEditor();
   renderCompositionList();
   setStatus($("#compose-status"), state.current.editable ? "" : "例の Composition です。保存するとコピーが作られます。");
+  loadWorld();
+}
+
+// --- Placement ------------------------------------------------------------------------
+
+function vehicleKind(asset) {
+  if (!asset) return "other";
+  return asset.id.includes("fpv") ? "fpv" : asset.category;
+}
+
+function placementVehicles() {
+  return (state.current?.composition.vehicles || []).map((vehicle) => {
+    const asset = assetById(vehicle.asset);
+    const clearance = Number(asset?.ground_clearance_m ?? 0);
+    return {
+      name: vehicle.name, kind: vehicleKind(asset), clearance,
+      east: Number(vehicle.spawn?.east_m ?? 0), north: Number(vehicle.spawn?.north_m ?? 0),
+      yaw: Number(vehicle.spawn?.yaw_deg ?? 0), up: Number(vehicle._ground ?? 0) + clearance,
+    };
+  });
+}
+
+function refreshPlacement() {
+  const vehicles = placementVehicles();
+  state.placement?.setVehicles(vehicles, state.selected);
+  state.map?.setVehicles(vehicles, state.selected);
+  const selected = state.current?.composition.vehicles[state.selected];
+  $("#placement-selected").textContent = selected
+    ? `選択中: ${selected.name}（east ${selected.spawn.east_m} m, north ${selected.spawn.north_m} m, yaw ${selected.spawn.yaw_deg}°）`
+    : "";
+}
+
+async function fetchHeight(vehicle) {
+  const world = state.current?.composition.world;
+  if (!world || !vehicle.spawn) return;
+  try {
+    const { ground_m: ground, rooftops } = await api(
+      "GET", `worlds/${world}/height?east=${vehicle.spawn.east_m}&north=${vehicle.spawn.north_m}`);
+    vehicle._ground = ground;
+    vehicle._rooftops = rooftops;
+  } catch {
+    vehicle._ground = undefined;
+  }
+}
+
+async function loadWorld() {
+  const worldId = state.current?.composition.world;
+  if (!worldId) return;
+  try {
+    state.world = await api("GET", `worlds/${worldId}`);
+  } catch (error) {
+    setStatus($("#compose-status"), `World を読み込めません: ${error.message}`, "error");
+    return;
+  }
+  const mapButton = $('#placement-views [data-view="map"]');
+  mapButton.disabled = !state.world.map;
+  if (!state.world.map && state.view === "map") showPlacementView("three");
+  state.placement?.setWorld(state.world).catch((error) =>
+    setStatus($("#compose-status"), `World の表示に失敗しました: ${error.message}`, "error"));
+  if (state.world.map) state.map?.setWorld(state.world);
+  refreshPlacement();
+  await Promise.all(state.current.composition.vehicles.map(fetchHeight));
+  renderEditor();
+}
+
+function showPlacementView(view) {
+  state.view = view;
+  for (const button of document.querySelectorAll("#placement-views button")) {
+    button.setAttribute("aria-selected", String(button.dataset.view === view));
+  }
+  $("#placement-three").hidden = view !== "three";
+  $("#placement-map").hidden = view !== "map";
+  if (view === "map") {
+    if (state.world?.map) state.map?.setWorld(state.world);
+    state.map?.show();
+    refreshPlacement();
+  }
+}
+
+function selectVehicle(index) {
+  if (index === state.selected) return;
+  state.selected = index;
+  renderEditor();
+}
+
+async function moveVehicle(index, east, north) {
+  const vehicle = state.current?.composition.vehicles[index];
+  if (!vehicle) return;
+  state.selected = index;
+  vehicle.spawn = { ...vehicle.spawn, east_m: round2(east), north_m: round2(north) };
+  vehicle._ground = undefined;
+  renderEditor();
+  await fetchHeight(vehicle);
+  renderEditor();
+}
+
+function turnSelected(degrees) {
+  const vehicle = state.current?.composition.vehicles[state.selected];
+  if (!vehicle) return;
+  vehicle.spawn.yaw_deg = ((Number(vehicle.spawn.yaw_deg) + degrees + 540) % 360) - 180;
+  renderEditor();
+}
+
+async function initPlacement() {
+  try {
+    const { PlacementView } = await import("./placement.js");
+    state.placement = new PlacementView($("#placement-three"), { onSelect: selectVehicle, onMove: moveVehicle });
+  } catch (error) {
+    $("#placement-three").replaceChildren(el("p", { class: "hint", style: "padding: 12px" },
+      `3D 表示を読み込めませんでした（three.js の取得にネットワークが必要です）: ${error.message}`));
+  }
+  const { MapView } = await import("./map.js");
+  state.map = new MapView($("#placement-map"), {
+    onSelect: selectVehicle,
+    onPick: (east, north) => moveVehicle(state.selected, east, north),
+  });
+  if (!window.L) $('#placement-views [data-view="map"]').disabled = true;
 }
 
 function newComposition() {
@@ -106,10 +235,12 @@ function newComposition() {
     id: "", editable: true,
     composition: { schema: "hakoniwa.composition/v1", id: "", world: world?.id, vehicles: [] },
   };
+  state.selected = 0;
   renderEditor();
   renderCompositionList();
   setStatus($("#compose-status"), "");
   $("#composition-id").focus();
+  loadWorld();
 }
 
 function defaultControl(asset) {
@@ -127,12 +258,25 @@ function addVehicle() {
     name: `${prefix}-${index}`, asset: asset.id, control: defaultControl(asset),
     spawn: { east_m: 0, north_m: 0, yaw_deg: 0 },
   });
+  state.selected = list.length - 1;
   renderEditor();
+  fetchHeight(list[state.selected]).then(renderEditor);
 }
 
 function numberInput(label, value, onchange, step = "0.1") {
   return el("label", { class: "field" }, label,
     el("input", { type: "number", step, value: String(value ?? 0), onchange: (event) => onchange(Number(event.target.value)) }));
+}
+
+function spawnInput(vehicle, label, key, step) {
+  return numberInput(label, vehicle.spawn?.[key], async (value) => {
+    vehicle.spawn[key] = value;
+    if (key !== "yaw_deg") {
+      vehicle._ground = undefined;
+      await fetchHeight(vehicle);
+    }
+    renderEditor();
+  }, step);
 }
 
 function renderVehicle(vehicle, index) {
@@ -171,7 +315,14 @@ function renderVehicle(vehicle, index) {
       },
     })) : null;
 
-  return el("div", { class: "vehicle" },
+  const clearance = Number(asset?.ground_clearance_m ?? 0);
+  const height = el("span", { class: "height" }, vehicle._ground === undefined ? "高さ: 計算中…"
+    : `地面 ${vehicle._ground.toFixed(2)} m + ${clearance} m = ${(vehicle._ground + clearance).toFixed(2)} m`
+      + (vehicle._rooftops === false ? "（屋上は未考慮）" : ""));
+  return el("div", {
+    class: `vehicle${index === state.selected ? " selected" : ""}`,
+    onclick: (event) => { if (!event.target.closest("input, select, button")) selectVehicle(index); },
+  },
     el("div", { class: "row" },
       el("label", { class: "field" }, "名前", el("input", {
         value: vehicle.name,
@@ -183,15 +334,17 @@ function renderVehicle(vehicle, index) {
       })),
       el("label", { class: "field grow" }, "Asset", el("span", {}, asset ? `${asset.title} (${asset.id})` : vehicle.asset)),
       el("label", { class: "field" }, "制御", controlSelect),
-      numberInput("east (m)", vehicle.spawn?.east_m, (value) => { vehicle.spawn.east_m = value; }),
-      numberInput("north (m)", vehicle.spawn?.north_m, (value) => { vehicle.spawn.north_m = value; }),
-      numberInput("yaw (°)", vehicle.spawn?.yaw_deg, (value) => { vehicle.spawn.yaw_deg = value; }, "1"),
+      spawnInput(vehicle, "east (m)", "east_m", "0.1"),
+      spawnInput(vehicle, "north (m)", "north_m", "0.1"),
+      spawnInput(vehicle, "yaw (°)", "yaw_deg", "1"),
+      height,
       mirror,
       el("button", {
         class: "icon", title: "削除", "aria-label": `${vehicle.name} を削除`,
         onclick: () => {
           composition.vehicles.splice(index, 1);
           composition.interactions = (composition.interactions || []).filter((item) => item.drone !== vehicle.name);
+          state.selected = Math.max(0, Math.min(state.selected, composition.vehicles.length - 1));
           renderEditor();
         },
       }, "✕")),
@@ -210,6 +363,7 @@ function renderEditor() {
   $("#vehicles").replaceChildren(...(composition.vehicles.length
     ? composition.vehicles.map(renderVehicle)
     : [el("p", { class: "hint" }, "車両を追加してください")]));
+  refreshPlacement();
 }
 
 function setStatus(node, message, kind = "") {
@@ -221,14 +375,14 @@ async function saveComposition() {
   const current = state.current;
   if (!current) return;
   const id = current.id;
-  const composition = { ...current.composition };
+  const composition = { ...current.composition, vehicles: current.composition.vehicles.map(withoutTransient) };
   if (!composition.interactions?.length) delete composition.interactions;
   for (const vehicle of composition.vehicles) if (vehicle.params && !Object.keys(vehicle.params).length) delete vehicle.params;
   const status = $("#compose-status");
   setStatus(status, "検証中…");
   try {
     const plan = await api("PUT", `compositions/${id}`, composition);
-    state.current = { id, editable: true, composition: { ...composition, id } };
+    state.current = { id, editable: true, composition: { ...current.composition, id } };
     await loadCompositions();
     setStatus(status, `保存しました（経路: ${plan.route}${plan.managed_recipe ? "・managed Recipe あり" : ""}）`, "ok");
   } catch (error) {
@@ -350,8 +504,17 @@ async function main() {
     if (state.current) state.current.id = event.target.value.trim();
   });
   $("#world-select").addEventListener("change", (event) => {
-    if (state.current) state.current.composition.world = event.target.value;
+    if (!state.current) return;
+    state.current.composition.world = event.target.value;
+    for (const vehicle of state.current.composition.vehicles) vehicle._ground = undefined;
+    renderEditor();
+    loadWorld();
   });
+  for (const button of document.querySelectorAll("#placement-views button")) {
+    button.addEventListener("click", () => showPlacementView(button.dataset.view));
+  }
+  $("#yaw-left").addEventListener("click", () => turnSelected(15));
+  $("#yaw-right").addEventListener("click", () => turnSelected(-15));
   $("#add-vehicle").addEventListener("click", addVehicle);
   $("#save-composition").addEventListener("click", saveComposition);
   $("#run-composition").addEventListener("change", refreshRunPlan);
@@ -359,6 +522,7 @@ async function main() {
 
   state.assets = await api("GET", "assets");
   renderAssets();
+  await initPlacement();
   await loadCompositions();
   if (state.compositions.length) await openComposition(state.compositions[0].id);
   else newComposition();

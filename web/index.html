@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Urban Studio</title>
   <link rel="stylesheet" href="studio.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- The same three.js as hakoniwa-threejs-drone. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -60,6 +71,25 @@
           </div>
           <div id="vehicles"></div>
           <p class="hint">位置は World 原点からの東 (east) / 北 (north) [m] と向き (yaw, 東=0°, 反時計回り) です。高さは地面（屋上を含む）＋車両の地上高で自動計算されます。</p>
+          <div class="placement">
+            <div class="row between">
+              <h3>配置</h3>
+              <div class="row" role="tablist" id="placement-views">
+                <button class="secondary" data-view="three" aria-selected="true">3D</button>
+                <button class="secondary" data-view="map">地図</button>
+              </div>
+            </div>
+            <div id="placement-three" class="placement-view"></div>
+            <div id="placement-map" class="placement-view" hidden></div>
+            <div class="row between placement-tools">
+              <div id="placement-selected" class="status" role="status"></div>
+              <div class="row">
+                <button id="yaw-left" class="secondary" title="左に 15° 回す">↺ 15°</button>
+                <button id="yaw-right" class="secondary" title="右に 15° 回す">↻ 15°</button>
+              </div>
+            </div>
+            <p class="hint">3D: 車両（矢印）をドラッグして移動、背景をドラッグして視点を回転。地図（City のみ）: クリックで選択中の車両をその位置へ移動。衝突判定はしません。</p>
+          </div>
           <div class="row between footer">
             <div id="compose-status" class="status" role="status"></div>
             <button id="save-composition">保存して検証</button>

@@ -162,6 +162,61 @@ class StudioServerTest(unittest.TestCase):
             status, body = self.call("GET", "/api/compositions/never-configured/viewer")
         self.assertEqual((status, body), (200, {"url": None}))
 
+    def fake_world(self, kind="city"):
+        job = self.work / "job"
+        (job / "build").mkdir(parents=True, exist_ok=True)
+        (job / "build" / "city.glb").write_bytes(b"glTF-fake")
+        receipt = job / "city-world-receipt.json"
+        receipt.write_text(json.dumps({
+            "coordinate_frame": {"half_extent_m": {"north_south": 50, "east_west": 60},
+                                 "origin": {"latitude": 35.0, "longitude": 138.0, "altitude": 0}},
+            "glb": {"path": "build/city.glb"},
+        }), encoding="utf-8")
+        asset = mock.Mock(kind=kind, data={"title": "Test City"})
+        patch = mock.patch.object(urban_studio, "world_receipt", return_value=(asset, receipt))
+        patch.start()
+        self.addCleanup(patch.stop)
+        grounds = mock.patch.dict(urban_studio._grounds, clear=True)
+        grounds.start()
+        self.addCleanup(grounds.stop)
+
+    def test_world_info_has_the_extent_glb_and_map_origin(self):
+        self.fake_world()
+        status, info = self.call("GET", "/api/worlds/test-city")
+        self.assertEqual(status, 200)
+        self.assertEqual(info["half_extent_m"], {"north_south": 50, "east_west": 60})
+        self.assertEqual(info["glb"], "/api/worlds/test-city/glb")
+        self.assertTrue(info["map"])
+        self.assertEqual(info["origin"], {"latitude": 35.0, "longitude": 138.0})
+        with urlopen(f"http://127.0.0.1:{self.port}{info['glb']}", timeout=10) as response:
+            self.assertEqual(response.headers["Content-Type"], "model/gltf-binary")
+            self.assertEqual(response.read(), b"glTF-fake")
+
+    def test_plain_worlds_have_no_map(self):
+        self.fake_world(kind="plain")
+        _, info = self.call("GET", "/api/worlds/course")
+        self.assertFalse(info["map"])
+        self.assertNotIn("origin", info)
+
+    def test_height_loads_the_world_model_once(self):
+        self.fake_world()
+        ground = mock.Mock(side_effect=lambda east, north: 20.0 + east)
+        with mock.patch("urban_composition.city_ground", return_value=ground) as city_ground:
+            _, first = self.call("GET", "/api/worlds/test-city/height?east=1.5&north=2")
+            _, second = self.call("GET", "/api/worlds/test-city/height?east=3&north=2")
+        self.assertEqual(first["ground_m"], 21.5)
+        self.assertEqual(second["ground_m"], 23.0)
+        self.assertEqual(city_ground.call_count, 1)
+
+    def test_height_needs_numeric_coordinates(self):
+        self.fake_world()
+        status, _ = self.call("GET", "/api/worlds/test-city/height?east=x&north=2")
+        self.assertEqual(status, 400)
+
+    def test_unknown_world_is_404(self):
+        status, _ = self.call("GET", "/api/worlds/no-such-world")
+        self.assertEqual(status, 404)
+
 
 class ProgressParseTest(unittest.TestCase):
     def test_percent_comes_from_current_and_total(self):

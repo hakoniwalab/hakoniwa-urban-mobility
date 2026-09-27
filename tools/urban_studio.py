@@ -20,6 +20,9 @@ API (all JSON):
   POST /api/compositions/<id>/<command>  run plan|configure|start|stop|status
   GET  /api/compositions/<id>/viewer     the configured Viewer URL
   GET  /api/jobs/<job>?since=<line>      a command's state, output, and progress
+  GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
+  GET  /api/worlds/<id>/glb              the World's display GLB
+  GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
 """
 
 from __future__ import annotations
@@ -165,6 +168,78 @@ def save_composition(composition_id: str, composition: dict) -> dict:
     staging.replace(path)
     # plan() read the staging file; report the saved path.
     return {**selected.to_json(), "path": str(path)}
+
+
+# --- Worlds (placement view) ------------------------------------------------------------
+
+_grounds: dict[str, tuple[object, threading.Lock, bool]] = {}
+_grounds_lock = threading.Lock()
+
+
+def world_receipt(world_id: str) -> tuple[object, Path]:
+    """Return (World Asset, City World receipt); a plain World gets its City World job."""
+    import urban_assets
+
+    asset = urban_assets.catalog().get(world_id)
+    if asset is None or asset.kind not in {"city", "plain"}:
+        raise StudioError(f"World {world_id} not found", HTTPStatus.NOT_FOUND)
+    if asset.kind == "city":
+        return asset, asset.resolve(asset.data["receipt"])
+    import plain_world
+
+    return asset, plain_world.materialize(asset.resolve(asset.data["world"]))
+
+
+def world_info(world_id: str) -> dict:
+    asset, receipt_path = world_receipt(world_id)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    frame = receipt["coordinate_frame"]
+    info = {
+        "id": world_id,
+        "kind": asset.kind,
+        "title": asset.data.get("title", world_id),
+        "half_extent_m": frame["half_extent_m"],
+        "glb": f"/api/worlds/{world_id}/glb",
+        "map": asset.kind == "city",
+    }
+    if asset.kind == "city":
+        info["origin"] = {key: frame["origin"][key] for key in ("latitude", "longitude")}
+    return info
+
+
+def world_glb(world_id: str) -> Path:
+    _, receipt_path = world_receipt(world_id)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    path = Path(receipt["glb"]["path"])
+    if not path.is_absolute():
+        path = receipt_path.parent / path
+    if not path.is_file():
+        raise StudioError(f"World {world_id} has no GLB: {path}", HTTPStatus.NOT_FOUND)
+    return path
+
+
+def world_height(world_id: str, east_m: float, north_m: float) -> dict:
+    """Ground height (terrain, buildings, obstacles) under a point; the World model loads once."""
+    import urban_composition
+
+    with _grounds_lock:
+        entry = _grounds.get(world_id)
+        if entry is None:
+            _, receipt_path = world_receipt(world_id)
+            try:
+                import mujoco  # noqa: F401 - only to report whether rooftops count
+                rooftops = True
+            except ImportError:
+                rooftops = False
+            entry = (urban_composition.city_ground(receipt_path), threading.Lock(), rooftops)
+            _grounds[world_id] = entry
+    ground, lock, rooftops = entry
+    with lock:  # one MuJoCo query at a time per World model
+        try:
+            height = ground(east_m, north_m)
+        except Exception as exc:  # noqa: BLE001 - e.g. outside the World
+            raise StudioError(f"no ground at east={east_m}, north={north_m}: {exc}") from exc
+    return {"ground_m": round(float(height), 4), "rooftops": rooftops}
 
 
 def plan_json(composition_id: str) -> dict:
@@ -321,6 +396,15 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _file(self, path: Path, content_type: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.end_headers()
+        with path.open("rb") as source:
+            while chunk := source.read(1 << 20):
+                self.wfile.write(chunk)
+
     def _body(self) -> object:
         length = int(self.headers.get("Content-Length") or 0)
         try:
@@ -337,6 +421,17 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(asset_catalog())
             if method == "GET" and parts == ["compositions"]:
                 return self._json(list_compositions())
+            if method == "GET" and len(parts) == 2 and parts[0] == "worlds":
+                return self._json(world_info(parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "glb":
+                return self._file(world_glb(parts[1]), "model/gltf-binary")
+            if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "height":
+                try:
+                    east = float(query["east"][0])
+                    north = float(query["north"][0])
+                except (KeyError, IndexError, ValueError) as exc:
+                    raise StudioError("height needs numeric east and north") from exc
+                return self._json(world_height(parts[1], east, north))
             if len(parts) == 2 and parts[0] == "compositions":
                 if method == "GET":
                     return self._json(read_composition(parts[1]))

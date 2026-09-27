@@ -105,3 +105,9 @@ button.icon { background: transparent; color: var(--danger); border-color: trans
 }
 .viewer-panel iframe { width: 100%; height: 70vh; border: none; border-radius: 6px; background: #000; }
 code { font-family: ui-monospace, Consolas, monospace; }
+.placement { margin-top: 8px; }
+.placement-view { height: 460px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
+.placement-view canvas { display: block; width: 100%; height: 100%; }
+#placement-views button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
+.vehicle.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.vehicle .height { color: var(--muted); font-size: 12px; align-self: center; }
