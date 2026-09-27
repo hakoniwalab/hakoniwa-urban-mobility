@@ -191,7 +191,7 @@ def control_processes(
 ) -> list[dict]:
     """Return one process per vehicle-scoped control and per distinct composition-scoped one."""
     processes: list[dict] = []
-    seen_composition: dict[str, dict] = {}
+    seen_composition: dict[str, list[dict]] = {}
     indexes: dict[str, int] = {}
     for vehicle in composition.vehicles:
         simulator = vehicle.asset.simulator
@@ -201,15 +201,14 @@ def control_processes(
         indexes[simulator] = index + 1
         process = control_process(composition, vehicle, index, runtimes[simulator])
         if vehicle.asset.controls()[vehicle.control].get("scope", "vehicle") == "composition":
-            previous = seen_composition.get(process["name"])
-            if previous is not None:
-                if previous != process:
-                    raise ControlError(
-                        f"vehicles sharing the composition-scoped {vehicle.asset.id} "
-                        f"{vehicle.control} control must run the same program and args"
-                    )
+            # Vehicles with identical args share one process (for example one
+            # scenario executor per route); different args start another one.
+            variants = seen_composition.setdefault(process["name"], [])
+            if any(previous == process for previous in variants):
                 continue
-            seen_composition[process["name"]] = process
+            if variants:
+                process = {**process, "name": f"{process['name']}-{len(variants) + 1}"}
+            variants.append({**process, "name": variants[0]["name"] if variants else process["name"]})
         processes.append(process)
     return processes
 

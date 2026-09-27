@@ -218,9 +218,17 @@ Python whose `._pth` file excludes both.
 - `vehicle`: one program instance per vehicle (every `rc` control; Drone
   `api`).
 - `composition`: one program instance drives all vehicles of that Asset that
-  selected this control. The Car route scenario executor is this type: the
-  scenario file lists the vehicles it drives. The builder rejects a
-  Composition where those vehicles do not all select the same `api` program.
+  selected this control with the same arguments; vehicles with different
+  arguments get another instance (`control-<asset>-<control>-2`, ...). The Car
+  route scenario executor is this type: one executor per route.
+
+A Car's route selection (`params.scenario`) is authoritative. A route's
+`vehicles` list only provides offsets: when a route is selected by a different
+set of Cars than it names, the builder writes a derived copy under
+`work/urban/cache/routes/` naming exactly those Cars (keeping their offsets,
+adding unnamed Cars 6 m behind, the leading Car at offset 0), and the Cars use
+it. A Car on a route starts at the route start set back by its offset, facing
+along the route; its placed spawn is not used. Route files are never modified.
 
 ## 5. Composition
 

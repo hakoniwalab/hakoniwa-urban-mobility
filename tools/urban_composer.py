@@ -38,11 +38,9 @@ def load_composition(path: Path) -> tuple[dict, dict, dict]:
         scenarios = config["scenarios"]
         drone_path = multi_car.resolve_path(scenarios["drone"], "Drone scenario")
         car_value = scenarios.get("car")
-        car_path = (
-            multi_car.resolve_path(car_value, "Car scenario")
-            if car_value is not None
-            else None
-        )
+        # One route (a path) or one per group of Cars (a list of paths).
+        car_values = car_value if isinstance(car_value, list) else [car_value] if car_value is not None else []
+        car_paths = {multi_car.resolve_path(value, "Car scenario") for value in car_values}
     except (KeyError, TypeError, AttributeError) as exc:
         raise UrbanComposeError("integrated composition references are incomplete") from exc
     drone_scenario = multi_car.load_yaml(drone_path)
@@ -67,9 +65,8 @@ def load_composition(path: Path) -> tuple[dict, dict, dict]:
         raise UrbanComposeError("Drone spawn height must equal rooftop + clearance")
     # The Car scenario is optional: explicit rc Cars need none. When present it
     # must be the scenario that multi_car.py auto-starts.
-    route_scenario = resolved["route_scenario"]
-    configured_car_path = None if route_scenario is None else route_scenario["scenario"]
-    if configured_car_path != car_path:
+    configured_car_paths = {item["scenario"] for item in resolved.get("route_scenarios", [])}
+    if configured_car_paths != car_paths:
         raise UrbanComposeError("Car scenario references disagree")
     return config, resolved, {
         "path": drone_path,
@@ -406,6 +403,7 @@ def configure(
             if resolved["route_scenario"] is None
             else str(resolved["route_scenario"]["scenario"])
         ),
+        "car_scenarios": [str(item["scenario"]) for item in resolved.get("route_scenarios", [])],
         "drone_scenario": str(drone_scenario["path"]),
         "drone_spawn_enu": spawn,
         "rooftop": drone_scenario["rooftop"],

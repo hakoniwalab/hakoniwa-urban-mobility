@@ -157,7 +157,7 @@
             <h3>走る車（先頭からの間隔）</h3>
             <button id="route-add-vehicle" class="secondary">車を追加</button>
           </div>
-          <p class="hint">Composition で「API（プログラム）」にした車のうち、ここに名前がある車がこのルートを走ります。2台目以降は、先頭から何 m 後ろを走るかを負の値で指定します。</p>
+          <p class="hint">どの車がこのルートを走るかは、Composition の車ごとに選びます。ここでは、同じルートを複数台で走るときの間隔（先頭から何 m 後ろか、負の値）を決めます。ここに名前がない車がこのルートを選んだ場合は、6 m 間隔で後ろにつきます。</p>
           <div id="route-vehicles" class="row params"></div>
           <div id="route-map" class="placement-view"></div>
           <p id="route-map-hint" class="hint">地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。</p>

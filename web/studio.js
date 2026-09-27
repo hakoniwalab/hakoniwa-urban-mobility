@@ -927,15 +927,17 @@ function routeParamField(vehicle, name, definition) {
       `${item.name}（${item.id}）${item.world && item.world !== composition.world ? "・別の World" : item.world ? "" : "・World 未設定"}`)));
   select.value = value;
   const chosen = state.scenarios.find((item) => item.reference === value);
-  const warning = chosen && !chosen.vehicles.includes(vehicle.name)
-    ? el("span", { class: "hint error" }, `このルートの走る車に「${vehicle.name}」がありません`)
-    : chosen && chosen.world && chosen.world !== composition.world
-      ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
-      : null;
+  const warning = chosen && chosen.world && chosen.world !== composition.world
+    ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
+    : null;
+  // The route decides where the Car starts; its placed spawn is not used.
+  const note = value
+    ? el("span", { class: "hint" }, "初期位置はルートの開始点です（同じルートの2台目以降は、ルートで決めた間隔だけ後ろ）。配置の east / north / yaw は使いません。")
+    : null;
   return el("label", { class: "field grow" }, `ルート${definition.required ? " *" : ""}`,
     el("div", { class: "row" }, select,
       el("button", { class: "secondary", onclick: (event) => { event.preventDefault(); editRouteFor(value); } }, "ルートを編集")),
-    warning);
+    warning, note);
 }
 
 // --- Simulation ---------------------------------------------------------------------

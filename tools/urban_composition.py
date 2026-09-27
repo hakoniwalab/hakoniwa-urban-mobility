@@ -9,6 +9,7 @@ City + Car + one Drone (tools/urban_composer.py).
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 import hashlib
 import json
@@ -278,9 +279,75 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     viewer = data.get("viewer", {})
     if not isinstance(viewer, dict):
         raise CompositionError("Composition viewer must be a mapping")
+    vehicles = _assign_route_cars(path, vehicles)
     return Composition(
         id=composition_id, path=path, world=world, vehicles=vehicles,
         interactions=interactions, viewer=viewer, fleets=fleets,
+    )
+
+
+ROUTE_CACHE = urban_assets.BUSINESS_PACK / "work/urban/cache/routes"
+# Gap between a Car added to a route and the Car ahead of it.
+ADDED_CAR_SPACING_M = 6.0
+
+
+def _assign_route_cars(composition_path: Path, vehicles: tuple[Vehicle, ...]) -> tuple[Vehicle, ...]:
+    """Make each route drive exactly the api Cars that selected it.
+
+    The Car's route selection is authoritative: a route's vehicles list only
+    provides offsets. A route used by a different set of Cars than it names is
+    rewritten to a derived copy (content-addressed under ROUTE_CACHE) naming
+    just those Cars, keeping their offsets and appending unnamed Cars 6 m
+    apart. The Cars then point at the copy, so the Car configuration, spawns,
+    and the scenario executor processes all agree. Route files are not modified.
+    """
+    groups: dict[Path, list[Vehicle]] = {}
+    for vehicle in vehicles:
+        if vehicle.control == "api" and "scenario" in vehicle.params:
+            groups.setdefault(
+                urban_assets.resolve_reference(str(vehicle.params["scenario"]), composition_path.parent), []
+            ).append(vehicle)
+    replacement: dict[str, str] = {}
+    for route_path, cars in groups.items():
+        try:
+            data = yaml.safe_load(route_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue  # multi_car reports an unreadable route
+        listed = data.get("vehicles") if isinstance(data, dict) else None
+        if not isinstance(listed, list) or not all(isinstance(item, dict) for item in listed):
+            continue  # a generated fleet or timed scenario is used as written
+        chosen = [car.name for car in cars]
+        if [item.get("name") for item in listed] == chosen:
+            continue
+        kept = [dict(item) for item in listed if item.get("name") in chosen]
+        offsets = [float(item.get("route_offset_m", 0.0)) for item in kept]
+        for name in chosen:
+            if name in {item.get("name") for item in kept}:
+                continue
+            offset = min(offsets) - ADDED_CAR_SPACING_M if offsets else 0.0
+            offsets.append(offset)
+            kept.append({"name": name, "route_offset_m": offset})
+        # The leading Car starts at the route start (offset 0).
+        lead = max(float(item.get("route_offset_m", 0.0)) for item in kept)
+        for item in kept:
+            item["route_offset_m"] = float(item.get("route_offset_m", 0.0)) - lead
+        derived = {**data, "vehicles": kept}
+        text = yaml.safe_dump(derived, sort_keys=False, allow_unicode=True)
+        digest = hashlib.sha256(f"{route_path}\n{text}".encode("utf-8")).hexdigest()[:16]
+        target = ROUTE_CACHE / f"{route_path.stem}-{digest}.yaml"
+        if not target.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            staging = target.with_suffix(".partial.yaml")
+            staging.write_text(text, encoding="utf-8")
+            staging.replace(target)
+        for name in chosen:
+            replacement[name] = str(target)
+    if not replacement:
+        return vehicles
+    return tuple(
+        dataclasses.replace(vehicle, params={**vehicle.params, "scenario": replacement[vehicle.name]})
+        if vehicle.name in replacement else vehicle
+        for vehicle in vehicles
     )
 
 
@@ -402,21 +469,70 @@ def _require_simulators(composition: Composition, expected: set[str], adapter: s
 
 # --- Car (tools/multi_car.py) -------------------------------------------------
 
-def _car_route_scenario(composition: Composition, cars: list[Vehicle]) -> dict | None:
-    """One composition-scoped api program drives every api Car (asset-contract 4.3)."""
+def _route_start_spawn(path: Path, car_name: str) -> dict | None:
+    """Where a route Car starts: the route start, set back by its offset, facing along the route.
+
+    Returns None when the file is not a route scenario naming the Car (multi_car
+    and _car_route_scenarios report those cases).
+    """
+    route_dir = str(urban_assets.ROOT / "apps/car")
+    if route_dir not in sys.path:
+        sys.path.insert(0, route_dir)
+    from route_geometry import RouteGeometry, RoutePoint
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        points = tuple(
+            RoutePoint(
+                name=str(item.get("name", f"point-{index + 1}")),
+                east_m=float(item["east_m"]),
+                north_m=float(item["north_m"]),
+                dwell_sec=float(item.get("dwell_sec", 0.0)),
+            )
+            for index, item in enumerate(data["route"]["points"])
+        )
+        geometry = RouteGeometry(points)
+    except (OSError, yaml.YAMLError, KeyError, TypeError, ValueError):
+        return None
+    offset = next(
+        (float(item.get("route_offset_m", 0.0)) for item in data.get("vehicles") or []
+         if isinstance(item, dict) and item.get("name") == car_name),
+        None,
+    )
+    if offset is None:
+        return None
+    east_m, north_m = geometry.sample(offset)
+    return {
+        "east_m": round(east_m, 3),
+        "north_m": round(north_m, 3),
+        "yaw_deg": round(math.degrees(geometry.heading_rad(offset)), 3),
+    }
+
+
+def _route_cars(composition: Composition, cars: list[Vehicle]) -> list[Vehicle]:
+    """api Cars on a route start at the route (the placed spawn is not used)."""
+    placed = []
+    for car in cars:
+        spawn = None
+        if car.control == "api" and "scenario" in car.params:
+            spawn = _route_start_spawn(_param_path(composition, car.params["scenario"]), car.name)
+        placed.append(dataclasses.replace(car, spawn={**car.spawn, **spawn}) if spawn else car)
+    return placed
+
+
+def _car_route_scenarios(composition: Composition, cars: list[Vehicle]) -> list[dict]:
+    """The route scenarios of the api Cars; each runs its own executor (asset-contract 4.3).
+
+    load() already pointed every api Car at a route naming exactly the Cars
+    that selected it (_assign_route_cars), so Cars may follow different routes.
+    """
     # A Car whose api program is replaced (section 5.2) may run without a scenario.
-    scenarios = {
+    paths = {
         _param_path(composition, car.params["scenario"])
         for car in cars
         if car.control == "api" and "scenario" in car.params
     }
-    if not scenarios:
-        return None
-    if len(scenarios) > 1:
-        raise CompositionError(
-            "api Cars must share one route scenario; got " + ", ".join(sorted(map(str, scenarios)))
-        )
-    return {"path": str(scenarios.pop()), "auto_start": True}
+    return [{"path": str(path), "auto_start": True} for path in sorted(paths, key=str)]
 
 
 def _car_inputs(
@@ -425,6 +541,7 @@ def _car_inputs(
     web_bridge_port: int,
     ground: Callable[[float, float], float],
 ) -> dict:
+    cars = _route_cars(composition, cars)
     types = []
     type_names: dict[str, str] = {}
     front_camera = None
@@ -466,9 +583,11 @@ def _car_inputs(
             for car in cars
         ],
     }
-    route_scenario = _car_route_scenario(composition, cars)
-    if route_scenario is not None:
-        vehicles["route_scenario"] = route_scenario
+    route_scenarios = _car_route_scenarios(composition, cars)
+    if len(route_scenarios) == 1:
+        vehicles["route_scenario"] = route_scenarios[0]
+    elif route_scenarios:
+        vehicles["route_scenarios"] = route_scenarios
     visualization = {
         "enabled": True,
         "web_bridge_port": int(composition.viewer.get("web_bridge_port", web_bridge_port)),
@@ -645,6 +764,9 @@ def to_integrated(
     route_scenario = inputs["ackermann_vehicles"].get("route_scenario")
     if route_scenario is not None:
         scenarios["car"] = route_scenario["path"]
+    route_scenarios = inputs["ackermann_vehicles"].get("route_scenarios")
+    if route_scenarios:
+        scenarios["car"] = [item["path"] for item in route_scenarios]
     config["scenarios"] = scenarios
     return config, _drone_recipe(composition, drone, ground)
 

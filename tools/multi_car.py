@@ -588,6 +588,26 @@ def resolve_config(config_path: Path) -> dict:
         route_scenario = resolve_explicit_route_scenario(scenario_input, vehicles)
     else:
         route_scenario = None
+    # Several routes, one executor each (Cars following different routes).
+    route_scenarios = [route_scenario] if route_scenario is not None else []
+    scenarios_input = vehicle_config.get("route_scenarios")
+    if scenarios_input is not None:
+        if scenario_input is not None or vehicle_generation is not None:
+            raise RecipeError(
+                "ackermann_vehicles.route_scenarios replaces route_scenario and generated_from_route"
+            )
+        if not isinstance(scenarios_input, list) or not scenarios_input:
+            raise RecipeError("ackermann_vehicles.route_scenarios must be a non-empty list")
+        route_scenarios = [resolve_explicit_route_scenario(item, vehicles) for item in scenarios_input]
+        driven: dict[str, Path] = {}
+        for item in route_scenarios:
+            for name in item["vehicles"]:
+                if name in driven:
+                    raise RecipeError(
+                        f"vehicle {name} is driven by two route scenarios: {driven[name]} and {item['scenario']}"
+                    )
+                driven[name] = item["scenario"]
+        route_scenario = route_scenarios[0] if len(route_scenarios) == 1 else None
     return {
         "raw": config,
         "path": config_path.resolve(),
@@ -599,6 +619,7 @@ def resolve_config(config_path: Path) -> dict:
         "vehicle_types": vehicle_types,
         "vehicle_generation": vehicle_generation,
         "route_scenario": route_scenario,
+        "route_scenarios": route_scenarios,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
         "native_mujoco_viewer": native_mujoco_viewer,
         "visualization": {
@@ -2024,6 +2045,9 @@ def configure(resolved: dict) -> int:
                 "scenario": str(resolved["route_scenario"]["scenario"]),
             }
         ),
+        "route_scenarios": [
+            {**item, "scenario": str(item["scenario"])} for item in resolved.get("route_scenarios", [])
+        ],
         "output_mjcf": {"path": str(output), "sha256": sha256(output)},
         "runtime_mjb": {
             "path": str(mjb),
@@ -2103,6 +2127,11 @@ def configure(resolved: dict) -> int:
             "External control: one scenario executor starts with the Launcher: "
             + str(resolved["route_scenario"]["scenario"])
         )
+    elif len(resolved.get("route_scenarios", [])) > 1:
+        for item in resolved["route_scenarios"]:
+            print(
+                f"External control: a scenario executor drives {', '.join(item['vehicles'])}: {item['scenario']}"
+            )
     elif any(vehicle["control_mode"] == "external_python" for vehicle in vehicles):
         print("External control: run apps/car/ackermann_command.py with --robot NAME")
     print("Use 'start' for the configured runtime, or 'view' for Viewer-only inspection.")

@@ -66,6 +66,7 @@ class Fixture(unittest.TestCase):
         # Generated plain World models go to the test directory, not the workspace.
         for module, name, directory in (
             (urban_composition, "PLAIN_WORLD_CACHE", "plain-world-cache"),
+            (urban_composition, "ROUTE_CACHE", "route-cache"),
             (plain_world, "JOBS_DIR", "plain-world-jobs"),
         ):
             cache = mock.patch.object(module, name, self.work / directory)
@@ -214,12 +215,74 @@ class CarCompositionTest(Fixture):
         self.assertAlmostEqual(spawn["up_m"], 21.054 + 0.45)
         self.assertNotIn("ground_clearance_m", spawn)
 
-    def test_api_cars_with_different_scenarios_are_rejected(self):
+    def route_file(self, name: str, vehicles: list[tuple[str, float]], east0: float = 0.0) -> str:
+        path = self.work / f"{name}.yaml"
+        path.write_text(yaml.safe_dump({
+            "schema_version": 2, "name": name, "loop_count": "forever",
+            "vehicles": [{"name": car, "route_offset_m": offset} for car, offset in vehicles],
+            "control": {"speed_m_s": 1.0, "lookahead_m": 2.5, "position_gain": 0.8,
+                        "wheelbase_m": 1.55, "max_steering_deg": 32.0},
+            "route": {"closed": True, "points": [
+                {"name": "a", "east_m": east0, "north_m": 0.0},
+                {"name": "b", "east_m": east0 + 20.0, "north_m": 0.0},
+                {"name": "c", "east_m": east0 + 20.0, "north_m": 20.0},
+            ]},
+        }), encoding="utf-8")
+        return str(path)
+
+    def test_api_cars_may_follow_different_routes(self):
+        first = self.route_file("route-a", [("Car-1", 0.0)])
+        second = self.route_file("route-b", [("Car-2", 0.0)], east0=100.0)
+        config = urban_composition.to_car_config(self.load(self.composition(vehicles=[
+            self.car("Car-1", "api", first), self.car("Car-2", "api", second, east=5.0),
+        ])), "urban-car-rc")
+        vehicles = config["inputs"]["ackermann_vehicles"]
+        self.assertNotIn("route_scenario", vehicles)
+        self.assertEqual(
+            [Path(item["path"]).name for item in vehicles["route_scenarios"]], ["route-a.yaml", "route-b.yaml"]
+        )
+
+    def test_a_route_car_starts_at_the_route_start_set_back_by_its_offset(self):
+        route = self.route_file("convoy", [("Car-1", 0.0), ("Car-2", -5.0)])
+        config = urban_composition.to_car_config(self.load(self.composition(vehicles=[
+            self.car("Car-1", "api", route, east=77.0), self.car("Car-2", "api", route, east=88.0),
+        ])), "urban-car-rc")
+        lead, follower = config["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertEqual((lead["spawn_pose_enu"]["east_m"], lead["spawn_pose_enu"]["north_m"]), (0.0, 0.0))
+        self.assertAlmostEqual(lead["spawn_pose_enu"]["yaw_deg"], 0.0)  # towards point b (east)
+        # 5 m before the start on the closing segment c -> a.
+        self.assertAlmostEqual(follower["spawn_pose_enu"]["east_m"], 5.0 / 2 ** 0.5 * 1, places=2)
+        self.assertAlmostEqual(follower["spawn_pose_enu"]["north_m"], 5.0 / 2 ** 0.5, places=2)
+        self.assertAlmostEqual(follower["spawn_pose_enu"]["yaw_deg"], -135.0)
+
+    def test_each_car_drives_the_route_it_selected_even_if_the_route_names_others(self):
+        both = self.route_file("both", [("Car-1", 0.0), ("Car-2", -6.0)])
+        other = self.route_file("other", [("Car-1", 0.0), ("Car-2", -6.0)], east0=100.0)
         composition = self.load(self.composition(vehicles=[
-            self.car("Car-1", "api", "a.yaml"), self.car("Car-2", "api", "b.yaml", east=5.0),
+            self.car("Car-1", "api", both), self.car("Car-2", "api", other, east=5.0),
         ]))
-        with self.assertRaisesRegex(urban_composition.CompositionError, "share one route scenario"):
-            urban_composition.to_car_config(composition, "urban-car-rc")
+        config = urban_composition.to_car_config(composition, "urban-car-rc")
+        routes = config["inputs"]["ackermann_vehicles"]["route_scenarios"]
+        driven = [
+            [item["name"] for item in yaml.safe_load(Path(route["path"]).read_text(encoding="utf-8"))["vehicles"]]
+            for route in routes
+        ]
+        self.assertEqual(sorted(driven), [["Car-1"], ["Car-2"]])
+        # Car-2 leads its own route, so it starts at that route's start.
+        car_2 = config["inputs"]["ackermann_vehicles"]["vehicles"][1]["spawn_pose_enu"]
+        self.assertEqual((car_2["east_m"], car_2["north_m"]), (100.0, 0.0))
+        # The route files themselves are untouched.
+        self.assertEqual(len(yaml.safe_load(Path(both).read_text(encoding="utf-8"))["vehicles"]), 2)
+
+    def test_a_car_missing_from_its_route_is_added_behind_the_others(self):
+        route = self.route_file("lead-only", [("Car-1", 0.0)])
+        config = urban_composition.to_car_config(self.load(self.composition(vehicles=[
+            self.car("Car-1", "api", route), self.car("Car-2", "api", route, east=5.0),
+        ])), "urban-car-rc")
+        scenario = config["inputs"]["ackermann_vehicles"]["route_scenario"]
+        vehicles = yaml.safe_load(Path(scenario["path"]).read_text(encoding="utf-8"))["vehicles"]
+        self.assertEqual(vehicles, [{"name": "Car-1", "route_offset_m": 0.0},
+                                    {"name": "Car-2", "route_offset_m": -6.0}])
 
     def test_car_rc_params_do_not_change_the_car_config(self):
         # Params reach only the control process (tools/urban_controls.py).
@@ -560,7 +623,8 @@ class IntegratedPlacementTest(IntegratedFixture):
         drone = drone_one.base.load_simple_yaml(context_root / "config" / urban_simulation.DRONE_RECIPE_FILE)
         self.assertEqual(drone["drone"]["spawn_pose_enu"]["east_m"], 9.0)
         config = json.loads((context_root / "config/urban-composition.json").read_text(encoding="utf-8"))
-        self.assertEqual(config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]["east_m"], 44.0)
+        # An api Car on a route starts at the route start, not at its placed spawn.
+        self.assertEqual(config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]["east_m"], 45.0)
 
     def test_non_placement_edit_writes_nothing(self):
         context_root = self.configure_state(self.integrated())
@@ -633,8 +697,10 @@ class ControlsTest(IntegratedFixture):
         self.assertEqual(generated["name"], "control-car-1-rc")
 
     def test_car_api_matches_the_multi_car_scenario_executor(self):
+        # A route naming exactly these Cars is used as written (no derived copy).
+        convoy = ROOT / "recipes/scenarios/golf-cart-demo-convoy.yaml"
         composition = self.composition(vehicles=[
-            {"name": name, "asset": "golf-cart", "control": "api", "params": {"scenario": str(self.SCENARIO)},
+            {"name": name, "asset": "golf-cart", "control": "api", "params": {"scenario": str(convoy)},
              "spawn": {"east_m": east, "north_m": 0.0, "yaw_deg": 0.0}}
             for name, east in (("Car-1", 0.0), ("Car-2", 5.0))
         ])
@@ -643,9 +709,9 @@ class ControlsTest(IntegratedFixture):
             self.work,
             [{"name": "Car-1", "prefix": "car_1_", "control_mode": "external_python"},
              {"name": "Car-2", "prefix": "car_2_", "control_mode": "external_python"}],
-            route_scenario={"scenario": self.SCENARIO, "auto_start_scenario": True},
+            route_scenario={"scenario": convoy, "auto_start_scenario": True},
         )
-        self.assertEqual(len(generated), 1, "one executor drives every api Car")
+        self.assertEqual(len(generated), 1, "one executor drives every api Car on the route")
         self.assertSameProcess(generated[0], legacy[1])
 
     def drone_paths(self):
@@ -695,6 +761,20 @@ class ControlsTest(IntegratedFixture):
         )
         args = process["args"]
         self.assertEqual(float(args[args.index("--max-speed") + 1]), 2.0)
+
+    def test_each_route_gets_its_own_scenario_executor(self):
+        def api_car(name, scenario, east):
+            return {"name": name, "asset": "golf-cart", "control": "api", "params": {"scenario": scenario},
+                    "spawn": {"east_m": east, "north_m": 0.0, "yaw_deg": 0.0}}
+
+        runtime = {"ackermann-mujoco": self.car_runtime(self.work)}
+        processes = self.processes(self.composition(vehicles=[
+            api_car("Car-1", "a.yaml", 0.0), api_car("Car-2", "b.yaml", 5.0), api_car("Car-3", "a.yaml", 10.0),
+        ]), runtime)
+        self.assertEqual([process["name"] for process in processes],
+                         ["control-golf-cart-api", "control-golf-cart-api-2"])
+        self.assertTrue(processes[0]["args"][1].endswith("a.yaml"))
+        self.assertTrue(processes[1]["args"][1].endswith("b.yaml"))
 
     def test_composition_replaces_the_program_with_placeholders(self):
         script = self.work / "my_driver.py"
