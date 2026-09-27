@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import drone_car_rc  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
+import urban_fault_injection  # noqa: E402
 
 
 class UrbanComposeError(RuntimeError):
@@ -206,6 +207,13 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
         viewer["stateInput"]["mode"] = "fleets"
         viewer["stateInput"]["fleets"] = copy.deepcopy(fleet_options)
         multi_car.write_json(viewer_path, viewer)
+    robot_name, disturb_type = urban_fault_injection.disturbance_target(
+        paths.recipe_config / "pdudef/drone-pdudef-current.json"
+    )
+    rotors = urban_fault_injection.rotor_count(drone_one.URBAN_HEXA_ROOT / "drone_config_0.json")
+    urban_fault_injection.add_to_bridge(bridge, robot_name, disturb_type)
+    for viewer_path in viewer_paths:
+        urban_fault_injection.add_to_viewer(viewer_path, robot_name, rotors)
 
     viewer_config = three / "viewer-config.json"
     collider_config = three / "viewer-config-colliders.json"

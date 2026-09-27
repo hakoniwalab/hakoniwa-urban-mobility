@@ -131,6 +131,11 @@ class DroneOneToolTest(unittest.TestCase):
                 return_value=launcher_path,
             ) as patch_rc,
             mock.patch.object(drone_one, "patch_launcher") as patch_mission,
+            mock.patch.object(
+                drone_one,
+                "apply_fault_injection",
+                return_value=launcher_path,
+            ) as fault_injection,
         ):
             self.assertEqual(
                 writer(paths, Path("drone"), Path("viewer"), object(), "Darwin"),
@@ -139,6 +144,7 @@ class DroneOneToolTest(unittest.TestCase):
 
         base_writer.assert_called_once()
         patch_viewer.assert_called_once_with(paths)
+        fault_injection.assert_called_once_with(launcher_path, paths)
         patch_rc.assert_called_once_with(
             launcher_path,
             paths=paths,
