@@ -126,7 +126,17 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
         scene["droneTypesPath"] = drone_types_url
         scene["drones"] = copy.deepcopy(source_drones)
         scene["main_camera"]["target"] = "Drone"
+        # The Drone camera is the subjective view. Car front cameras use the
+        # same top-right window and are drawn after Drones, so they would
+        # cover it; the integrated scene shows only the Drone's.
+        for vehicle in scene.get("vehicles", []):
+            vehicle.pop("frontCamera", None)
         multi_car.write_json(scene_path, scene)
+    for viewer_path in (three / "viewer-config.json", three / "viewer-config-colliders.json"):
+        if viewer_path.is_file():
+            viewer = multi_car.load_json(viewer_path, "integrated viewer")
+            viewer.setdefault("ui", {})["enableAttachedCameras"] = True
+            multi_car.write_json(viewer_path, viewer)
 
     compact_path = bridge / "pdu/urban-visual-state.json"
     compact = multi_car.load_json(compact_path, "browser PDU definition")
