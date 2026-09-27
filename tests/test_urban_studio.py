@@ -96,6 +96,26 @@ class StudioServerTest(StudioTestBase):
         _, listed = self.call("GET", "/api/compositions")
         self.assertTrue(next(item for item in listed if item["id"] == "plain-hexa-rc")["editable"])
 
+    def test_composition_list_describes_the_world_and_vehicle_makeup(self):
+        _, listed = self.call("GET", "/api/compositions")
+        by_id = {item["id"]: item for item in listed}
+        hexa = by_id["plain-hexa-rc"]
+        self.assertEqual((hexa["world"], hexa["world_kind"]), ("plain-ground", "plain"))
+        self.assertTrue(hexa["world_title"])
+        [drone] = hexa["vehicle_list"]
+        self.assertEqual((drone["name"], drone["asset"], drone["control"]), ("Drone-1", "eams-hexa", "rc"))
+        self.assertTrue(drone["title"])
+        self.assertIsInstance(hexa["updated_at"], float)
+        [fleet] = by_id["plain-drone-fleet"]["fleets"]
+        self.assertEqual((fleet["asset"], fleet["count"], fleet["control"]), ("drone-core-quad", 10, "api"))
+
+    def test_composition_summary_keeps_unknown_assets_recognisable(self):
+        summary = urban_studio.composition_summary(
+            {"world": "no-such-world", "vehicles": [{"name": "X", "asset": "no-such-asset", "control": "rc"}]}, {}
+        )
+        self.assertEqual((summary["world_title"], summary["world_kind"]), ("no-such-world", None))
+        self.assertEqual(summary["vehicle_list"][0]["title"], "no-such-asset")
+
     def test_save_validates_and_writes_the_id_and_schema(self):
         status, plan = self.call("PUT", "/api/compositions/my-run", self.composition())
         self.assertEqual((status, plan["route"], plan["composition"]), (200, "drone", "my-run"))

@@ -392,7 +392,7 @@ environment. The tabs follow issue #5:
 | City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile), and a City whose job was deleted in the Web UI is unregistered. The "キャッシュ" panel shows the Urban cache and what `prune-cache` would remove, runs `urban_assets.py prune-cache --apply` (refused while another Studio command runs), and shows the City World PLATEAU download size read-only with the Business Pack `cache-clean` command that owns it | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop`, `GET /api/cache`, `POST /api/cache/prune` |
 | Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
 | Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
-| Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>` |
+| Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer; the selector labels each Composition with its World and vehicle make-up and shows a summary (World, vehicles and control, route, save time) | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>`, `GET /api/compositions` |
 
 A City World job counts as finished once its
 `artifacts/result-manifest.json` exists (the Worker writes it last); a
@@ -402,6 +402,14 @@ Commands run as child processes, one at a time per Composition; their
 `recipes/compositions/` are read-only; saving one writes an editable copy
 under `work/urban/compositions/`. Placement-only fields (the ground height
 under a vehicle) are never saved.
+
+Compose and Simulation share one Composition: opening or saving a
+Composition in Compose selects it in Simulation, and the last one used is
+reopened after a reload (browser storage). Simulation runs the saved file,
+so it warns while Compose holds unsaved edits of that Composition.
+"Compose で開く" (Simulation) and "Simulation へ" (Compose) move between the
+two; opening another Composition asks before discarding unsaved edits.
+
 
 ### 5.6 Real-time pacing
 

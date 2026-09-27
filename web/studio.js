@@ -37,7 +37,56 @@ const state = {
   cities: null,      // /api/cities
   cityTimer: null,
   rtfTimer: null,
+  savedSnapshot: null, // snapshot() of state.current as last opened or saved; null if never saved
 };
+
+// --- Composition identity shared by Compose and Simulation ----------------------------
+
+const LAST_COMPOSITION_KEY = "urban-studio-composition";
+
+function rememberComposition(id) {
+  try { if (id) localStorage.setItem(LAST_COMPOSITION_KEY, id); } catch { /* storage may be unavailable */ }
+}
+
+function rememberedComposition() {
+  try { return localStorage.getItem(LAST_COMPOSITION_KEY); } catch { return null; }
+}
+
+// The Composition a save writes: no placement-only fields, and no empty
+// params / interactions that the editor adds while rendering.
+function savedForm(composition) {
+  const result = { ...composition, vehicles: composition.vehicles.map(withoutTransient) };
+  if (!result.interactions?.length) delete result.interactions;
+  for (const vehicle of result.vehicles) if (vehicle.params && !Object.keys(vehicle.params).length) delete vehicle.params;
+  return result;
+}
+
+function snapshot(current) {
+  return current ? JSON.stringify({ id: current.id, composition: savedForm(current.composition) }) : null;
+}
+
+// Simulation runs the saved file, so an edit in Compose is not used until saved.
+const isDirty = () => Boolean(state.current) && snapshot(state.current) !== state.savedSnapshot;
+
+// "Golf Cart×2・EAMS Hexa×1" (fleets count their drones).
+function compositionMakeup(item) {
+  const counts = new Map();
+  for (const vehicle of item.vehicle_list || []) counts.set(vehicle.title, (counts.get(vehicle.title) || 0) + 1);
+  for (const fleet of item.fleets || []) counts.set(fleet.title, (counts.get(fleet.title) || 0) + Number(fleet.count || 0));
+  return [...counts].map(([title, count]) => `${title}×${count}`).join("・") || "車両なし";
+}
+
+const worldKindLabel = (kind) => (kind === "city" ? "City" : kind === "plain" ? "プレーン" : "未登録");
+
+function compositionLabel(item) {
+  return `${item.id} — ${item.world_title}（${worldKindLabel(item.world_kind)}）／${compositionMakeup(item)}${item.editable ? "" : "・例"}`;
+}
+
+// Point the Simulation selector at a Composition when it is listed (saved).
+function selectRunComposition(id) {
+  const select = $("#run-composition");
+  if (id && [...select.options].some((option) => option.value === id)) select.value = id;
+}
 
 // Placement-only vehicle fields (the ground height under the vehicle) are
 // prefixed with "_" and never saved.
@@ -60,7 +109,13 @@ function showTab(name) {
   }
   for (const section of document.querySelectorAll(".tab")) section.hidden = section.id !== `tab-${name}`;
   try { localStorage.setItem("urban-studio-tab", name); } catch { /* storage may be unavailable */ }
-  if (name === "simulation") refreshRunPlan();
+  if (name === "simulation") {
+    // Follow the Composition open in Compose, so Simulation never runs a different one by surprise.
+    selectRunComposition(state.current?.id);
+    renderUnsavedNotice();
+    refreshRunPlan();
+    pollRtf();
+  }
   if (name === "city") { pollCities(); loadCache(); }
 }
 
@@ -283,12 +338,12 @@ function renderCompositionList() {
   list.replaceChildren(...state.compositions.map((item) => el("li", {},
     el("button", {
       "aria-current": String(state.current?.id === item.id),
-      onclick: () => openComposition(item.id),
+      onclick: () => { if (confirmDiscard()) openComposition(item.id); },
     }, item.id, el("span", { class: "meta" }, `${item.vehicles} 台${item.editable ? "" : "・例"}`)))));
   const runSelect = $("#run-composition");
   const selected = runSelect.value;
-  runSelect.replaceChildren(...state.compositions.map((item) => el("option", { value: item.id }, item.id)));
-  if (selected) runSelect.value = selected;
+  runSelect.replaceChildren(...state.compositions.map((item) => el("option", { value: item.id }, compositionLabel(item))));
+  selectRunComposition(selected);
 }
 
 async function loadCompositions() {
@@ -298,11 +353,19 @@ async function loadCompositions() {
 
 async function openComposition(id) {
   state.current = await api("GET", `compositions/${id}`);
+  state.savedSnapshot = snapshot(state.current);
   state.selected = 0;
   renderEditor();
   renderCompositionList();
+  rememberComposition(id);
+  selectRunComposition(id);
   setStatus($("#compose-status"), state.current.editable ? "" : "例の Composition です。保存するとコピーが作られます。");
   loadWorld();
+}
+
+// Opening another Composition drops unsaved edits of the current one.
+function confirmDiscard() {
+  return !isDirty() || window.confirm(`Compose の「${state.current.id || "新しい Composition"}」には未保存の変更があります。破棄して開きますか？`);
 }
 
 // --- Placement ------------------------------------------------------------------------
@@ -451,6 +514,7 @@ function newComposition() {
     id: "", editable: true,
     composition: { schema: "hakoniwa.composition/v1", id: "", world: world?.id, vehicles: [] },
   };
+  state.savedSnapshot = null; // never saved
   state.selected = 0;
   renderEditor();
   renderCompositionList();
@@ -598,15 +662,16 @@ async function saveComposition() {
   const current = state.current;
   if (!current) return;
   const id = current.id;
-  const composition = { ...current.composition, vehicles: current.composition.vehicles.map(withoutTransient) };
-  if (!composition.interactions?.length) delete composition.interactions;
-  for (const vehicle of composition.vehicles) if (vehicle.params && !Object.keys(vehicle.params).length) delete vehicle.params;
+  const composition = savedForm(current.composition);
   const status = $("#compose-status");
   setStatus(status, "検証中…");
   try {
     const plan = await api("PUT", `compositions/${id}`, composition);
     state.current = { id, editable: true, composition: { ...current.composition, id } };
+    state.savedSnapshot = snapshot(state.current);
+    rememberComposition(id);
     await loadCompositions();
+    selectRunComposition(id);
     setStatus(status, `保存しました（経路: ${plan.route}${plan.managed_recipe ? "・managed Recipe あり" : ""}）`, "ok");
   } catch (error) {
     setStatus(status, error.message, "error");
@@ -615,19 +680,67 @@ async function saveComposition() {
 
 // --- Simulation ---------------------------------------------------------------------
 
+// Warn when Compose holds edits that Simulation (which runs the saved file) will not use.
+function renderUnsavedNotice() {
+  const notice = $("#run-unsaved");
+  const current = state.current;
+  const runId = $("#run-composition").value;
+  const relevant = current && (!current.id || current.id === runId || !state.savedSnapshot);
+  notice.hidden = !(isDirty() && relevant);
+  if (notice.hidden) return;
+  $("#run-unsaved-text").textContent = current.id && state.savedSnapshot
+    ? `Compose の「${current.id}」に未保存の変更があります。Simulation が実行するのは保存済みの内容です。`
+    : "Compose の新しい Composition はまだ保存されていません。保存すると、ここで選んで実行できます。";
+}
+
+function formatTime(epochSeconds) {
+  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString() : "";
+}
+
+function renderRunSummary(item, plan) {
+  const vehicles = (item.vehicle_list || []).map((vehicle) =>
+    el("li", {}, el("strong", {}, vehicle.name), ` ${vehicle.title}（${vehicle.control}）`));
+  const fleets = (item.fleets || []).map((fleet) =>
+    el("li", {}, el("strong", {}, fleet.name), ` ${fleet.title}×${fleet.count}（${fleet.control}・フリート）`));
+  return [
+    el("div", { class: "summary-line" },
+      el("span", { class: "summary-label" }, "World"),
+      `${item.world_title}（${worldKindLabel(item.world_kind)}）`),
+    el("div", { class: "summary-line" },
+      el("span", { class: "summary-label" }, "車両"),
+      el("ul", { class: "summary-vehicles" }, ...vehicles, ...fleets)),
+    el("div", { class: "summary-line hint" },
+      plan ? `経路: ${plan.route}${plan.managed_recipe ? "・managed Recipe あり" : ""} ／ ` : "",
+      item.editable ? `保存: ${formatTime(item.updated_at)}` : "例（読み取り専用）"),
+  ];
+}
+
 async function refreshRunPlan() {
   const id = $("#run-composition").value;
   const node = $("#run-plan");
-  if (!id) { node.textContent = ""; return; }
+  $("#run-open-compose").disabled = !id;
+  if (!id) { node.replaceChildren(); return; }
+  const item = state.compositions.find((composition) => composition.id === id);
   try {
     const plan = await api("GET", `compositions/${id}/plan`);
-    node.textContent = `経路: ${plan.route} ／ World: ${plan.world.id} (${plan.world.kind}) ／ 車両: ${plan.vehicles.map((item) => `${item.name}=${item.control}`).join(", ")}`;
+    node.replaceChildren(...renderRunSummary(item || { id }, plan));
     node.classList.remove("error");
   } catch (error) {
-    node.textContent = error.message;
+    node.replaceChildren(...(item ? renderRunSummary(item, null) : []), el("div", {}, error.message));
     node.classList.add("error");
   }
   refreshViewer(false);
+}
+
+// Simulation -> Compose: look at (or edit) the selected Composition.
+async function openRunCompositionInCompose() {
+  const id = $("#run-composition").value;
+  if (!id) return;
+  if (state.current?.id !== id) {
+    if (!confirmDiscard()) return;
+    await openComposition(id);
+  }
+  showTab("compose");
 }
 
 async function refreshViewer(show) {
@@ -751,7 +864,10 @@ async function runCommand(command) {
 
 async function main() {
   for (const button of document.querySelectorAll(".tabs button")) button.addEventListener("click", () => showTab(button.dataset.tab));
-  $("#new-composition").addEventListener("click", newComposition);
+  $("#new-composition").addEventListener("click", () => { if (confirmDiscard()) newComposition(); });
+  $("#to-simulation").addEventListener("click", () => showTab("simulation"));
+  $("#run-open-compose").addEventListener("click", openRunCompositionInCompose);
+  $("#run-unsaved-compose").addEventListener("click", () => showTab("compose"));
   // Keep the model current so re-rendering the editor never loses an edit.
   $("#composition-id").addEventListener("input", (event) => {
     if (state.current) state.current.id = event.target.value.trim();
@@ -782,14 +898,22 @@ async function main() {
   $("#cache-refresh").addEventListener("click", loadCache);
   $("#cache-prune").addEventListener("click", pruneCache);
   $("#save-composition").addEventListener("click", saveComposition);
-  $("#run-composition").addEventListener("change", () => { refreshRunPlan(); pollRtf(); });
+  $("#run-composition").addEventListener("change", (event) => {
+    rememberComposition(event.target.value);
+    renderUnsavedNotice();
+    refreshRunPlan();
+    pollRtf();
+  });
   for (const button of document.querySelectorAll("[data-command]")) button.addEventListener("click", () => runCommand(button.dataset.command));
 
   state.assets = await api("GET", "assets");
   renderAssets();
   await initPlacement();
   await loadCompositions();
-  if (state.compositions.length) await openComposition(state.compositions[0].id);
+  // Reopen the Composition used last (in Compose or Simulation), else the first one.
+  const last = rememberedComposition();
+  const initial = state.compositions.find((item) => item.id === last) || state.compositions[0];
+  if (initial) await openComposition(initial.id);
   else newComposition();
   let tab = "compose";
   try { tab = localStorage.getItem("urban-studio-tab") || tab; } catch { /* storage may be unavailable */ }

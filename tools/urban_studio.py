@@ -137,9 +137,59 @@ def composition_path(composition_id: str) -> Path:
     raise StudioError(f"Composition {composition_id} not found", HTTPStatus.NOT_FOUND)
 
 
+def _catalog_or_empty() -> dict:
+    import urban_assets
+
+    try:
+        return urban_assets.catalog()
+    except urban_assets.AssetError:
+        return {}
+
+
+def composition_summary(data: dict, catalog: dict) -> dict:
+    """World and vehicle make-up of a Composition, for labels and the run summary.
+
+    Unknown Asset ids are kept (their id is the title) so a broken Composition
+    is still recognisable.
+    """
+    world_id = data.get("world")
+    world = catalog.get(world_id)
+    vehicles = []
+    for entry in data.get("vehicles") or []:
+        if not isinstance(entry, dict):
+            continue
+        asset = catalog.get(entry.get("asset"))
+        vehicles.append({
+            "name": entry.get("name"),
+            "asset": entry.get("asset"),
+            "title": asset.data.get("title", asset.id) if asset else entry.get("asset"),
+            "control": entry.get("control"),
+        })
+    fleets = []
+    for entry in data.get("fleets") or []:
+        if not isinstance(entry, dict):
+            continue
+        asset = catalog.get(entry.get("asset"))
+        fleets.append({
+            "name": entry.get("name"),
+            "asset": entry.get("asset"),
+            "title": asset.data.get("title", asset.id) if asset else entry.get("asset"),
+            "control": entry.get("control"),
+            "count": entry.get("count"),
+        })
+    return {
+        "world": world_id,
+        "world_title": world.data.get("title", world.id) if world else world_id,
+        "world_kind": world.kind if world else None,
+        "vehicle_list": vehicles,
+        "fleets": fleets,
+    }
+
+
 def list_compositions() -> list[dict]:
     import yaml
 
+    catalog = _catalog_or_empty()
     result = {}
     for directory, editable in ((EXAMPLE_COMPOSITIONS, False), (USER_COMPOSITIONS, True)):
         if not directory.is_dir():
@@ -149,13 +199,16 @@ def list_compositions() -> list[dict]:
                 data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             except yaml.YAMLError:
                 continue
+            if not isinstance(data, dict):
+                continue
             # A saved Composition hides the example of the same id.
             result[path.stem] = {
                 "id": path.stem,
-                "world": data.get("world"),
                 "vehicles": len(data.get("vehicles") or []),
                 "editable": editable,
                 "path": str(path),
+                "updated_at": path.stat().st_mtime,
+                **composition_summary(data, catalog),
             }
     return sorted(result.values(), key=lambda item: item["id"])
 

@@ -122,7 +122,10 @@
           </div>
           <div class="row between footer">
             <div id="compose-status" class="status" role="status"></div>
-            <button id="save-composition">保存して検証</button>
+            <div class="row buttons">
+              <button id="save-composition">保存して検証</button>
+              <button id="to-simulation" class="secondary" title="Simulation タブへ（実行するのは保存済みの内容）">Simulation へ</button>
+            </div>
           </div>
         </div>
       </div>
@@ -132,8 +135,13 @@
       <div class="panel">
         <div class="row">
           <label class="field grow">Composition<select id="run-composition"></select></label>
-          <div id="run-plan" class="plan"></div>
+          <button id="run-open-compose" class="secondary" title="この Composition を Compose で開く">Compose で開く</button>
         </div>
+        <div id="run-unsaved" class="notice" role="status" hidden>
+          <span id="run-unsaved-text"></span>
+          <button id="run-unsaved-compose" class="secondary">Compose に戻って保存</button>
+        </div>
+        <div id="run-plan" class="plan"></div>
         <div class="row buttons">
           <button data-command="configure">Configure</button>
           <button data-command="start">Start</button>

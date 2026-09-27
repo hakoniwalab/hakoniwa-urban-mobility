@@ -93,6 +93,13 @@ button.icon { background: transparent; color: var(--danger); border-color: trans
 .grid td code { font-size: 12px; word-break: break-all; }
 #cache-entry-table td:nth-child(-n+2) { white-space: nowrap; }
 .plan { font-size: 13px; color: var(--muted); padding-bottom: 6px; }
+.plan .summary-line { display: flex; gap: 8px; align-items: baseline; margin: 2px 0; color: var(--text); }
+.plan .summary-label { min-width: 3.5em; color: var(--muted); }
+.plan .summary-vehicles { margin: 0; padding-left: 1.1em; }
+.plan.error { color: var(--danger); }
+.notice { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 6px 0; padding: 8px 12px;
+  border: 1px solid var(--danger); border-radius: 6px; font-size: 13px; color: var(--danger); }
+.notice[hidden] { display: none; }
 .buttons { margin: 12px 0; }
 .progress { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
 #progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
