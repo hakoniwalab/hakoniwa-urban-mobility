@@ -123,11 +123,8 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
         scene["droneTypesPath"] = drone_types_url
         scene["drones"] = copy.deepcopy(source_drones)
         scene["main_camera"]["target"] = "Drone"
-        # The Drone camera is the subjective view. Car front cameras use the
-        # same top-right window and are drawn after Drones, so they would
-        # cover it; the integrated scene shows only the Drone's.
-        for vehicle in scene.get("vehicles", []):
-            vehicle.pop("frontCamera", None)
+        # Car front cameras stay: the Viewer shows one entity's attached
+        # camera at a time, the Drone first, and V switches to a Car.
         multi_car.write_json(scene_path, scene)
     for viewer_path in (three / "viewer-config.json", three / "viewer-config-colliders.json"):
         if viewer_path.is_file():
