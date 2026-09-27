@@ -1386,3 +1386,24 @@ class FleetCompositionTest(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DroneLibraryPathTest(unittest.TestCase):
+    def test_the_drone_service_gets_drone_core_libraries_first(self):
+        import urban_composer
+
+        service = {"command": str(Path("C:/work/hakoniwa-drone-core/win/win-main_hako_drone_service.exe")),
+                   "env": {"prepend": {"PATH": ["C:/other"]}}}
+        with mock.patch.object(urban_composer.platform, "system", return_value="Windows"):
+            urban_composer._add_drone_library_path(service)
+        root = Path("C:/work/hakoniwa-drone-core").resolve()
+        self.assertEqual(service["env"]["prepend"]["PATH"], [
+            str(root / "win"), str(root / "lib"), str(root / "vendor/mujoco/bin"), "C:/other",
+        ])
+
+    def test_a_service_without_a_command_is_left_alone(self):
+        import urban_composer
+
+        service = {"args": []}
+        urban_composer._add_drone_library_path(service)
+        self.assertEqual(service, {"args": []})

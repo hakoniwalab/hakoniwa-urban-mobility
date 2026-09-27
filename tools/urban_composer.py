@@ -8,6 +8,7 @@ from dataclasses import replace
 import json
 import math
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,31 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
     return result
 
 
+def _add_drone_library_path(drone_service: dict) -> None:
+    """Let the Drone service find Drone Core's native libraries (MuJoCo).
+
+    The Business Pack fleet Recipe adds them to the process environment when
+    it launches (drone_fleet_single_host.native_library_environment); the
+    integrated Launcher starts through recipe.py launch, so the asset carries
+    them itself. Without them the service exits at once on Windows (missing
+    mujoco.dll).
+    """
+    command = drone_service.get("command")
+    if not command:
+        return
+    drone_root = Path(command).resolve().parents[1]
+    if platform.system() == "Windows":
+        key, folders = "PATH", ["win", "lib", "vendor/mujoco/bin"]
+    elif platform.system() == "Darwin":
+        key, folders = "DYLD_LIBRARY_PATH", ["lib", "vendor/mujoco/lib"]
+    else:
+        key, folders = "LD_LIBRARY_PATH", ["lib", "vendor/mujoco/lib"]
+    prepend = drone_service.setdefault("env", {}).setdefault("prepend", {})
+    prepend[key] = [str(drone_root / folder) for folder in folders] + [
+        path for path in prepend.get(key, []) if path not in {str(drone_root / folder) for folder in folders}
+    ]
+
+
 def _merge_launchers(
     resolved: dict,
     drone_launcher: dict,
@@ -221,6 +247,7 @@ def _merge_launchers(
     drone_service["args"] = [
         value for value in drone_service.get("args", []) if value != "--mujoco-viewer"
     ]
+    _add_drone_library_path(drone_service)
     unified_pdu = resolved["work"] / "config/car/urban-car-pdudef.json"
     if len(drone_service["args"]) < 2:
         raise UrbanComposeError("Drone service has no PDU definition argument")
@@ -340,6 +367,9 @@ def configure(
         "collider_url": browser.get("collider_viewer_url"),
         "layout": "three-main",
         "attached_camera": "Drone-1 road-monitoring only",
+        # tools/urban_mobility.py checks these ports before start.
+        "http_port": resolved["visualization"]["http_port"],
+        "websocket_port": resolved["visualization"]["web_bridge_port"],
     }
     multi_car.write_json(resolved["work"] / "config/viewer-url.json", viewer_contract)
     multi_car.write_json(resolved["work"] / "validation/integrated-composition.json", {
