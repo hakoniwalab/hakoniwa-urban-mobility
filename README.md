@@ -43,8 +43,17 @@ python tools/urban_studio.py --open-browser
 ```
 
 It serves `http://127.0.0.1:8090/` and saves Compositions under
-`hakoniwa-business-pack/work/urban/compositions/`. Register a City first with
-`python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+`hakoniwa-business-pack/work/urban/compositions/`.
+
+- **City**: "新規作成" starts the Business Pack City World Web UI
+  (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it
+  in a new tab. Each finished City World job is registered automatically,
+  including the one-time height model compile. Without the Studio, register
+  a City with
+  `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+- **Compose**: place vehicles by dragging them in the 3D view, or by clicking
+  the map for a City World. The spawn height is the ground (rooftops and
+  obstacles included) plus the vehicle's clearance.
 
 ## Standard managed Recipe entrypoint
 

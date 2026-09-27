@@ -111,3 +111,8 @@ code { font-family: ui-monospace, Consolas, monospace; }
 #placement-views button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); }
 .vehicle.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .vehicle .height { color: var(--muted); font-size: 12px; align-self: center; }
+.log.log-small { height: 160px; margin-top: 8px; }
+.city-state.ok { color: var(--ok); }
+.city-state.error { color: var(--danger); }
+.city-state details { margin-top: 4px; }
+.city-state pre { white-space: pre-wrap; font-size: 12px; margin: 4px 0 0; }

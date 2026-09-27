@@ -31,9 +31,24 @@
   <main>
     <section id="tab-city" class="tab" hidden>
       <div class="panel">
-        <h2>City</h2>
-        <p class="hint">登録済みの City World です。新しい City の作成（City World Web UI との連携）は次の段階で追加します。当面は <code>python tools/urban_assets.py register-city --receipt &lt;city-world-receipt.json&gt;</code> で登録してください。</p>
-        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Receipt</th></tr></thead><tbody></tbody></table>
+        <div class="row between">
+          <h2>City</h2>
+          <div class="row">
+            <button id="city-new">新規作成</button>
+            <button id="city-stop" class="secondary" hidden>City World Web UI を停止</button>
+          </div>
+        </div>
+        <p class="hint">「新規作成」で City World Web UI（PLATEAU の範囲選択と生成）を起動し、別タブで開きます。生成が終わった City は自動で登録され、Compose の World に並びます。登録時に高さ計算用のモデルを一度だけコンパイルします（大きな City は数分）。</p>
+        <div id="city-web-status" class="status" role="status"></div>
+        <pre id="city-web-log" class="log log-small" hidden></pre>
+      </div>
+      <div class="panel">
+        <h2>City World のジョブ</h2>
+        <table class="grid" id="city-job-table"><thead><tr><th>ジョブ</th><th>状態</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>登録済みの City</h2>
+        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Asset</th></tr></thead><tbody></tbody></table>
       </div>
     </section>
 

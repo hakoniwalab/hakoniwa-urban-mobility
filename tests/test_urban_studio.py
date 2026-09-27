@@ -25,7 +25,7 @@ sys.exit(3 if sys.argv[1] == "stop" else 0)
 """
 
 
-class StudioServerTest(unittest.TestCase):
+class StudioTestBase(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -67,6 +67,8 @@ class StudioServerTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail("job did not finish")
 
+
+class StudioServerTest(StudioTestBase):
     def test_frontend_is_served(self):
         with urlopen(f"http://127.0.0.1:{self.port}/", timeout=10) as response:
             self.assertIn(b"Urban Studio", response.read())
@@ -215,6 +217,97 @@ class StudioServerTest(unittest.TestCase):
 
     def test_unknown_world_is_404(self):
         status, _ = self.call("GET", "/api/worlds/no-such-world")
+        self.assertEqual(status, 404)
+
+
+class CityPageTest(StudioTestBase):
+    """GET /api/cities and the City World Web UI commands, on a fake jobs folder."""
+
+    def setUp(self):
+        super().setUp()
+        self.recipe = self.work / "city-world-web-ui"
+        self.jobs = self.recipe / "runtime/jobs"
+        self.jobs.mkdir(parents=True)
+        fake_tool = self.work / "fake_tool.py"
+        fake_tool.write_text("import sys\nprint('ran', *sys.argv[1:], flush=True)\n", encoding="utf-8")
+        self.registered = {}
+        for name, value in {"CITY_RECIPE_ROOT": self.recipe, "URBAN_ASSETS": fake_tool,
+                            "CITY_WEB_UI": fake_tool, "CITY_WEB_PORT": 1}.items():
+            patch = mock.patch.object(urban_studio, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+        patch = mock.patch("urban_assets.catalog", side_effect=lambda: self.registered)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def make_job(self, name, finished=True):
+        job = self.jobs / name
+        (job / "build/world").mkdir(parents=True)
+        receipt = job / "build/world/city-world-receipt.json"
+        receipt.write_text("{}", encoding="utf-8")
+        if finished:
+            (job / "artifacts").mkdir()
+            (job / "artifacts/result-manifest.json").write_text("{}", encoding="utf-8")
+        return receipt
+
+    def register(self, name, receipt, version):
+        self.registered[name] = mock.Mock(kind="city", data={"receipt": str(receipt), "version": version})
+
+    def wait_registration(self, name):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            _, state = self.call("GET", "/api/cities")
+            job = next(job for job in state["jobs"] if job["id"] == name)
+            if job["registration"] and job["registration"]["state"] != "running":
+                return job["registration"]
+            time.sleep(0.05)
+        self.fail("registration did not finish")
+
+    def test_a_finished_unregistered_job_is_registered_once(self):
+        receipt = self.make_job("tokyo")
+        registration = self.wait_registration("tokyo")
+        self.assertEqual(registration["state"], "succeeded")
+        self.assertIn(f"ran register-city --receipt {receipt.resolve()}", registration["lines"])
+        _, state = self.call("GET", "/api/cities")
+        self.assertEqual(len([job for job in self.server.RequestHandlerClass.runner.jobs.values()
+                              if job.composition == "city:tokyo"]), 1)
+        self.assertTrue(state["jobs"][0]["finished"])
+
+    def test_registered_and_unfinished_jobs_are_left_alone(self):
+        receipt = self.make_job("osaka")
+        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns)
+        self.make_job("nagoya", finished=False)
+        _, state = self.call("GET", "/api/cities")
+        jobs = {job["id"]: job for job in state["jobs"]}
+        self.assertTrue(jobs["osaka"]["registered"])
+        self.assertIsNone(jobs["osaka"]["registration"])
+        self.assertFalse(jobs["nagoya"]["finished"])
+        self.assertIsNone(jobs["nagoya"]["registration"])
+
+    def test_a_regenerated_city_is_registered_again(self):
+        receipt = self.make_job("osaka")
+        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns - 1)
+        self.assertEqual(self.wait_registration("osaka")["state"], "succeeded")
+
+    def test_web_ui_start_configures_first_and_reports_not_running(self):
+        self.recipe.rename(self.work / "moved")  # not configured yet
+        status, job = self.call("POST", "/api/cities/web-ui/start")
+        self.assertEqual(status, 202)
+        finished = self.wait(job["id"])
+        self.assertEqual(finished["lines"], ["ran configure", "ran start"])
+        _, state = self.call("GET", "/api/cities")
+        self.assertFalse(state["web_ui"]["running"])
+        self.assertEqual(state["web_ui"]["job"]["command"], "start")
+        self.assertEqual(state["jobs"], [])
+
+    def test_web_ui_start_skips_configure_once_configured(self):
+        _, job = self.call("POST", "/api/cities/web-ui/start")
+        self.assertEqual(self.wait(job["id"])["lines"], ["ran start"])
+        _, job = self.call("POST", "/api/cities/web-ui/stop")
+        self.assertEqual(self.wait(job["id"])["lines"], ["ran stop"])
+
+    def test_unknown_web_ui_command(self):
+        status, _ = self.call("POST", "/api/cities/web-ui/explode")
         self.assertEqual(status, 404)
 
 

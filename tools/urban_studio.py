@@ -23,6 +23,10 @@ API (all JSON):
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
+  GET  /api/cities                       City World Web UI state and its jobs; a finished,
+                                         unregistered job starts its registration
+  POST /api/cities/web-ui/start          start the City World Web UI (configured once)
+  POST /api/cities/web-ui/stop           stop it
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -55,6 +60,11 @@ COMMANDS = ("plan", "configure", "start", "stop", "status")
 COMPOSITION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 PROGRESS_MARKER = "[HAKO_PROGRESS] "
 DEFAULT_PORT = 8090
+# The Business Pack City World Web UI (tools/recipe/city_world_web_ui.py).
+CITY_WEB_UI = BUSINESS_PACK / "tools/recipe/city_world_web_ui.py"
+CITY_RECIPE_ROOT = BUSINESS_PACK / "work/recipes/city-world-web-ui"
+CITY_WEB_PORT = 8008
+URBAN_ASSETS = ROOT / "tools/urban_assets.py"
 
 for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
@@ -282,9 +292,9 @@ def parse_progress(line: str) -> dict | None:
 @dataclass
 class Job:
     id: str
-    composition: str
+    composition: str  # the Composition id, or "city:<task>" for City tasks
     command: str
-    arguments: list[str]
+    steps: list[list[str]]  # commands run in order; the first failure stops the job
     state: str = "running"
     exit_code: int | None = None
     lines: list[str] = field(default_factory=list)
@@ -323,43 +333,56 @@ class JobRunner:
         if command not in COMMANDS:
             raise StudioError(f"unknown command {command!r}; use one of {', '.join(COMMANDS)}")
         path = composition_path(composition_id)
+        return self.launch(composition_id, command,
+                           [[self.python, "-u", str(self.simulation), command, "--composition", str(path)]])
+
+    def launch(self, key: str, command: str, steps: list[list[str]]) -> Job:
+        """Run steps as one job; one job at a time per key."""
         with self._lock:
-            for job in self.jobs.values():
-                if job.composition == composition_id and job.state == "running":
-                    raise StudioError(
-                        f"{job.command} is still running for {composition_id} (job {job.id})",
-                        HTTPStatus.CONFLICT,
-                    )
-            job = Job(
-                id=str(next(self._ids)), composition=composition_id, command=command,
-                arguments=[self.python, "-u", str(self.simulation), command, "--composition", str(path)],
-            )
+            running = self.running(key)
+            if running is not None:
+                raise StudioError(
+                    f"{running.command} is still running for {key} (job {running.id})",
+                    HTTPStatus.CONFLICT,
+                )
+            job = Job(id=str(next(self._ids)), composition=key, command=command, steps=steps)
             self.jobs[job.id] = job
         threading.Thread(target=self._run, args=(job,), name=f"studio-job-{job.id}", daemon=True).start()
         return job
 
+    def running(self, key: str) -> Job | None:
+        return next((job for job in self.jobs.values() if job.composition == key and job.state == "running"), None)
+
+    def latest(self, key: str) -> Job | None:
+        return next((job for job in reversed(self.jobs.values()) if job.composition == key), None)
+
     def _run(self, job: Job) -> None:
         environment = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
-        try:
-            process = subprocess.Popen(
-                job.arguments, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-            )
-        except OSError as exc:
-            with job.lock:
-                job.lines.append(f"error: {exc}")
-                job.state, job.exit_code, job.finished = "failed", -1, time.time()
-            return
-        assert process.stdout is not None
-        for raw in process.stdout:
-            line = raw.rstrip("\r\n")
-            event = parse_progress(line)
-            with job.lock:
-                if event is not None:
-                    job.progress = event
-                else:
-                    job.lines.append(line)
-        code = process.wait()
+        code = 0
+        for arguments in job.steps:
+            try:
+                process = subprocess.Popen(
+                    arguments, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                )
+            except OSError as exc:
+                with job.lock:
+                    job.lines.append(f"error: {exc}")
+                code = -1
+                break
+            assert process.stdout is not None
+            for raw in process.stdout:
+                line = raw.rstrip("\r\n")
+                event = parse_progress(line)
+                with job.lock:
+                    if event is not None:
+                        job.progress = event
+                    else:
+                        job.lines.append(line)
+            code = process.wait()
+            process.stdout.close()
+            if code != 0:
+                break
         with job.lock:
             job.exit_code = code
             job.state = "succeeded" if code == 0 else "failed"
@@ -370,6 +393,78 @@ class JobRunner:
         if job is None:
             raise StudioError(f"job {job_id} not found", HTTPStatus.NOT_FOUND)
         return job
+
+
+# --- Cities (City World Web UI) ------------------------------------------------------
+
+def _port_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def city_jobs() -> list[dict]:
+    """City World Web UI jobs, newest first, and whether each is registered.
+
+    A job is finished once its artifacts/result-manifest.json exists: the
+    Worker writes it last, and a regenerated job starts from an empty folder.
+    A registered City whose receipt changed since (regenerated) counts as
+    unregistered, so the new World is picked up.
+    """
+    import urban_assets
+
+    registered = {
+        Path(asset.data["receipt"]).resolve(): asset.data.get("version")
+        for asset in urban_assets.catalog().values() if asset.kind == "city"
+    }
+    root = CITY_RECIPE_ROOT / "runtime/jobs"
+    folders = sorted(root.glob("*"), key=lambda path: path.stat().st_mtime, reverse=True) if root.is_dir() else []
+    jobs = []
+    for folder in folders:
+        receipt = (folder / "build/world/city-world-receipt.json").resolve()
+        finished = (folder / "artifacts/result-manifest.json").is_file() and receipt.is_file()
+        jobs.append({
+            "id": folder.name,
+            "finished": finished,
+            "registered": finished and registered.get(receipt) == receipt.stat().st_mtime_ns,
+            "receipt": str(receipt),
+        })
+    return jobs
+
+
+def city_state(runner: "JobRunner") -> dict:
+    """The City page state; starts registering any finished, unregistered job."""
+    jobs = city_jobs()
+    for job in jobs:
+        key = f"city:{job['id']}"
+        previous = runner.latest(key)
+        # Register once per Studio run: a failed registration is shown, not retried.
+        if job["finished"] and not job["registered"] and previous is None:
+            previous = runner.launch(key, "register", [[
+                runner.python, "-u", str(URBAN_ASSETS), "register-city", "--receipt", job["receipt"],
+            ]])
+        job["registration"] = previous.snapshot() if previous else None
+    web = runner.latest("city:web-ui")
+    return {
+        "web_ui": {
+            "running": _port_open(CITY_WEB_PORT),
+            "url": f"http://127.0.0.1:{CITY_WEB_PORT}/",
+            "job": web.snapshot() if web else None,
+        },
+        "jobs": jobs,
+    }
+
+
+def city_web_ui(runner: "JobRunner", command: str) -> "Job":
+    if command not in {"start", "stop"}:
+        raise StudioError(f"unknown City World Web UI command {command!r}", HTTPStatus.NOT_FOUND)
+    steps = []
+    if command == "start" and not CITY_RECIPE_ROOT.is_dir():
+        steps.append([runner.python, "-u", str(CITY_WEB_UI), "configure"])  # first use only
+    steps.append([runner.python, "-u", str(CITY_WEB_UI), command])
+    return runner.launch("city:web-ui", command, steps)
 
 
 # --- HTTP -----------------------------------------------------------------------------
@@ -432,6 +527,10 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 except (KeyError, IndexError, ValueError) as exc:
                     raise StudioError("height needs numeric east and north") from exc
                 return self._json(world_height(parts[1], east, north))
+            if method == "GET" and parts == ["cities"]:
+                return self._json(city_state(self.runner))
+            if method == "POST" and len(parts) == 3 and parts[:2] == ["cities", "web-ui"]:
+                return self._json(city_web_ui(self.runner, parts[2]).snapshot(), HTTPStatus.ACCEPTED)
             if len(parts) == 2 and parts[0] == "compositions":
                 if method == "GET":
                     return self._json(read_composition(parts[1]))
