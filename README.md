@@ -10,9 +10,20 @@ The first demonstration target is two Virtual Drone Show drones and multiple
 Ackermann-steered vehicles moving through the same city area, with shared
 browser visualization and safety-aware interaction.
 
-> **Status:** the City World + two independently controlled typed Ackermann vehicles
-> is runnable. The full two-Car + two-Drone scenario, cross-world mirrors, and
-> contact handling remain under development.
+> **Status (2026-09-28):** runnable from Urban Studio or `tools/urban_simulation.py`
+> on a PLATEAU City World or a plain World:
+>
+> - Golf Carts driven by PS5 (`rc`) or by route scenarios (`api`); each Car may
+>   follow its own route, drawn in the Studio Route tab;
+> - an EAMS Hexa or Master3X FPV Drone under PS5 control, alone or together with
+>   the Cars (Car + Drone with a Drone Mirror in the Car world, for example
+>   `city-car-hexa`);
+> - Drone Core quad fleets laid out automatically (10 drones verified at RTF 1.0).
+>
+> Verified on macOS (Car + Drone on a Sapporo City World at real time, RTF 1.0);
+> the integrated route also starts on Windows. Not yet available: collision
+> avoidance between route Cars (routes that cross can collide), and Drone-Car
+> contact beyond the one-way Drone Mirror.
 
 The step-by-step migration to the managed Business Pack Recipe/Foundation
 contract is tracked in

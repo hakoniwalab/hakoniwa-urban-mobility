@@ -412,12 +412,16 @@ def configure(
         "launcher": str(launcher),
         "viewer": viewer_contract,
     })
-    print("Integrated Shizuoka Urban Mobility demo configured")
+    # The City World job folder names the City (jobs/<city id>/build/world/receipt).
+    city = Path(resolved["city_receipt"]).parents[2].name
+    print(f"Integrated Urban Mobility demo configured on {city}")
     print(f"Launcher : {launcher}")
     print(f"Viewer   : {browser['viewer_url']}")
+    # The Drone recipe calls its spawn surface "rooftop"; it may be a roof or the ground.
     print(
-        "Drone    : rooftop ENU "
-        f"({spawn['east_m']:.2f}, {spawn['north_m']:.2f}, {spawn['up_m']:.2f})"
+        "Drone    : spawn ENU "
+        f"({spawn['east_m']:.2f}, {spawn['north_m']:.2f}, {spawn['up_m']:.2f}) "
+        f"on a surface at {float(drone_scenario['rooftop']['surface_height_m']):.2f} m"
     )
     print("Cars     : " + ", ".join(
         f"{vehicle['name']}={vehicle['control_mode']}" for vehicle in resolved["vehicles"]
