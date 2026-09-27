@@ -333,7 +333,7 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     if multi_car.configure(resolved) != 0:
         return 1
     if selected is not None:
-        urban_simulation.apply_managed_controls(managed_target(context), selected)
+        urban_simulation.apply_managed_runtime(managed_target(context), selected)
 
     viewer_config = root(context) / "config/threejs/viewer-config.json"
     url = multi_car.map_viewer_url(resolved, viewer_config)
@@ -367,7 +367,7 @@ def configure_integrated(context: RecipeContext, args: argparse.Namespace | None
     target = managed_target(context)
     if urban_composer.configure(urban_simulation.materialize(target, selected)) != 0:
         return 1
-    urban_simulation.apply_managed_controls(target, selected)
+    urban_simulation.apply_managed_runtime(target, selected)
     return 0
 
 
@@ -391,7 +391,7 @@ def prepare_start(context: RecipeContext, composition_path: Path | None = None) 
     if context.use_case == "car-rc":
         if composition_path is not None:
             urban_simulation.refresh_car_poses(urban_simulation.refresh_placement(target, composition_path))
-            urban_simulation.apply_managed_controls(target, composition_path)
+            urban_simulation.apply_managed_runtime(target, composition_path)
         return
     if context.use_case != "drone-car-distributed":
         raise UrbanMobilityError(
@@ -417,7 +417,7 @@ def prepare_start(context: RecipeContext, composition_path: Path | None = None) 
     )
     if car_config is not None:
         urban_simulation.refresh_car_poses(car_config)
-        urban_simulation.apply_managed_controls(target, composition_path)
+        urban_simulation.apply_managed_runtime(target, composition_path)
 
 
 def launcher_command(operation: str, context: RecipeContext, args: argparse.Namespace | None = None) -> int:

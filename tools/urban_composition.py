@@ -402,7 +402,9 @@ def _car_inputs(
     return {
         "business_pack_city_receipt": {"path": str(city_receipt(composition))},
         "ackermann_vehicles": vehicles,
-        "ackermann_runtime": {"realtime_sync_cycle_msec": 2, "native_mujoco_viewer": False},
+        # The Urban real-time pacer paces the plant (tools/urban_realtime.py), so
+        # the plant does not sleep on its own.
+        "ackermann_runtime": {"realtime_sync_cycle_msec": 0, "native_mujoco_viewer": False},
         "browser_visualization": visualization,
     }
 

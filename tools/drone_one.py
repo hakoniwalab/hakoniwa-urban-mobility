@@ -539,19 +539,29 @@ def urban_launcher_writer(
 
 
 def apply_composition_controls(path: Path, paths: object) -> Path:
-    """Replace the control assets with the Composition's manifest controls.
+    """Apply the Composition's manifest controls and real-time pacer.
 
-    tools/urban_mobility.py writes the controls file for a Drone Composition;
-    a recipe configured directly with this tool has none.
+    tools/urban_simulation.py writes the controls file for a Drone
+    Composition ({"processes", "pacer", "drone_services"}; an older file is
+    the bare process list); a recipe configured directly with this tool has
+    none.
     """
     import urban_controls
+    import urban_realtime
 
     config = getattr(paths, "recipe_config", None)
     controls = None if config is None else config / urban_controls.CONTROLS_FILE
     if controls is None or not controls.is_file():
         return path
     launcher = json.loads(path.read_text(encoding="utf-8"))
-    urban_controls.apply_controls(launcher, json.loads(controls.read_text(encoding="utf-8")))
+    selected = json.loads(controls.read_text(encoding="utf-8"))
+    if isinstance(selected, list):
+        selected = {"processes": selected}
+    urban_controls.apply_controls(launcher, selected["processes"])
+    if selected.get("pacer") is not None:
+        urban_realtime.apply_pacer(
+            launcher, selected["pacer"], drone_services=tuple(selected.get("drone_services", ())),
+        )
     path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
     return path
 

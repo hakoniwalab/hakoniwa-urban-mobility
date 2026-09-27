@@ -348,6 +348,26 @@ Placement UI:
 The Map Viewer hands the selected point to the Three.js view as ENU
 coordinates relative to the City origin (from the City World Receipt).
 
+### 5.6 Real-time pacing
+
+Every route runs one real-time pacer (`apps/realtime/realtime_pacer.py`,
+adapted from hakoniwa-fpv-drone's): a Hakoniwa asset whose time follows the
+wall clock. The Conductor advances world time only while every asset is
+within its max_delay, so the pacer bounds the whole simulation, Car and
+Drone alike, to real time on every OS. The simulators therefore do not sleep
+on their own: the Car plant runs with `realtime_sync_cycle_msec: 0`, and
+Drone services with `--real-sleep-msec 0`. (Before, the Car plant slept
+per sync cycle, which is coarse on Windows, and the Urban Drone routes had
+no pacing once the Drone Show runner was replaced by the controls.)
+
+`tools/urban_realtime.py` inserts the pacer (`urban-realtime-pacer`,
+`before_start`, delta 10 ms) right after the Conductor owner, with that
+owner's max_delay: the Car plant (100 ms) in the `car` route, the Drone
+service (20 ms) in the `drone`, `integrated`, and `fpv` routes. It is
+applied with the controls, after `configure` and at every `start`; in the
+`fpv` route it replaces tools/fpv.py's own pacer, so one implementation paces
+every route.
+
 ## 6. World Asset
 
 Every Composition selects exactly one World Asset. There are two kinds; both

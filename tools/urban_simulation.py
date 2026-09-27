@@ -305,20 +305,29 @@ def refresh_car_poses(config_path: Path) -> None:
     multi_car.refresh_runtime_initial_body_poses(multi_car.resolve_config(config_path))
 
 
-def apply_managed_controls(target: ManagedTarget, composition_path: Path) -> None:
-    """Replace the configured Launcher's control assets with the manifest controls."""
+def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None:
+    """Put the manifest controls and the real-time pacer into the configured Launcher.
+
+    The Car route's plant owns the Conductor; in the integrated route the
+    Drone service owns it and the plant joins it (--external-conductor).
+    """
     import drone_one
     import multi_car
     import urban_controls
+    import urban_realtime
 
     runtimes = {"ackermann-mujoco": car_runtime(target.work)}
+    conductor, drone_services = "urban-car-fleet-plant", ()
     if target.use_case == "drone-car-distributed":
         runtimes["drone-core"] = drone_runtime(
             drone_one._paths(target.recipe_id), target.work / "config/car/urban-car-pdudef.json"
         )
+        conductor, drone_services = "drone-service-1", ("drone-service-1",)
     launcher_path = target.work / "config/launcher.json"
     launcher = multi_car.load_json(launcher_path, "configured Launcher")
     urban_controls.apply_controls(launcher, control_processes(composition_path, runtimes))
+    pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
+    urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     multi_car.write_json(launcher_path, launcher)
 
 
@@ -346,10 +355,11 @@ def materialize_drone_recipe(composition_path: Path) -> Path:
 
 
 def write_drone_controls(composition_path: Path) -> Path:
-    """Write the processes that tools/drone_one.py applies whenever it writes its Launcher."""
+    """Write the controls and pacer that tools/drone_one.py applies whenever it writes its Launcher."""
     import drone_one
     import multi_car
     import urban_controls
+    import urban_realtime
 
     paths = drone_one._paths()
     processes = control_processes(
@@ -357,7 +367,11 @@ def write_drone_controls(composition_path: Path) -> Path:
         {"drone-core": drone_runtime(paths, paths.recipe_config / "pdudef/drone-pdudef-current.json")},
     )
     path = paths.recipe_config / urban_controls.CONTROLS_FILE
-    multi_car.write_json(path, processes)
+    multi_car.write_json(path, {
+        "processes": processes,
+        "pacer": urban_realtime.pacer_asset(str(multi_car.foundation_python()), "drone-service-1"),
+        "drone_services": ["drone-service-1"],
+    })
     return path
 
 
@@ -504,6 +518,12 @@ def apply_fpv_composition(composition_path: Path, output: Path) -> None:
     launcher_path = runtime / "launcher.json"
     launcher = multi_car.load_json(launcher_path, "FPV Launcher")
     urban_controls.apply_controls(launcher, control_processes(composition_path, {"drone-core": fpv_runtime()}))
+    # The Urban pacer replaces tools/fpv.py's own (the same pacing), so every
+    # route runs one pacer implementation.
+    import urban_realtime
+
+    pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), "fpv-drone-service")
+    urban_realtime.apply_pacer(launcher, pacer, drone_services=("fpv-drone-service",))
     multi_car.write_json(launcher_path, launcher)
 
 

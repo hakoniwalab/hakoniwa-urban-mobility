@@ -16,6 +16,7 @@ import urban_assets  # noqa: E402
 import urban_composition  # noqa: E402
 import urban_controls  # noqa: E402
 import urban_simulation  # noqa: E402
+import urban_realtime  # noqa: E402
 import plain_world  # noqa: E402
 from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
@@ -159,7 +160,9 @@ class CarCompositionTest(Fixture):
         self.assertEqual(got_vehicle, want_vehicle)
         self.assertEqual(got_spawn.pop("up_m"), 0.0 + want_spawn.pop("ground_clearance_m"))
         self.assertEqual(got_spawn, want_spawn)
-        self.assertEqual(inputs["ackermann_runtime"], expected["ackermann_runtime"])
+        # Intentional difference: the Urban real-time pacer paces the plant,
+        # so the plant's own sleep-based sync is off.
+        self.assertEqual(inputs["ackermann_runtime"], {**expected["ackermann_runtime"], "realtime_sync_cycle_msec": 0})
         got_view = dict(inputs["browser_visualization"])
         want_view = dict(expected["browser_visualization"])
         self.assertEqual(
@@ -271,7 +274,7 @@ class CarPlacementTest(Fixture):
         with self.catalog(), \
                 mock.patch.object(urban_mobility, "root", return_value=context_root), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
-                mock.patch.object(urban_simulation, "apply_managed_controls") as controls, \
+                mock.patch.object(urban_simulation, "apply_managed_runtime") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as refresh:
             urban_mobility.prepare_start(context, composition)
         [(target, applied)] = [call.args for call in controls.call_args_list]
@@ -521,7 +524,7 @@ class IntegratedPlacementTest(IntegratedFixture):
                 mock.patch.object(drone_one, "refresh_runtime_spawn"), \
                 mock.patch.object(drone_one, "refresh_runtime_controller_params"), \
                 mock.patch.object(multi_car, "resolve_config", return_value={}), \
-                mock.patch.object(urban_simulation, "apply_managed_controls") as controls, \
+                mock.patch.object(urban_simulation, "apply_managed_runtime") as controls, \
                 mock.patch.object(multi_car, "refresh_runtime_initial_body_poses") as car_poses:
             urban_mobility.prepare_start(self.context(), composition)
         controls.assert_called_once()
@@ -741,11 +744,12 @@ class ControlsTest(IntegratedFixture):
             {"name": "urban-vehicle-web-bridge"},
         ]}), encoding="utf-8")
         with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)):
-            urban_simulation.apply_managed_controls(target, self.composition(vehicle={"params": {"max_speed": 1.5}}))
+            urban_simulation.apply_managed_runtime(target, self.composition(vehicle={"params": {"max_speed": 1.5}}))
         assets = json.loads((work / "config/launcher.json").read_text(encoding="utf-8"))["assets"]
         self.assertEqual([asset["name"] for asset in assets],
-                         ["urban-car-fleet-plant", "control-car-1-rc", "urban-vehicle-web-bridge"])
-        self.assertIn("1.5", assets[1]["args"])
+                         ["urban-car-fleet-plant", "urban-realtime-pacer", "control-car-1-rc", "urban-vehicle-web-bridge"])
+        self.assertIn("1.5", assets[2]["args"])
+        self.assertEqual(assets[1]["args"][-1], "100", "the Car plant's Conductor max_delay")
 
 
 try:
@@ -825,7 +829,8 @@ class FpvCompositionTest(Fixture):
         (vehicle / "drone_config_0.json").write_text(json.dumps({"components": {"droneDynamics": {
             "position_meter": [0.0, 0.0, -0.016], "angle_degree": [0.0, 0.0, 0.0]}}}), encoding="utf-8")
         (output / "runtime/launcher.json").write_text(json.dumps({"assets": [
-            {"name": "fpv-drone-service"}, {"name": "fpv-remote-controller"}, {"name": "fpv-threejs-http-server"},
+            {"name": "fpv-drone-service", "args": ["vehicle", "pdudef.json", "--real-sleep-msec", "0"]},
+            {"name": "fpv-realtime-pacer"}, {"name": "fpv-remote-controller"}, {"name": "fpv-threejs-http-server"},
         ]}), encoding="utf-8")
 
     def run_fpv(self, command: str, composition: Path, output_root: Path, calls: list):
@@ -854,7 +859,9 @@ class FpvCompositionTest(Fixture):
         dynamics = json.loads((runtime / "vehicle/drone_config_0.json").read_text(encoding="utf-8"))
         self.assertEqual(dynamics["components"]["droneDynamics"]["position_meter"], [3.0, 2.0, -0.016])
         names = [asset["name"] for asset in json.loads((runtime / "launcher.json").read_text(encoding="utf-8"))["assets"]]
-        self.assertEqual(names, ["fpv-drone-service", "control-drone-1-rc", "fpv-threejs-http-server"])
+        # The Urban pacer replaces tools/fpv.py's, right after the Drone service.
+        self.assertEqual(names, ["fpv-drone-service", "urban-realtime-pacer", "control-drone-1-rc",
+                                 "fpv-threejs-http-server"])
 
     def test_start_applies_a_moved_spawn_and_rejects_a_new_world(self):
         output_root, calls = self.work / "fpv", []
@@ -1146,6 +1153,114 @@ class FpvCityCompositionTest(Fixture):
         with contextlib.redirect_stdout(output_text):
             urban_simulation.compose_fpv_city(output, receipt)
         self.assertIn("Reusing compiled FPV City model", output_text.getvalue())
+
+
+class RealtimePacerTest(IntegratedFixture):
+    """Every route runs the Urban real-time pacer beside its Conductor owner."""
+
+    def test_pacer_delta_fits_each_conductor_max_delay(self):
+        for conductor, max_delay in (("urban-car-fleet-plant", "100"), ("drone-service-1", "20")):
+            asset = urban_realtime.pacer_asset("/python", conductor)
+            with self.subTest(conductor=conductor):
+                self.assertEqual(asset["activation_timing"], "before_start")
+                self.assertEqual(asset["depends_on"], [conductor])
+                args = asset["args"]
+                self.assertEqual(args[args.index("--max-delay-msec") + 1], max_delay)
+                self.assertLessEqual(int(args[args.index("--delta-msec") + 1]), int(max_delay))
+                self.assertTrue(Path(args[1]).is_file() and Path(args[2]).is_file())
+        with self.assertRaisesRegex(urban_realtime.RealtimeError, "unknown Conductor owner"):
+            urban_realtime.pacer_asset("/python", "somebody")
+
+    def test_pacer_rejects_a_delta_beyond_max_delay_before_touching_hakoniwa(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("realtime_pacer", urban_realtime.PACER)
+        pacer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pacer)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(pacer.main(["cfg.json", "--delta-msec", "30", "--max-delay-msec", "20"]), 2)
+        self.assertIn("deadlock", stderr.getvalue())
+
+    def test_apply_pacer_follows_the_conductor_and_stops_drone_sleeps(self):
+        launcher = {"assets": [
+            {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},
+            {"name": "urban-car-fleet-plant", "args": []},
+            {"name": "fpv-realtime-pacer"},
+            {"name": "control-drone-1-rc"},
+        ]}
+        pacer = urban_realtime.pacer_asset("/python", "drone-service-1")
+        urban_realtime.apply_pacer(launcher, pacer, drone_services=("drone-service-1",))
+        self.assertEqual([asset["name"] for asset in launcher["assets"]],
+                         ["drone-service-1", "urban-realtime-pacer", "urban-car-fleet-plant", "control-drone-1-rc"])
+        self.assertEqual(launcher["assets"][0]["args"][-2:], ["--real-sleep-msec", "0"])
+        launcher["assets"][0]["args"][-1] = "5"
+        urban_realtime.apply_pacer(launcher, pacer, drone_services=("drone-service-1",))
+        self.assertEqual(launcher["assets"][0]["args"].count("--real-sleep-msec"), 1)
+        self.assertEqual(launcher["assets"][0]["args"][-1], "0")
+        self.assertEqual([asset["name"] for asset in launcher["assets"]].count("urban-realtime-pacer"), 1)
+        with self.assertRaisesRegex(urban_realtime.RealtimeError, "no Conductor owner"):
+            urban_realtime.apply_pacer({"assets": []}, pacer)
+
+    def test_integrated_route_paces_from_the_drone_service(self):
+        work = self.work / "recipe"
+        (work / "config").mkdir(parents=True)
+        (work / "config/launcher.json").write_text(json.dumps({"assets": [
+            {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},
+            {"name": "urban-car-fleet-plant", "args": ["--external-conductor"]},
+            {"name": "urban-car-scenario-executor"}, {"name": "urban-drone-ps4-controller"},
+        ]}), encoding="utf-8")
+        target = urban_simulation.ManagedTarget(
+            managed_recipe=ROOT / "recipes/experiments/urban-mobility-rc.yaml", recipe_id="urban-mobility-rc",
+            use_case="drone-car-distributed", work=work,
+        )
+        from types import SimpleNamespace
+
+        paths = SimpleNamespace(recipe_config=self.work / "drone/config", recipe_validation=self.work / "drone/v")
+        with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path("/python")), \
+                mock.patch.object(drone_one, "_paths", return_value=paths):
+            urban_simulation.apply_managed_runtime(target, self.integrated())
+        assets = json.loads((work / "config/launcher.json").read_text(encoding="utf-8"))["assets"]
+        names = [asset["name"] for asset in assets]
+        self.assertEqual(names[:2], ["drone-service-1", "urban-realtime-pacer"])
+        self.assertEqual(assets[1]["args"][-1], "20")
+        self.assertEqual(assets[0]["args"][-2:], ["--real-sleep-msec", "0"])
+        self.assertNotIn("--real-sleep-msec", assets[2]["args"], "the Car plant has no per-step sleep flag")
+
+    def drone_launcher(self, paths) -> Path:
+        path = paths.recipe_config / "launcher.json"
+        path.write_text(json.dumps({"assets": [
+            {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},
+            {"name": "urban-drone-ps4-controller", "args": []},
+        ]}), encoding="utf-8")
+        return path
+
+    def test_drone_one_applies_the_pacer_from_the_controls_file(self):
+        from types import SimpleNamespace
+
+        paths = SimpleNamespace(recipe_config=self.work / "drone/config")
+        paths.recipe_config.mkdir(parents=True)
+        (paths.recipe_config / urban_controls.CONTROLS_FILE).write_text(json.dumps({
+            "processes": [{"name": "control-drone-1-rc"}],
+            "pacer": urban_realtime.pacer_asset("/python", "drone-service-1"),
+            "drone_services": ["drone-service-1"],
+        }), encoding="utf-8")
+        path = drone_one.apply_composition_controls(self.drone_launcher(paths), paths)
+        assets = json.loads(path.read_text(encoding="utf-8"))["assets"]
+        self.assertEqual([asset["name"] for asset in assets],
+                         ["drone-service-1", "urban-realtime-pacer", "control-drone-1-rc"])
+        self.assertEqual(assets[0]["args"][-2:], ["--real-sleep-msec", "0"])
+
+    def test_write_drone_controls_includes_the_pacer(self):
+        from types import SimpleNamespace
+
+        paths = SimpleNamespace(recipe_config=self.work / "drone/config", recipe_validation=self.work / "drone/v")
+        paths.recipe_config.mkdir(parents=True)
+        with self.catalog(), mock.patch.object(drone_one, "_paths", return_value=paths), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path("/python")):
+            written = urban_simulation.write_drone_controls(self.drone())
+        data = json.loads(written.read_text(encoding="utf-8"))
+        self.assertEqual(data["pacer"]["depends_on"], ["drone-service-1"])
+        self.assertEqual([process["name"] for process in data["processes"]], ["control-drone-1-rc"])
 
 
 if __name__ == "__main__":
