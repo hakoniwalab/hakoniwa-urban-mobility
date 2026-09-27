@@ -262,6 +262,40 @@ def relocate_path_params(composition: dict, catalog: dict, target_dir: Path = US
     return composition
 
 
+def repair_saved_composition(path: Path) -> list[str]:
+    """Before running a saved Composition, fix path params the same way a save does.
+
+    A Composition saved before path params were checked may still hold an
+    example-relative path; it is rewritten in place so the run just works.
+    A path that exists nowhere stops the command with a clear message instead
+    of a traceback from configure. Examples are never modified.
+    """
+    import copy
+
+    import urban_assets
+    import yaml
+
+    if path.parent.resolve() != USER_COMPOSITIONS.resolve():
+        return []
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return []  # the simulation command reports an unreadable file
+    if not isinstance(data, dict):
+        return []
+    repaired = copy.deepcopy(data)
+    try:
+        relocate_path_params(repaired, _catalog_or_empty(), path.parent)
+    except urban_assets.AssetError as exc:
+        raise StudioError(str(exc)) from exc
+    except StudioError as exc:
+        raise StudioError(f"{exc}。Compose で開いて、ファイルを指定し直してください。") from exc
+    if repaired == data:
+        return []
+    path.write_text(yaml.safe_dump(repaired, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return [f"[studio] {path.name} のファイル参照を保存先に合わせて修正しました（例と同じファイルを ${{repo:...}} で参照）"]
+
+
 def save_composition(composition_id: str, composition: dict) -> dict:
     """Validate and save a Composition under the user directory; return its plan."""
     import urban_simulation
@@ -467,11 +501,14 @@ class JobRunner:
         if command not in COMMANDS:
             raise StudioError(f"unknown command {command!r}; use one of {', '.join(COMMANDS)}")
         path = composition_path(composition_id)
+        # stop / status must work even for a Composition that cannot be repaired.
+        notes = repair_saved_composition(path) if command in {"plan", "configure", "start"} else []
         return self.launch(composition_id, command,
-                           [[self.python, "-u", str(self.simulation), command, "--composition", str(path)]])
+                           [[self.python, "-u", str(self.simulation), command, "--composition", str(path)]],
+                           notes)
 
-    def launch(self, key: str, command: str, steps: list[list[str]]) -> Job:
-        """Run steps as one job; one job at a time per key."""
+    def launch(self, key: str, command: str, steps: list[list[str]], notes: list[str] | None = None) -> Job:
+        """Run steps as one job; one job at a time per key. notes open the job output."""
         with self._lock:
             running = self.running(key)
             if running is not None:
@@ -479,7 +516,8 @@ class JobRunner:
                     f"{running.command} is still running for {key} (job {running.id})",
                     HTTPStatus.CONFLICT,
                 )
-            job = Job(id=str(next(self._ids)), composition=key, command=command, steps=steps)
+            job = Job(id=str(next(self._ids)), composition=key, command=command, steps=steps,
+                      lines=list(notes or []))
             self.jobs[job.id] = job
         threading.Thread(target=self._run, args=(job,), name=f"studio-job-{job.id}", daemon=True).start()
         return job

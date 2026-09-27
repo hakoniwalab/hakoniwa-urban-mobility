@@ -129,6 +129,38 @@ class StudioServerTest(StudioTestBase):
         with self.assertRaisesRegex(urban_studio.StudioError, "no-such-scenario"):
             urban_studio.relocate_path_params(composition, catalog, self.work / "compositions")
 
+    def write_saved(self, composition_id, scenario):
+        import yaml
+
+        directory = self.work / "compositions"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{composition_id}.yaml"
+        path.write_text(yaml.safe_dump({
+            "schema": "hakoniwa.composition/v1", "id": composition_id, "world": "plain-ground",
+            "vehicles": [{"name": "Car-1", "asset": "golf-cart", "control": "api",
+                          "params": {"scenario": scenario}}],
+        }), encoding="utf-8")
+        return path
+
+    def test_running_an_old_saved_copy_repairs_its_path_params_first(self):
+        path = self.write_saved("old-copy", "../scenarios/golf-cart-demo-convoy.yaml")
+        status, job = self.call("POST", "/api/compositions/old-copy/configure")
+        self.assertEqual(status, 202)
+        finished = self.wait(job["id"])
+        self.assertIn("のファイル参照を保存先に合わせて修正しました", finished["lines"][0])
+        self.assertIn("${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-convoy.yaml",
+                      path.read_text(encoding="utf-8"))
+
+    def test_running_a_saved_copy_with_a_missing_file_stops_before_configure(self):
+        self.write_saved("broken-copy", "../scenarios/no-such-scenario.yaml")
+        status, body = self.call("POST", "/api/compositions/broken-copy/configure")
+        self.assertEqual(status, 400)
+        self.assertIn("no-such-scenario", body["error"])
+        self.assertIn("Compose で開いて", body["error"])
+        # stop still runs for a Composition that cannot be repaired.
+        status, _ = self.call("POST", "/api/compositions/broken-copy/stop")
+        self.assertNotEqual(status, 400)
+
     def test_composition_summary_keeps_unknown_assets_recognisable(self):
         summary = urban_studio.composition_summary(
             {"world": "no-such-world", "vehicles": [{"name": "X", "asset": "no-such-asset", "control": "rc"}]}, {}
