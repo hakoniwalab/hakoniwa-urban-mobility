@@ -33,6 +33,9 @@ class StudioTestBase(unittest.TestCase):
         patch = mock.patch.object(urban_studio, "USER_COMPOSITIONS", self.work / "compositions")
         patch.start()
         self.addCleanup(patch.stop)
+        patch = mock.patch.object(urban_studio, "USER_SCENARIOS", self.work / "scenarios")
+        patch.start()
+        self.addCleanup(patch.stop)
         fake = self.work / "fake_simulation.py"
         fake.write_text(FAKE_SIMULATION, encoding="utf-8")
         self.server = urban_studio.make_server(0, urban_studio.JobRunner(simulation=fake))
@@ -160,6 +163,49 @@ class StudioServerTest(StudioTestBase):
         # stop still runs for a Composition that cannot be repaired.
         status, _ = self.call("POST", "/api/compositions/broken-copy/stop")
         self.assertNotEqual(status, 400)
+
+    def route(self, points=3, **overrides):
+        scenario = {
+            "schema_version": 2, "name": "Test loop", "loop_count": "forever",
+            "meta": {"world": "plain-ground"},
+            "vehicles": [{"name": "Car-1", "route_offset_m": 0.0}],
+            "control": {"speed_m_s": 1.0, "lookahead_m": 2.5, "position_gain": 0.8,
+                        "wheelbase_m": 1.55, "max_steering_deg": 32.0},
+            "route": {"closed": True, "points": [
+                {"name": f"p{index}", "east_m": 10.0 * (index % 2), "north_m": 10.0 * (index // 2)}
+                for index in range(points)
+            ]},
+        }
+        scenario.update(overrides)
+        return scenario
+
+    def test_route_scenarios_list_examples_with_a_location_free_reference(self):
+        _, listed = self.call("GET", "/api/scenarios")
+        convoy = next(item for item in listed if item["id"] == "golf-cart-demo-convoy")
+        self.assertFalse(convoy["editable"])
+        self.assertEqual(convoy["reference"],
+                         "${repo:hakoniwa-urban-mobility}/recipes/scenarios/golf-cart-demo-convoy.yaml")
+        self.assertEqual(convoy["vehicles"], ["Car-1", "Car-2"])
+        self.assertGreaterEqual(convoy["points"], 3)
+        status, loaded = self.call("GET", "/api/scenarios/golf-cart-demo-convoy")
+        self.assertEqual((status, loaded["scenario"]["schema_version"]), (200, 2))
+
+    def test_a_saved_route_is_listed_with_its_world_and_business_pack_reference(self):
+        status, saved = self.call("PUT", "/api/scenarios/my-loop", self.route())
+        self.assertEqual(status, 200)
+        self.assertTrue((self.work / "scenarios/my-loop.yaml").is_file())
+        self.assertEqual((saved["world"], saved["editable"], saved["points"]), ("plain-ground", True, 3))
+        _, listed = self.call("GET", "/api/scenarios")
+        self.assertIn("my-loop", [item["id"] for item in listed])
+
+    def test_an_invalid_route_is_rejected_and_not_saved(self):
+        status, body = self.call("PUT", "/api/scenarios/short", self.route(points=2))
+        self.assertEqual(status, 400)
+        self.assertIn("three points", body["error"])
+        self.assertFalse((self.work / "scenarios/short.yaml").exists())
+        self.assertFalse((self.work / "scenarios/short.partial.yaml").exists())
+        status, _ = self.call("PUT", "/api/scenarios/Bad_Id", self.route())
+        self.assertEqual(status, 400)
 
     def test_composition_summary_keeps_unknown_assets_recognisable(self):
         summary = urban_studio.composition_summary(

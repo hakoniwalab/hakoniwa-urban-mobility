@@ -24,6 +24,7 @@
       <button role="tab" data-tab="city">City</button>
       <button role="tab" data-tab="assets">Assets</button>
       <button role="tab" data-tab="compose" aria-selected="true">Compose</button>
+      <button role="tab" data-tab="route">Route</button>
       <button role="tab" data-tab="simulation">Simulation</button>
     </nav>
   </header>
@@ -126,6 +127,48 @@
               <button id="save-composition">保存して検証</button>
               <button id="to-simulation" class="secondary" title="Simulation タブへ（実行するのは保存済みの内容）">Simulation へ</button>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-route" class="tab" hidden>
+      <div class="layout">
+        <aside class="panel list-panel">
+          <div class="row between">
+            <h2>ルート</h2>
+            <button id="new-route" class="secondary">新規</button>
+          </div>
+          <ul id="route-list" class="list"></ul>
+        </aside>
+        <div class="panel route-editor">
+          <div class="row">
+            <label class="field">ID<input id="route-id" placeholder="my-route" autocomplete="off"></label>
+            <label class="field grow">名前<input id="route-name" placeholder="ホテル送迎ループ" autocomplete="off"></label>
+            <label class="field grow">World<select id="route-world"></select></label>
+          </div>
+          <div class="row">
+            <label class="field">速度 (m/s)<input id="route-speed" type="number" step="0.1" min="0.1"></label>
+            <label class="field">周回数<input id="route-loops" type="number" step="1" min="1"></label>
+            <label class="field">繰り返し続ける<input id="route-forever" type="checkbox"></label>
+            <label class="field">開始待ち (s)<input id="route-delay" type="number" step="0.5" min="0"></label>
+          </div>
+          <div class="row between">
+            <h3>走る車（先頭からの間隔）</h3>
+            <button id="route-add-vehicle" class="secondary">車を追加</button>
+          </div>
+          <p class="hint">Composition で「API（プログラム）」にした車のうち、ここに名前がある車がこのルートを走ります。2台目以降は、先頭から何 m 後ろを走るかを負の値で指定します。</p>
+          <div id="route-vehicles" class="row params"></div>
+          <div id="route-map" class="placement-view"></div>
+          <p id="route-map-hint" class="hint">地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。</p>
+          <div class="row between">
+            <h3>点</h3>
+            <button id="route-add-point" class="secondary">点を追加</button>
+          </div>
+          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th></th></tr></thead><tbody></tbody></table>
+          <div class="row between footer">
+            <div id="route-status" class="status" role="status"></div>
+            <button id="route-save">保存して検証</button>
           </div>
         </div>
       </div>

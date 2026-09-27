@@ -38,6 +38,10 @@ const state = {
   cityTimer: null,
   rtfTimer: null,
   savedSnapshot: null, // snapshot() of state.current as last opened or saved; null if never saved
+  scenarios: [],   // /api/scenarios (Car route scenarios)
+  route: null,     // { id, editable, scenario } open in the Route tab
+  routePoint: -1,  // selected route point
+  routeMap: null,
 };
 
 // --- Composition identity shared by Compose and Simulation ----------------------------
@@ -117,6 +121,12 @@ function showTab(name) {
     pollRtf();
   }
   if (name === "city") { pollCities(); loadCache(); }
+  if (name === "route") {
+    if (!state.route) {
+      const first = state.scenarios.find((item) => item.world === state.current?.composition.world);
+      if (first) openRoute(first.id); else newRoute();
+    } else loadRouteWorld();
+  }
 }
 
 // --- Assets and City ----------------------------------------------------------------
@@ -571,7 +581,8 @@ function renderVehicle(vehicle, index) {
     onchange: (event) => { vehicle.control = event.target.value; vehicle.params = {}; renderEditor(); },
   }, ...controls.map((name) => el("option", { value: name, selected: name === vehicle.control }, name === "rc" ? "RC（コントローラ）" : "API（プログラム）")));
 
-  const paramFields = Object.entries(params).map(([name, definition]) => el("label", { class: "field" },
+  const paramFields = Object.entries(params).map(([name, definition]) => definition.type === "path"
+    && (definition.kinds || []).includes(ROUTE_KIND) ? routeParamField(vehicle, name, definition) : el("label", { class: "field" },
     `${name}${definition.required ? " *" : ""}`,
     el("input", {
       value: vehicle.params[name] ?? "",
@@ -676,6 +687,255 @@ async function saveComposition() {
   } catch (error) {
     setStatus(status, error.message, "error");
   }
+}
+
+// --- Route (Car route scenarios) ------------------------------------------------------
+
+const ROUTE_KIND = "car-route-scenario";
+// Pure-pursuit controller values that work for the Golf Cart; the Route tab edits only speed.
+const DEFAULT_ROUTE_CONTROL = { speed_m_s: 1.0, lookahead_m: 2.5, position_gain: 0.8, wheelbase_m: 1.55, max_steering_deg: 32.0 };
+
+function newRouteScenario(world) {
+  return {
+    schema_version: 2, name: "", rate_hz: 50, start_delay_sec: 1.0, loop_count: "forever",
+    meta: { world },
+    vehicles: [{ name: "Car-1", route_offset_m: 0.0 }],
+    control: { ...DEFAULT_ROUTE_CONTROL },
+    route: { closed: true, points: [] },
+  };
+}
+
+async function loadScenarios() {
+  state.scenarios = await api("GET", "scenarios");
+  renderRouteList();
+}
+
+function renderRouteList() {
+  $("#route-list").replaceChildren(...state.scenarios.map((item) => el("li", {},
+    el("button", {
+      "aria-current": String(state.route?.id === item.id),
+      onclick: () => openRoute(item.id),
+    }, item.name, el("span", { class: "meta" }, `${item.id}・${item.points} 点${item.editable ? "" : "・例"}`)))));
+}
+
+async function openRoute(id) {
+  const loaded = await api("GET", `scenarios/${id}`);
+  const scenario = loaded.scenario;
+  scenario.meta = scenario.meta || {};
+  scenario.route.points = scenario.route.points || [];
+  state.route = { id, editable: loaded.editable, scenario };
+  state.routePoint = -1;
+  renderRouteList();
+  renderRoute();
+  setStatus($("#route-status"), loaded.editable ? ""
+    : "例のルートです。保存するとコピーが作られます。" + (scenario.meta.world ? "" : " World が未設定なので、使う World を選んでください。"));
+  await loadRouteWorld();
+}
+
+function newRoute() {
+  const world = state.current?.composition.world
+    || (usableWorlds().find((item) => item.kind === "city") || usableWorlds()[0])?.id;
+  state.route = { id: "", editable: true, scenario: newRouteScenario(world) };
+  state.routePoint = -1;
+  renderRouteList();
+  renderRoute();
+  setStatus($("#route-status"), "");
+  $("#route-id").focus();
+  loadRouteWorld();
+}
+
+async function loadRouteWorld() {
+  const worldId = state.route?.scenario.meta.world;
+  const mapNode = $("#route-map");
+  let hasMap = false;
+  if (worldId && state.routeMap) {
+    try {
+      const info = await api("GET", `worlds/${worldId}`);
+      hasMap = state.routeMap.setWorld(info);
+    } catch (error) {
+      setStatus($("#route-status"), error.message, "error");
+    }
+  }
+  mapNode.hidden = !hasMap;
+  $("#route-map-hint").textContent = hasMap
+    ? "地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。"
+    : "この World には地図がありません。「点を追加」で点を増やし、east / north を数値で入力してください（World の中心からのメートル）。";
+  if (hasMap) {
+    state.routeMap.show();
+    state.routeMap.setRoute(state.route.scenario.route.points, state.routePoint);
+  }
+}
+
+function routeNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function addRoutePoint(east, north) {
+  const points = state.route.scenario.route.points;
+  points.push({ name: `p${points.length + 1}`, east_m: round2(east), north_m: round2(north) });
+  state.routePoint = points.length - 1;
+  renderRoute();
+}
+
+function renderRoute() {
+  const route = state.route;
+  $(".route-editor").hidden = !route;
+  if (!route) return;
+  const scenario = route.scenario;
+  $("#route-id").value = route.id;
+  $("#route-name").value = scenario.name || "";
+  const worldSelect = $("#route-world");
+  worldSelect.replaceChildren(
+    el("option", { value: "" }, "（未設定）"),
+    ...usableWorlds().map((world) => el("option", { value: world.id }, `${world.title}（${worldKindLabel(world.kind)}）`)));
+  worldSelect.value = scenario.meta.world || "";
+  $("#route-speed").value = scenario.control?.speed_m_s ?? DEFAULT_ROUTE_CONTROL.speed_m_s;
+  const forever = scenario.loop_count === "forever";
+  $("#route-forever").checked = forever;
+  $("#route-loops").disabled = forever;
+  $("#route-loops").value = forever ? "" : scenario.loop_count;
+  $("#route-delay").value = scenario.start_delay_sec ?? 1.0;
+
+  $("#route-vehicles").replaceChildren(...scenario.vehicles.map((vehicle, index) => el("div", { class: "route-vehicle" },
+    el("label", { class: "field" }, "名前", el("input", {
+      value: vehicle.name, size: 8, onchange: (event) => { vehicle.name = event.target.value.trim(); },
+    })),
+    el("label", { class: "field" }, "間隔 (m)", el("input", {
+      type: "number", step: "0.5", max: "0", value: String(vehicle.route_offset_m ?? 0), disabled: index === 0,
+      onchange: (event) => { vehicle.route_offset_m = routeNumber(event.target.value, 0); },
+    })),
+    index > 0 ? el("button", {
+      class: "icon", title: "削除", onclick: () => { scenario.vehicles.splice(index, 1); renderRoute(); },
+    }, "✕") : null)));
+
+  const points = scenario.route.points;
+  $("#route-points tbody").replaceChildren(...(points.length ? points.map((point, index) => {
+    const cell = (key, step) => el("td", {}, el("input", {
+      type: "number", step, value: String(point[key] ?? 0),
+      onchange: (event) => { point[key] = routeNumber(event.target.value, 0); renderRoute(); },
+    }));
+    return el("tr", {
+      class: index === state.routePoint ? "selected" : "",
+      onclick: (event) => { if (!event.target.closest("input, button")) { state.routePoint = index; renderRoute(); } },
+    },
+      el("td", {}, String(index + 1)),
+      el("td", {}, el("input", { value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); renderRoute(); } })),
+      cell("east_m", "0.1"), cell("north_m", "0.1"), cell("dwell_sec", "0.5"),
+      el("td", {}, el("button", {
+        class: "icon", title: "削除", onclick: () => {
+          points.splice(index, 1);
+          state.routePoint = Math.min(state.routePoint, points.length - 1);
+          renderRoute();
+        },
+      }, "✕")));
+  }) : [el("tr", {}, el("td", { colspan: 6, class: "hint" }, "点がありません"))]));
+  if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint);
+}
+
+async function saveRoute() {
+  const route = state.route;
+  if (!route) return;
+  const status = $("#route-status");
+  if (!route.id) { setStatus(status, "ID を入力してください", "error"); return; }
+  const scenario = route.scenario;
+  // Drop unset dwell values so the saved file stays minimal.
+  scenario.route.points = scenario.route.points.map((point) => {
+    const copy = { ...point };
+    if (!copy.dwell_sec) delete copy.dwell_sec;
+    return copy;
+  });
+  setStatus(status, "検証中…");
+  try {
+    await api("PUT", `scenarios/${route.id}`, scenario);
+    route.editable = true;
+    await loadScenarios();
+    renderEditor(); // Compose selectors list the new or renamed route
+    setStatus(status, "保存しました。Compose の API の車で、このルートを選べます。", "ok");
+  } catch (error) {
+    setStatus(status, error.message, "error");
+  }
+}
+
+async function initRoute() {
+  const { RouteMapView } = await import("./route.js");
+  state.routeMap = new RouteMapView($("#route-map"), {
+    onAdd: (east, north) => { if (state.route) addRoutePoint(east, north); },
+    onSelect: (index) => { state.routePoint = index; renderRoute(); },
+    onMove: (index, east, north) => {
+      const point = state.route?.scenario.route.points[index];
+      if (!point) return;
+      point.east_m = round2(east);
+      point.north_m = round2(north);
+      state.routePoint = index;
+      renderRoute();
+    },
+  });
+  $("#new-route").addEventListener("click", newRoute);
+  $("#route-save").addEventListener("click", saveRoute);
+  $("#route-add-point").addEventListener("click", () => {
+    if (!state.route) return;
+    const last = state.route.scenario.route.points.at(-1);
+    addRoutePoint((last?.east_m ?? 0) + 5, last?.north_m ?? 0);
+  });
+  $("#route-add-vehicle").addEventListener("click", () => {
+    if (!state.route) return;
+    const vehicles = state.route.scenario.vehicles;
+    const offset = (vehicles.at(-1)?.route_offset_m ?? 0) - 6;
+    vehicles.push({ name: `Car-${vehicles.length + 1}`, route_offset_m: offset });
+    renderRoute();
+  });
+  const bind = (selector, apply) => $(selector).addEventListener("change", (event) => {
+    if (state.route) { apply(state.route, event.target); renderRoute(); }
+  });
+  bind("#route-id", (route, input) => { route.id = input.value.trim(); });
+  bind("#route-name", (route, input) => { route.scenario.name = input.value.trim(); });
+  bind("#route-world", (route, input) => { route.scenario.meta.world = input.value || undefined; loadRouteWorld(); });
+  bind("#route-speed", (route, input) => {
+    route.scenario.control = { ...DEFAULT_ROUTE_CONTROL, ...route.scenario.control, speed_m_s: routeNumber(input.value, 1.0) };
+  });
+  bind("#route-forever", (route, input) => { route.scenario.loop_count = input.checked ? "forever" : 1; });
+  bind("#route-loops", (route, input) => { route.scenario.loop_count = Math.max(1, Math.round(routeNumber(input.value, 1))); });
+  bind("#route-delay", (route, input) => { route.scenario.start_delay_sec = Math.max(0, routeNumber(input.value, 1.0)); });
+}
+
+// Compose -> Route: edit the route a Car uses.
+async function editRouteFor(reference) {
+  const item = state.scenarios.find((scenario) => scenario.reference === reference);
+  showTab("route");
+  if (item) await openRoute(item.id);
+  else newRoute();
+}
+
+// The scenario param of an API Car: pick a saved or example route.
+function routeParamField(vehicle, name, definition) {
+  const composition = state.current.composition;
+  const value = vehicle.params[name] ?? "";
+  const known = state.scenarios.some((item) => item.reference === value);
+  const ordered = [...state.scenarios].sort((a, b) =>
+    Number(b.world === composition.world) - Number(a.world === composition.world) || a.name.localeCompare(b.name));
+  const select = el("select", {
+    onchange: (event) => {
+      if (event.target.value) vehicle.params[name] = event.target.value;
+      else delete vehicle.params[name];
+      renderEditor();
+    },
+  },
+    el("option", { value: "" }, "（ルートを選択）"),
+    !known && value ? el("option", { value }, `（現在）${value}`) : null,
+    ...ordered.map((item) => el("option", { value: item.reference },
+      `${item.name}（${item.id}）${item.world && item.world !== composition.world ? "・別の World" : item.world ? "" : "・World 未設定"}`)));
+  select.value = value;
+  const chosen = state.scenarios.find((item) => item.reference === value);
+  const warning = chosen && !chosen.vehicles.includes(vehicle.name)
+    ? el("span", { class: "hint error" }, `このルートの走る車に「${vehicle.name}」がありません`)
+    : chosen && chosen.world && chosen.world !== composition.world
+      ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
+      : null;
+  return el("label", { class: "field grow" }, `ルート${definition.required ? " *" : ""}`,
+    el("div", { class: "row" }, select,
+      el("button", { class: "secondary", onclick: (event) => { event.preventDefault(); editRouteFor(value); } }, "ルートを編集")),
+    warning);
 }
 
 // --- Simulation ---------------------------------------------------------------------
@@ -909,6 +1169,8 @@ async function main() {
   state.assets = await api("GET", "assets");
   renderAssets();
   await initPlacement();
+  await initRoute();
+  await loadScenarios();
   await loadCompositions();
   // Reopen the Composition used last (in Compose or Simulation), else the first one.
   const last = rememberedComposition();

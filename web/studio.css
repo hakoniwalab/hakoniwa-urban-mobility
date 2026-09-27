@@ -132,3 +132,18 @@ code { font-family: ui-monospace, Consolas, monospace; }
 .city-state.error { color: var(--danger); }
 .city-state details { margin-top: 4px; }
 .city-state pre { white-space: pre-wrap; font-size: 12px; margin: 4px 0 0; }
+
+/* Route tab */
+.route-point span {
+  display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border-radius: 50%; background: #2e7dd7; color: #fff; font-size: 11px; font-weight: 600;
+  border: 2px solid #fff; box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+.route-point span.dwell { background: #d9822b; }
+.route-point span.selected { border-color: #ffb300; transform: scale(1.2); }
+.route-point { cursor: grab; }
+#route-map { height: 420px; }
+#route-map[hidden] { display: none; }
+#route-points input { width: 7em; }
+#route-points tr.selected { background: rgba(255, 179, 0, 0.15); }
+.route-vehicle { display: flex; gap: 6px; align-items: flex-end; }

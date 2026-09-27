@@ -56,6 +56,11 @@ It serves `http://127.0.0.1:8090/` and saves Compositions under
   removes a registration by hand. The City page's "キャッシュ" panel shows
   the cache sizes, and "Urban キャッシュを整理" runs
   `python tools/urban_assets.py prune-cache --apply` (see Cache cleanup).
+- **Route**: draw a Car route (a closed loop of waypoints) on the City World
+  map: click to add points, drag to move them, and set dwell, speed, loops, and
+  which Cars follow it. Routes are saved under
+  `hakoniwa-business-pack/work/urban/scenarios/`. In Compose, an API-controlled
+  Car picks its route from a selector.
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
   obstacles included) plus the vehicle's clearance.

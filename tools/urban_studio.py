@@ -21,6 +21,9 @@ API (all JSON):
   GET  /api/compositions/<id>/viewer     the configured Viewer URL
   GET  /api/compositions/<id>/rtf        the latest real-time factor from the pacer log
   GET  /api/jobs/<job>?since=<line>      a command's state, output, and progress
+  GET  /api/scenarios                    Car route scenarios (examples and saved)
+  GET  /api/scenarios/<id>               one route scenario
+  PUT  /api/scenarios/<id>               validate and save a route scenario
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
@@ -60,6 +63,8 @@ BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 WEB_ROOT = ROOT / "web"
 USER_COMPOSITIONS = BUSINESS_PACK / "work/urban/compositions"
 EXAMPLE_COMPOSITIONS = ROOT / "recipes/compositions"
+USER_SCENARIOS = BUSINESS_PACK / "work/urban/scenarios"
+EXAMPLE_SCENARIOS = ROOT / "recipes/scenarios"
 SIMULATION = ROOT / "tools/urban_simulation.py"
 COMMANDS = ("plan", "configure", "start", "stop", "status")
 COMPOSITION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -260,6 +265,90 @@ def relocate_path_params(composition: dict, catalog: dict, target_dir: Path = US
                     continue
                 raise StudioError(f"{entry.get('name')} の {name} のファイルが見つかりません: {value}")
     return composition
+
+
+# --- Car route scenarios (Route tab) -----------------------------------------------------
+
+ROUTE_SCHEMA_VERSIONS = (2, 3)
+
+
+def _route_scenario_entry(path: Path, data: dict, editable: bool) -> dict:
+    route = data.get("route") if isinstance(data.get("route"), dict) else {}
+    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    return {
+        "id": path.stem,
+        "name": data.get("name", path.stem),
+        "editable": editable,
+        "world": meta.get("world"),
+        "points": len(route.get("points") or []),
+        "vehicles": [item.get("name") for item in data.get("vehicles") or [] if isinstance(item, dict)],
+        # The value a Composition's scenario param holds: valid from any save location.
+        "reference": _repo_reference(path.resolve()),
+        "path": str(path),
+        "updated_at": path.stat().st_mtime,
+    }
+
+
+def _load_route_scenarios() -> dict[str, tuple[Path, dict, bool]]:
+    import yaml
+
+    found: dict[str, tuple[Path, dict, bool]] = {}
+    for directory, editable in ((EXAMPLE_SCENARIOS, False), (USER_SCENARIOS, True)):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            # Only waypoint-loop route scenarios; timed command scenarios are not edited here.
+            if isinstance(data, dict) and data.get("schema_version") in ROUTE_SCHEMA_VERSIONS \
+                    and isinstance(data.get("route"), dict):
+                found[path.stem] = (path, data, editable)  # a saved one hides the example
+    return found
+
+
+def list_scenarios() -> list[dict]:
+    return sorted(
+        (_route_scenario_entry(path, data, editable) for path, data, editable in _load_route_scenarios().values()),
+        key=lambda item: item["id"],
+    )
+
+
+def read_scenario(scenario_id: str) -> dict:
+    _check_id(scenario_id)
+    found = _load_route_scenarios().get(scenario_id)
+    if found is None:
+        raise StudioError(f"route scenario {scenario_id} not found", HTTPStatus.NOT_FOUND)
+    path, data, editable = found
+    return {**_route_scenario_entry(path, data, editable), "scenario": data}
+
+
+def save_scenario(scenario_id: str, scenario: dict) -> dict:
+    """Validate a route scenario with the Car scenario executor and save it."""
+    import yaml
+
+    _check_id(scenario_id)
+    if not isinstance(scenario, dict):
+        raise StudioError("the request body must be a route scenario object")
+    scenario = {**scenario, "schema_version": scenario.get("schema_version", 2)}
+    USER_SCENARIOS.mkdir(parents=True, exist_ok=True)
+    path = USER_SCENARIOS / f"{scenario_id}.yaml"
+    staging = path.with_suffix(".partial.yaml")
+    staging.write_text(yaml.safe_dump(scenario, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    sys.path.insert(0, str(ROOT / "apps/car"))
+    try:
+        from scenario_executor import ScenarioError, load_scenario
+
+        try:
+            load_scenario(staging)
+        except ScenarioError as exc:
+            staging.unlink()
+            raise StudioError(f"ルートを保存できません: {exc}") from exc
+    finally:
+        sys.path.remove(str(ROOT / "apps/car"))
+    staging.replace(path)
+    return _route_scenario_entry(path, scenario, True)
 
 
 def repair_saved_composition(path: Path) -> list[str]:
@@ -777,6 +866,13 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(cache_state(self.runner))
             if method == "POST" and parts == ["cache", "prune"]:
                 return self._json(prune_cache(self.runner).snapshot(), HTTPStatus.ACCEPTED)
+            if method == "GET" and parts == ["scenarios"]:
+                return self._json(list_scenarios())
+            if len(parts) == 2 and parts[0] == "scenarios":
+                if method == "GET":
+                    return self._json(read_scenario(parts[1]))
+                if method == "PUT":
+                    return self._json(save_scenario(parts[1], self._body()))
             if len(parts) == 2 and parts[0] == "compositions":
                 if method == "GET":
                     return self._json(read_composition(parts[1]))
