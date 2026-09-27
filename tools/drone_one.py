@@ -51,6 +51,10 @@ import urban_lifecycle
 CONTROL_MODE_FILE = "urban-drone-control.json"
 SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
 DRONE_SERVICE_READINESS_TIMEOUT_SEC = 180
+# One `hako-cmd ls` probe waits this long for the master lock, which the Drone
+# service holds while it loads a City model; the Launcher default of 1 s
+# misses the registration.
+DRONE_SERVICE_READINESS_PROBE_SEC = 10
 
 
 @dataclass(frozen=True)
@@ -261,6 +265,7 @@ def patch_launcher(
         "type": "hako_asset",
         "asset_name": "drone",
         "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+        "command_timeout_sec": DRONE_SERVICE_READINESS_PROBE_SEC,
     }
     mission_asset = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
@@ -328,6 +333,7 @@ def patch_rc_launcher(path: Path, *, paths: object, drone_root: Path) -> Path:
         "type": "hako_asset",
         "asset_name": "drone",
         "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+        "command_timeout_sec": DRONE_SERVICE_READINESS_PROBE_SEC,
     }
     controller = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
