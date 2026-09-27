@@ -3,12 +3,20 @@
 // Scene frame = City World GLB frame: X = East, Y = Up, Z = -North.
 // Dragging raycasts the World meshes, so a marker rides on roofs and
 // obstacles while it moves; the backend height API gives the final height.
+// Dropping on a wall places the vehicle on that building's roof.
+// Camera: left drag orbits, right drag (or Shift + drag) pans, the wheel
+// zooms, and a double click focuses on the point under the cursor.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const COLORS = { car: 0x2e7dd7, drone: 0xe08a1e, fpv: 0x9b5de5 };
+// A wall hit is moved this far into the building, so the downward height ray
+// lands on its roof rather than on the ground in front of it.
+const WALL_INSET_M = 0.3;
+const FOCUS_DISTANCE_M = 30;
+const FOCUS_ANIMATION_MS = 400;
 
 export class PlacementView {
   constructor(container, { onSelect, onMove }) {
@@ -23,6 +31,11 @@ export class PlacementView {
     container.append(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.maxPolarAngle = Math.PI * 0.49;
+    this.controls.screenSpacePanning = true;
+    this.controls.keyPanSpeed = 20;
+    // Arrow keys pan while the view has focus (not while typing in a field).
+    this.renderer.domElement.tabIndex = 0;
+    this.controls.listenToKeyEvents(this.renderer.domElement);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.4));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(80, 150, 60);
@@ -40,9 +53,11 @@ export class PlacementView {
     canvas.addEventListener("pointerdown", (event) => this.pointerDown(event));
     canvas.addEventListener("pointermove", (event) => this.pointerMove(event));
     canvas.addEventListener("pointerup", (event) => this.pointerUp(event));
+    canvas.addEventListener("dblclick", (event) => this.focusAtPointer(event));
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
-    this.renderer.setAnimationLoop(() => {
+    this.renderer.setAnimationLoop((time) => {
+      this.animate(time);
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     });
@@ -63,8 +78,8 @@ export class PlacementView {
     const halfNorth = info.half_extent_m.north_south;
     const halfEast = info.half_extent_m.east_west;
     const span = Math.max(halfNorth, halfEast);
-    this.camera.position.set(-span * 0.9, span * 0.8, span * 0.9);
-    this.controls.target.set(0, 0, 0);
+    this.span = span;
+    this.overview();
     this.camera.far = span * 20;
     this.camera.updateProjectionMatrix();
     const grid = new THREE.GridHelper(span * 2, Math.max(4, Math.round(span / 10)), 0x335577, 0x557799);
@@ -75,6 +90,49 @@ export class PlacementView {
     const gltf = await new GLTFLoader().loadAsync(info.glb);
     if (this.worldId !== info.id) return; // another World was selected meanwhile
     this.worldGroup.add(gltf.scene);
+  }
+
+  // Moves the orbit target (and the camera with it) over FOCUS_ANIMATION_MS.
+  flyTo(target, position) {
+    this.flight = {
+      start: performance.now(),
+      fromTarget: this.controls.target.clone(), toTarget: target,
+      fromPosition: this.camera.position.clone(), toPosition: position,
+    };
+  }
+
+  animate(time) {
+    const flight = this.flight;
+    if (!flight) return;
+    const t = Math.min(1, (time - flight.start) / FOCUS_ANIMATION_MS);
+    const ease = t * (2 - t);
+    this.controls.target.lerpVectors(flight.fromTarget, flight.toTarget, ease);
+    this.camera.position.lerpVectors(flight.fromPosition, flight.toPosition, ease);
+    if (t >= 1) this.flight = null;
+  }
+
+  // Look at a point from FOCUS_DISTANCE_M away, keeping the viewing direction.
+  focusOn(point) {
+    const direction = this.camera.position.clone().sub(this.controls.target).normalize();
+    if (direction.y < 0.35) direction.setY(0.35).normalize(); // keep looking down a little
+    this.flyTo(point.clone(), point.clone().addScaledVector(direction, FOCUS_DISTANCE_M));
+  }
+
+  focusVehicle(index) {
+    const marker = this.markerGroup.children[index];
+    if (marker) this.focusOn(marker.position);
+  }
+
+  overview() {
+    const span = this.span ?? 100;
+    this.flyTo(new THREE.Vector3(0, 0, 0), new THREE.Vector3(-span * 0.9, span * 0.8, span * 0.9));
+  }
+
+  focusAtPointer(event) {
+    this.ray(event);
+    const marker = this.raycaster.intersectObjects(this.markerGroup.children, true)[0];
+    const point = marker ? marker.object.parent.position : this.surfacePoint();
+    if (point) this.focusOn(point);
   }
 
   clearWorld() {
@@ -113,6 +171,12 @@ export class PlacementView {
       marker.rotation.y = THREE.MathUtils.degToRad(vehicle.yaw);
       this.markerGroup.add(marker);
     });
+    if (this.dragging) {
+      // Selecting on pointerdown re-renders the markers; keep dragging the new one.
+      const { index, point } = this.dragging;
+      this.dragging.marker = this.markerGroup.children[index];
+      if (point) this.dragging.marker.position.set(point.x, point.y + vehicles[index].clearance, point.z);
+    }
   }
 
   ray(event) {
@@ -124,7 +188,14 @@ export class PlacementView {
   surfacePoint() {
     const hit = this.raycaster.intersectObjects(this.worldGroup.children, true)
       .find((intersection) => intersection.object.type === "Mesh");
-    if (hit) return hit.point;
+    if (hit) {
+      const normal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;
+      if (normal && Math.abs(normal.y) < 0.5) {
+        // A wall: step into the building so the placement lands on its roof.
+        return hit.point.clone().addScaledVector(normal.setY(0).normalize(), -WALL_INSET_M);
+      }
+      return hit.point;
+    }
     const point = new THREE.Vector3();
     return this.raycaster.ray.intersectPlane(this.ground, point) ? point : null;
   }

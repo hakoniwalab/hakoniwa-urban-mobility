@@ -355,6 +355,7 @@ async function initPlacement() {
   state.map = new MapView($("#placement-map"), {
     onSelect: selectVehicle,
     onPick: (east, north) => moveVehicle(state.selected, east, north),
+    onMove: moveVehicle,
   });
   if (!window.L) $('#placement-views [data-view="map"]').disabled = true;
 }
@@ -650,6 +651,14 @@ async function main() {
   for (const button of document.querySelectorAll("#placement-views button")) {
     button.addEventListener("click", () => showPlacementView(button.dataset.view));
   }
+  $("#focus-selected").addEventListener("click", () => {
+    showPlacementView("three");
+    state.placement?.focusVehicle(state.selected);
+  });
+  $("#focus-overview").addEventListener("click", () => {
+    showPlacementView("three");
+    state.placement?.overview();
+  });
   $("#yaw-left").addEventListener("click", () => turnSelected(15));
   $("#yaw-right").addEventListener("click", () => turnSelected(-15));
   $("#add-vehicle").addEventListener("click", addVehicle);

@@ -1,6 +1,7 @@
 // Map placement view (City Worlds): Leaflet with OpenStreetMap tiles.
 //
-// A click moves the selected vehicle there. Local ENU metres around the City
+// Drag a marker to move that vehicle, or click the map to move the selected
+// vehicle there. Local ENU metres around the City
 // origin use a flat-Earth approximation, accurate to centimetres over a City
 // World extent (a few hundred metres).
 
@@ -9,10 +10,11 @@ const METRES_PER_DEGREE = 111320;
 const MAX_ZOOM = 19;
 
 export class MapView {
-  constructor(container, { onPick, onSelect }) {
+  constructor(container, { onPick, onSelect, onMove }) {
     this.container = container;
     this.onPick = onPick;
     this.onSelect = onSelect;
+    this.onMove = onMove;
     this.map = null;
     this.markers = [];
   }
@@ -63,16 +65,27 @@ export class MapView {
     if (!this.map) return;
     for (const marker of this.markers) marker.remove();
     this.markers = vehicles.map((vehicle, index) => {
-      const marker = L.circleMarker(this.toLatLng(vehicle.east, vehicle.north), {
-        radius: index === selected ? 9 : 6,
-        color: index === selected ? "#ffb300" : "#ffffff",
-        weight: 2,
-        fillColor: { car: "#2e7dd7", drone: "#e08a1e", fpv: "#9b5de5" }[vehicle.kind] || "#888888",
-        fillOpacity: 1,
+      const size = index === selected ? 20 : 14;
+      const color = { car: "#2e7dd7", drone: "#e08a1e", fpv: "#9b5de5" }[vehicle.kind] || "#888888";
+      const border = index === selected ? "#ffb300" : "#ffffff";
+      const marker = L.marker(this.toLatLng(vehicle.east, vehicle.north), {
+        draggable: true,
+        autoPan: true,
+        zIndexOffset: index === selected ? 1000 : 0,
+        icon: L.divIcon({
+          className: "map-vehicle",
+          html: `<span style="background:${color};border-color:${border}"></span>`,
+          iconSize: [size, size],
+        }),
       }).bindTooltip(vehicle.name).addTo(this.map);
       marker.on("click", (event) => {
         L.DomEvent.stopPropagation(event);
         this.onSelect(index);
+      });
+      // Selecting re-renders the markers, which would end the drag; onMove selects on release.
+      marker.on("dragend", () => {
+        const { east, north } = this.toLocal(marker.getLatLng());
+        this.onMove(index, east, north);
       });
       return marker;
     });

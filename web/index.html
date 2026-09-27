@@ -99,11 +99,13 @@
             <div class="row between placement-tools">
               <div id="placement-selected" class="status" role="status"></div>
               <div class="row">
+                <button id="focus-selected" class="secondary" title="選択中の車両に寄る（3D）">選択中にフォーカス</button>
+                <button id="focus-overview" class="secondary" title="World 全体を表示（3D）">全体表示</button>
                 <button id="yaw-left" class="secondary" title="左に 15° 回す">↺ 15°</button>
                 <button id="yaw-right" class="secondary" title="右に 15° 回す">↻ 15°</button>
               </div>
             </div>
-            <p class="hint">3D: 車両（矢印）をドラッグして移動、背景をドラッグして視点を回転。地図（City のみ）: クリックで選択中の車両をその位置へ移動。衝突判定はしません。</p>
+            <p class="hint">3D: 車両（矢印）をドラッグして移動（建物の壁に当てると屋上に乗ります）。背景の左ドラッグで回転、右ドラッグ（または Shift＋ドラッグ・矢印キー）で平行移動、ホイールでズーム、ダブルクリックでその場所にフォーカス。高さは地面（屋上を含む）＋地上高で自動です。地図（City のみ）: 車両をドラッグ、またはクリックで選択中の車両をその位置へ移動。衝突判定はしません。</p>
           </div>
           <div class="row between footer">
             <div id="compose-status" class="status" role="status"></div>
