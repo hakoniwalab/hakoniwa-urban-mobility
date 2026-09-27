@@ -170,17 +170,10 @@ def merge_launchers(
 
 
 def build_car_asset() -> None:
-    subprocess.run([
-        "cmake", "-S", str(ROOT), "-B", str(ROOT / "build"),
-        "-DHAKO_URBAN_ENABLE_MIRROR=ON",
-        "-DHAKO_URBAN_ENABLE_VIEWER=ON",
-        "-DBUILD_TESTING=ON",
-    ], cwd=ROOT, check=True)
-    subprocess.run(
-        ["cmake", "--build", str(ROOT / "build"), "-j4"],
-        cwd=ROOT,
-        check=True,
-    )
+    # Same Release build as the Car route. A multi-config generator (Visual
+    # Studio) otherwise builds Debug, which cannot link the Release
+    # Foundation libraries (RuntimeLibrary / _ITERATOR_DEBUG_LEVEL mismatch).
+    multi_car.build_car_asset(enable_mirror=True)
 
 
 def configure(drone_root: Path) -> int:

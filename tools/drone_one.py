@@ -22,7 +22,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
-DRONE_SHOW_ROOT = WORKSPACE / "hakoniwa-drone-show"
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
 URBAN_DRONE_RECIPE_ID = "urban-drone-one"
@@ -41,18 +40,21 @@ for path in (
     ROOT / "tools",
     BUSINESS_PACK_ROOT / "tools" / "recipe",
     BUSINESS_PACK_ROOT / "tools",
-    DRONE_SHOW_ROOT / "tools" / "recipe",
 ):
     sys.path.insert(0, str(path))
 
 import drone_fleet_single_host as base
-import drone_fleet_mujoco_city as city
+import drone_fleet_city as city
 import urban_lifecycle
 
 
 CONTROL_MODE_FILE = "urban-drone-control.json"
 SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
 DRONE_SERVICE_READINESS_TIMEOUT_SEC = 180
+# One `hako-cmd ls` probe waits this long for the master lock, which the Drone
+# service holds while it loads a City model; the Launcher default of 1 s
+# misses the registration.
+DRONE_SERVICE_READINESS_PROBE_SEC = 10
 
 
 @dataclass(frozen=True)
@@ -263,6 +265,7 @@ def patch_launcher(
         "type": "hako_asset",
         "asset_name": "drone",
         "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+        "command_timeout_sec": DRONE_SERVICE_READINESS_PROBE_SEC,
     }
     mission_asset = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
@@ -330,6 +333,7 @@ def patch_rc_launcher(path: Path, *, paths: object, drone_root: Path) -> Path:
         "type": "hako_asset",
         "asset_name": "drone",
         "timeout_sec": DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+        "command_timeout_sec": DRONE_SERVICE_READINESS_PROBE_SEC,
     }
     controller = next(
         (asset for asset in assets if asset.get("name") == "show-runner"), None
@@ -524,16 +528,31 @@ def urban_launcher_writer(
         )
         patch_eams_city_viewer(paths)
         if recipe.control_mode == "ps4-rc":
-            return patch_rc_launcher(path, paths=paths, drone_root=drone_root)
-        return patch_launcher(
-            path,
-            paths=paths,
-            drone_root=drone_root,
-            mission_path=recipe.mission,
-            mujoco_viewer=mujoco_viewer,
-        )
+            path = patch_rc_launcher(path, paths=paths, drone_root=drone_root)
+        else:
+            path = patch_launcher(
+                path,
+                paths=paths,
+                drone_root=drone_root,
+                mission_path=recipe.mission,
+                mujoco_viewer=mujoco_viewer,
+            )
+        return apply_composition_controls(path, paths)
 
     return write
+
+
+def apply_composition_controls(path: Path, paths: object) -> Path:
+    """Apply the Composition's manifest controls and real-time pacer.
+
+    tools/urban_simulation.py writes the controls file for a Drone
+    Composition ({"processes", "pacer", "drone_services"}; an older file is
+    the bare process list); a recipe configured directly with this tool has
+    none.
+    """
+    import urban_controls
+
+    return urban_controls.apply_controls_file(path, getattr(paths, "recipe_config", None))
 
 
 def _paths(recipe_id: str = URBAN_DRONE_RECIPE_ID):
@@ -888,6 +907,13 @@ def configure(
     runtime_config_dir: Path | None = None,
 ) -> int:
     paths = workspace or _paths()
+    # Composition controls belong to the previous configuration; the caller
+    # that configures from a Composition writes them again afterwards.
+    import urban_controls
+
+    config = getattr(paths, "recipe_config", None)
+    if config is not None:
+        (config / urban_controls.CONTROLS_FILE).unlink(missing_ok=True)
     rc = base.configure(
         recipe.fleet_experiment,
         drone_root,

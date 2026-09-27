@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Urban Studio</title>
+  <link rel="stylesheet" href="studio.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- The same three.js as hakoniwa-threejs-drone. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Urban Studio</h1>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="city">City</button>
+      <button role="tab" data-tab="assets">Assets</button>
+      <button role="tab" data-tab="compose" aria-selected="true">Compose</button>
+      <button role="tab" data-tab="route">Route</button>
+      <button role="tab" data-tab="simulation">Simulation</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-city" class="tab" hidden>
+      <div class="panel">
+        <div class="row between">
+          <h2>City</h2>
+          <div class="row">
+            <button id="city-new">新規作成</button>
+            <button id="city-stop" class="secondary" hidden>City World Web UI を停止</button>
+          </div>
+        </div>
+        <p class="hint">「新規作成」で City World Web UI（PLATEAU の範囲選択と生成）を起動し、別タブで開きます。生成が終わった City は自動で登録され、Compose の World に並びます。登録時に高さ計算用のモデルを一度だけコンパイルします（大きな City は数分）。</p>
+        <div id="city-web-status" class="status" role="status"></div>
+        <pre id="city-web-log" class="log log-small" hidden></pre>
+      </div>
+      <div class="panel">
+        <h2>City World のジョブ</h2>
+        <table class="grid" id="city-job-table"><thead><tr><th>ジョブ</th><th>状態</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>登録済みの City</h2>
+        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Asset</th><th>状態</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <div class="row between">
+          <h2>キャッシュ</h2>
+          <div class="row">
+            <button id="cache-refresh" class="secondary">再計算</button>
+            <button id="cache-prune">Urban キャッシュを整理</button>
+          </div>
+        </div>
+        <p class="hint">「Urban キャッシュを整理」は、別の MuJoCo 版で置き換え済みのもの、登録されていない・削除された City のもの、再生成前の World の高さモデルを削除します。登録済み City の World は削除しません。City World の PLATEAU ダウンロードは Business Pack のコマンドで整理します。</p>
+        <table class="grid" id="cache-table"><thead><tr><th>対象</th><th>サイズ</th><th>削除可能</th></tr></thead><tbody></tbody></table>
+        <div id="cache-status" class="status" role="status"></div>
+        <details id="cache-details" hidden><summary>高さモデルの内訳</summary><table class="grid" id="cache-entry-table"><tbody></tbody></table></details>
+      </div>
+    </section>
+
+    <section id="tab-assets" class="tab" hidden>
+      <div class="panel">
+        <h2>World</h2>
+        <table class="grid" id="world-table"><thead><tr><th>ID</th><th>種類</th><th>名前</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>車両</h2>
+        <table class="grid" id="vehicle-table"><thead><tr><th>ID</th><th>カテゴリ</th><th>名前</th><th>シミュレータ</th><th>制御</th><th>地上高 (m)</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="tab-compose" class="tab">
+      <div class="layout">
+        <aside class="panel list-panel">
+          <div class="row between">
+            <h2>Composition</h2>
+            <button id="new-composition" class="secondary">新規</button>
+          </div>
+          <ul id="composition-list" class="list"></ul>
+        </aside>
+        <div class="panel editor">
+          <div class="row">
+            <label class="field">ID<input id="composition-id" placeholder="my-composition" autocomplete="off"></label>
+            <label class="field grow">World<select id="world-select"></select></label>
+          </div>
+          <div class="row between">
+            <h3>車両</h3>
+            <div class="row">
+              <select id="add-asset"></select>
+              <button id="add-vehicle" class="secondary">追加</button>
+            </div>
+          </div>
+          <div id="vehicles"></div>
+          <p class="hint">位置は World 原点からの東 (east) / 北 (north) [m] と向き (yaw, 東=0°, 反時計回り) です。高さは地面（屋上を含む）＋車両の地上高で自動計算されます。</p>
+          <div class="placement">
+            <div class="row between">
+              <h3>配置</h3>
+              <div class="row" role="tablist" id="placement-views">
+                <button class="secondary" data-view="three" aria-selected="true">3D</button>
+                <button class="secondary" data-view="map">地図</button>
+              </div>
+            </div>
+            <div id="placement-three" class="placement-view"></div>
+            <div id="placement-map" class="placement-view" hidden></div>
+            <div class="row between placement-tools">
+              <div id="placement-selected" class="status" role="status"></div>
+              <div class="row">
+                <button id="focus-selected" class="secondary" title="選択中の車両に寄る（3D）">選択中にフォーカス</button>
+                <button id="focus-overview" class="secondary" title="World 全体を表示（3D）">全体表示</button>
+                <button id="yaw-left" class="secondary" title="左に 15° 回す">↺ 15°</button>
+                <button id="yaw-right" class="secondary" title="右に 15° 回す">↻ 15°</button>
+              </div>
+            </div>
+            <p class="hint">3D: 車両（矢印）をドラッグして移動（建物の壁に当てると屋上に乗ります）。選択中の車両の先にある黄色い玉をドラッグすると向きが変わります。背景の左ドラッグで回転、右ドラッグ（または Shift＋ドラッグ・矢印キー）で平行移動、ホイールでズーム、ダブルクリックでその場所にフォーカス。高さは地面（屋上を含む）＋地上高で自動です。地図（City のみ）: 車両をドラッグ、またはクリックで選択中の車両をその位置へ移動。衝突判定はしません。</p>
+          </div>
+          <div class="row between footer">
+            <div id="compose-status" class="status" role="status"></div>
+            <div class="row buttons">
+              <button id="save-composition">保存して検証</button>
+              <button id="to-simulation" class="secondary" title="Simulation タブへ（実行するのは保存済みの内容）">Simulation へ</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-route" class="tab" hidden>
+      <div class="layout">
+        <aside class="panel list-panel">
+          <div class="row between">
+            <h2>ルート</h2>
+            <button id="new-route" class="secondary">新規</button>
+          </div>
+          <ul id="route-list" class="list"></ul>
+        </aside>
+        <div class="panel route-editor">
+          <div class="row">
+            <label class="field">ID<input id="route-id" placeholder="my-route" autocomplete="off"></label>
+            <label class="field grow">名前<input id="route-name" placeholder="ホテル送迎ループ" autocomplete="off"></label>
+            <label class="field grow">World<select id="route-world"></select></label>
+          </div>
+          <div class="row">
+            <label class="field">速度 (m/s)<input id="route-speed" type="number" step="0.1" min="0.1"></label>
+            <label class="field">周回数<input id="route-loops" type="number" step="1" min="1"></label>
+            <label class="field">繰り返し続ける<input id="route-forever" type="checkbox"></label>
+            <label class="field">開始待ち (s)<input id="route-delay" type="number" step="0.5" min="0"></label>
+          </div>
+          <div class="row between">
+            <h3>走る車（先頭からの間隔）</h3>
+            <button id="route-add-vehicle" class="secondary">車を追加</button>
+          </div>
+          <p class="hint">どの車がこのルートを走るかは、Composition の車ごとに選びます。ここでは、同じルートを複数台で走るときの間隔（先頭から何 m 後ろか、負の値）を決めます。ここに名前がない車がこのルートを選んだ場合は、6 m 間隔で後ろにつきます。</p>
+          <div id="route-vehicles" class="row params"></div>
+          <label class="field inline"><input id="route-show-buildings" type="checkbox" checked> 建物の当たり判定を表示（赤。車はこの中を通れません）</label>
+          <div id="route-map" class="placement-view"></div>
+          <p id="route-map-hint" class="hint">地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。</p>
+          <div class="row between">
+            <h3>点</h3>
+            <button id="route-add-point" class="secondary">点を追加</button>
+          </div>
+          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th></th></tr></thead><tbody></tbody></table>
+          <div class="row between footer">
+            <div id="route-status" class="status" role="status"></div>
+            <button id="route-save">保存して検証</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-simulation" class="tab" hidden>
+      <div class="panel">
+        <div class="row">
+          <label class="field grow">Composition<select id="run-composition"></select></label>
+          <button id="run-open-compose" class="secondary" title="この Composition を Compose で開く">Compose で開く</button>
+        </div>
+        <div id="run-unsaved" class="notice" role="status" hidden>
+          <span id="run-unsaved-text"></span>
+          <button id="run-unsaved-compose" class="secondary">Compose に戻って保存</button>
+        </div>
+        <div id="run-plan" class="plan"></div>
+        <div class="row buttons">
+          <button data-command="configure">Configure</button>
+          <button data-command="start">Start</button>
+          <button data-command="stop" class="secondary">Stop</button>
+          <button data-command="status" class="secondary">Status</button>
+          <a id="viewer-link" class="button-link" target="_blank" rel="noopener" hidden>Viewer を開く</a>
+          <a id="viewer-collider-link" class="button-link" target="_blank" rel="noopener" hidden title="建物・地面の当たり判定を重ねて表示">Viewer（当たり判定）を開く</a>
+        </div>
+        <div class="progress-block">
+          <div class="progress"><div id="progress-bar"></div></div>
+          <div id="progress-text" class="status" role="status"></div>
+          <div id="rtf" class="rtf" role="status" title="実時間比（シミュレーション時間 / 実時間）と余裕（ペーサーが待機していた割合。0% に近いほど限界）。ペーサーの出力から取得します。"></div>
+        </div>
+        <pre id="log" class="log" aria-live="polite"></pre>
+      </div>
+      <div class="panel viewer-panel" id="viewer-panel" hidden>
+        <iframe id="viewer-frame" title="Viewer"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="studio.js"></script>
+</body>
+</html>

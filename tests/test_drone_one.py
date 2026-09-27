@@ -651,6 +651,7 @@ viewer:
                 "type": "hako_asset",
                 "asset_name": "drone",
                 "timeout_sec": drone_one.DRONE_SERVICE_READINESS_TIMEOUT_SEC,
+                "command_timeout_sec": drone_one.DRONE_SERVICE_READINESS_PROBE_SEC,
             })
 
     def test_city_viewer_uses_eams_hexa_and_all_six_motor_channels(self):

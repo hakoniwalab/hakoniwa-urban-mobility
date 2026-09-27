@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
+import urban_simulation  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
 
@@ -298,10 +299,30 @@ def materialize_template(
     return output_path
 
 
+def managed_target(context: RecipeContext):
+    import urban_simulation
+
+    return urban_simulation.ManagedTarget(
+        managed_recipe=context.path,
+        recipe_id=context.recipe_id,
+        use_case=context.use_case,
+        work=root(context),
+    )
+
+
 def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     import multi_car
+    import urban_simulation
 
-    config_path = materialize_template(context, args)
+    selected = getattr(args, "composition", None)
+    if selected is not None:
+        if getattr(args, "city_receipt", None) is not None:
+            raise UrbanMobilityError(
+                "--city-receipt conflicts with --composition; the Composition world selects the City"
+            )
+        config_path = urban_simulation.materialize(managed_target(context), selected)
+    else:
+        config_path = materialize_template(context, args)
     if not getattr(args, "reuse_built_asset", False):
         multi_car.build_car_asset()
     elif not (ROOT / "build/bin/urban-car-hakoniwa-asset.exe").is_file():
@@ -311,6 +332,8 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     resolved = multi_car.resolve_config(config_path)
     if multi_car.configure(resolved) != 0:
         return 1
+    if selected is not None:
+        urban_simulation.apply_managed_runtime(managed_target(context), selected)
 
     viewer_config = root(context) / "config/threejs/viewer-config.json"
     url = multi_car.map_viewer_url(resolved, viewer_config)
@@ -334,10 +357,18 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def configure_integrated(context: RecipeContext) -> int:
+def configure_integrated(context: RecipeContext, args: argparse.Namespace | None = None) -> int:
     import urban_composer
+    import urban_simulation
 
-    return urban_composer.configure(composition_path(context))
+    selected = getattr(args, "composition", None)
+    if selected is None:
+        return urban_composer.configure(composition_path(context))
+    target = managed_target(context)
+    if urban_composer.configure(urban_simulation.materialize(target, selected)) != 0:
+        return 1
+    urban_simulation.apply_managed_runtime(target, selected)
+    return 0
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
@@ -347,14 +378,20 @@ def configure(context: RecipeContext, args: argparse.Namespace) -> int:
     if context.use_case == "car-rc":
         return configure_car_rc(context, args)
     if context.use_case == "drone-car-distributed":
-        return configure_integrated(context)
+        return configure_integrated(context, args)
     raise UrbanMobilityError(
         f"unsupported Urban use case for configure: {context.use_case}"
     )
 
 
-def prepare_start(context: RecipeContext) -> None:
+def prepare_start(context: RecipeContext, composition_path: Path | None = None) -> None:
+    import urban_simulation
+
+    target = managed_target(context)
     if context.use_case == "car-rc":
+        if composition_path is not None:
+            urban_simulation.refresh_car_poses(urban_simulation.refresh_placement(target, composition_path))
+            urban_simulation.apply_managed_runtime(target, composition_path)
         return
     if context.use_case != "drone-car-distributed":
         raise UrbanMobilityError(
@@ -362,6 +399,12 @@ def prepare_start(context: RecipeContext) -> None:
         )
 
     import drone_one
+
+    car_config = (
+        urban_simulation.refresh_placement(target, composition_path)
+        if composition_path is not None
+        else None
+    )
 
     paths = drone_one._paths(context.recipe_id)
     configured = drone_one.read_selected_recipe(paths)
@@ -372,14 +415,17 @@ def prepare_start(context: RecipeContext) -> None:
         runtime_recipe,
         runtime_config_dir=root(context) / "config/drone/rc",
     )
+    if car_config is not None:
+        urban_simulation.refresh_car_poses(car_config)
+        urban_simulation.apply_managed_runtime(target, composition_path)
 
 
-def launcher_command(operation: str, context: RecipeContext) -> int:
+def launcher_command(operation: str, context: RecipeContext, args: argparse.Namespace | None = None) -> int:
     if operation == "start":
         portable = os.environ.get("HAKONIWA_PORTABLE_WORKSPACE") == "1"
         if not portable and recipe_command("doctor", context) != 0:
             return 1
-        prepare_start(context)
+        prepare_start(context, getattr(args, "composition", None))
         lifecycle = spec(context)
         if not lifecycle.launcher.is_file():
             raise UrbanMobilityError(
@@ -507,8 +553,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--recipe",
         type=Path,
-        required=True,
-        help="managed Urban Mobility Recipe",
+        help="managed Urban Mobility Recipe (derived from --composition when omitted)",
+    )
+    result.add_argument(
+        "--composition",
+        type=Path,
+        help="Urban Composition (docs/asset-contract.md) used by configure",
     )
     result.add_argument(
         "--city-receipt",
@@ -541,6 +591,11 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.recipe is None:
+        if args.composition is None:
+            raise UrbanMobilityError("--recipe or --composition is required")
+        # A Composition picks its route and managed Recipe (tools/urban_simulation.py).
+        return urban_simulation.run(args.command, args.composition)
     context = load_context(args.recipe)
     if args.command == "prepare-native":
         return prepare_native(context)
@@ -555,7 +610,7 @@ def main() -> int:
         return check_rc(context)
     if args.command == "open-viewer":
         return open_viewer(context)
-    return launcher_command(args.command, context)
+    return launcher_command(args.command, context, args)
 
 
 if __name__ == "__main__":
@@ -564,6 +619,7 @@ if __name__ == "__main__":
     except (
         OSError,
         UrbanMobilityError,
+        urban_simulation.SimulationError,
         urban_lifecycle.LifecycleError,
         subprocess.CalledProcessError,
     ) as exc:

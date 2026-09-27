@@ -20,6 +20,74 @@ contract is tracked in
 The target ownership and lifecycle contract is defined in
 [`docs/foundation-contract.md`](docs/foundation-contract.md).
 
+## Compositions and Urban Studio
+
+A Composition selects a World (a PLATEAU City or a plain World), places
+vehicle Assets (Golf Cart, EAMS Hexa, FPV Drone), and picks each vehicle's
+control (`rc` or `api`). The contract is
+[`docs/asset-contract.md`](docs/asset-contract.md); examples are in
+`recipes/compositions/`. One entrypoint runs every combination:
+
+```bash
+python tools/urban_mobility.py plan --composition recipes/compositions/plain-hexa-rc.yaml
+python tools/urban_mobility.py configure --composition recipes/compositions/plain-hexa-rc.yaml
+python tools/urban_mobility.py start --composition recipes/compositions/plain-hexa-rc.yaml
+```
+
+Urban Studio is the browser UI over the same API (Assets, Compose,
+Simulation). Start it from the Business Pack Workspace shell, so the
+simulations it runs inherit the Workspace environment:
+
+```bash
+python tools/urban_studio.py --open-browser
+```
+
+It serves `http://127.0.0.1:8090/` and saves Compositions under
+`hakoniwa-business-pack/work/urban/compositions/`.
+
+- **City**: "新規作成" starts the Business Pack City World Web UI
+  (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it
+  in a new tab. Each finished City World job is registered automatically,
+  including the one-time height model compile. Without the Studio, register
+  a City with
+  `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+  Deleting a job in the City World Web UI unregisters its City on the next
+  City page refresh; `python tools/urban_assets.py unregister-city --id <id>`
+  removes a registration by hand. The City page's "キャッシュ" panel shows
+  the cache sizes, and "Urban キャッシュを整理" runs
+  `python tools/urban_assets.py prune-cache --apply` (see Cache cleanup).
+- **Route**: draw a Car route (a closed loop of waypoints) on the City World
+  map: click to add points, drag to move them, and set dwell, speed, loops, and
+  which Cars follow it. Routes are saved under
+  `hakoniwa-business-pack/work/urban/scenarios/`. In Compose, an API-controlled
+  Car picks its route from a selector.
+- **Compose**: place vehicles by dragging them in the 3D view, or by clicking
+  the map for a City World. The spawn height is the ground (rooftops and
+  obstacles included) plus the vehicle's clearance.
+
+## Cache cleanup
+
+Spawn heights use compiled World models cached under
+`hakoniwa-business-pack/work/urban/cache/world-height/` (one entry per World
+and MuJoCo version). Run from the Workspace shell, so the MuJoCo version is
+the one the simulations use:
+
+```bash
+python tools/urban_assets.py prune-cache            # dry run: what would be removed and why
+python tools/urban_assets.py prune-cache --apply    # delete
+```
+
+It removes entries of deleted or unregistered Cities, of Worlds regenerated
+since, abandoned compiles, and entries of another MuJoCo version once the
+current version has its own entry for that World. `--other-mujoco-versions`
+removes the latter regardless; `--plain-world` also clears the plain-world
+MJCF cache (regenerated on demand); `--json` prints the report as JSON.
+A registered City's World and the City World jobs are never touched.
+
+The large PLATEAU downloads (gigabytes) belong to the Business Pack City World
+Web UI and are cleaned there:
+`python tools/recipe/city_world_web_ui.py cache-clean --job-sources --source-cache [--apply]`.
+
 ## Standard managed Recipe entrypoint
 
 `tools/urban_mobility.py` is the user-facing lifecycle entrypoint. The
@@ -235,6 +303,7 @@ interest and lightweight ground, road, building, curb, and bridge colliders.
 | Repository | Owns |
 | --- | --- |
 | [`hakoniwa-drone-show`](https://github.com/hakoniwalab/hakoniwa-drone-show) | Virtual Drone Show Fleet, show plans, Fleet API integration, Drone presentation state |
+| `hakoniwa-urban-mobility` (this repository) | Compositions and Urban Studio; placing Drone Core drones in a City World (`tools/drone_fleet_city.py`: fleet MJCF, MJBs, spawn layout, fleet config), without importing drone-show tools |
 | [`hakoniwa-drone-core`](https://github.com/toppers/hakoniwa-drone-core) | Public v4.1.1 native Drone physics, flight control, RC client, and runtime configuration |
 | [`hakoniwa-robot-runtime`](https://github.com/hakoniwalab/hakoniwa-robot-runtime) | Generic actuator runtime, Ackermann controller, and JointState / MultiDOF state contracts |
 | [`hakoniwa-mujoco-robots`](https://github.com/hakoniwalab/hakoniwa-mujoco-robots) | MuJoCo physics and Viewer backend, mirror bodies, and local contact-to-impulse support |

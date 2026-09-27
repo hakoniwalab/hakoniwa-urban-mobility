@@ -1,0 +1,13 @@
+# Plain World + one Drone (docs/asset-contract.md): the EAMS Hexa on the
+# default plain ground, flown with a PS4/PS5 controller. The plain World runs
+# as a generated City World job (tools/plain_world.py) on the City Drone route.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/plain-hexa-rc.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/plain-hexa-rc.yaml
+schema: hakoniwa.composition/v1
+id: plain-hexa-rc
+world: plain-ground
+vehicles:
+  - name: Drone-1
+    asset: eams-hexa
+    control: rc
+    spawn: {east_m: 0.0, north_m: 0.0, yaw_deg: 0.0}

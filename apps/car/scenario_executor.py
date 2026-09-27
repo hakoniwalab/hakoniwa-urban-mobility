@@ -417,6 +417,35 @@ def route_command(
     return speed, steering
 
 
+# Simulation seconds between per-vehicle status lines.
+STATUS_INTERVAL_SEC = 5.0
+
+
+def route_lag_m(geometry: RouteGeometry, cursor: "RouteCursor", vehicle: "RouteVehicle", pose: VehiclePose) -> float:
+    """How far the vehicle is behind its target on the route (negative: ahead)."""
+    target_s = cursor.distance_m + vehicle.offset_m
+    return geometry.signed_error(target_s, geometry.project(pose.east_m, pose.north_m))
+
+
+def max_route_lead_m(control: RouteControl) -> float:
+    """How far the target may run ahead of a vehicle before it waits for it.
+
+    The target advances with simulation time. A vehicle that cannot keep the
+    scenario speed (a slope, a sharp turn, a contact) would otherwise fall
+    behind without bound until the lag wraps past half the loop, reads as
+    being far ahead, and the vehicle is commanded to stop for good.
+    """
+    return max(6.0, 3.0 * control.lookahead_m)
+
+
+def hold_for_slowest(lags: dict[str, float], max_lead: float) -> str | None:
+    """The vehicle the target must wait for, or None when all keep up."""
+    if not lags:
+        return None
+    slowest = max(lags, key=lags.get)
+    return slowest if lags[slowest] > max_lead else None
+
+
 def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
     robots = tuple(vehicle.name for vehicle in scenario.vehicles)
     geometry = RouteGeometry(scenario.points)
@@ -435,6 +464,10 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
         next_tick = time.monotonic()
         period = 1.0 / scenario.rate_hz
         previous_lap = 0
+        max_lead = max_route_lead_m(scenario.control)
+        waiting_for: str | None = None
+        next_status = last_simulation_time
+        commands: dict[str, float] = {}
         try:
             while not cursor.finished:
                 simulation_time = fleet.simulation_time_sec()
@@ -444,11 +477,6 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
                     )
                 delta_sec = max(0.0, simulation_time - last_simulation_time)
                 last_simulation_time = simulation_time
-                stop_name = cursor.advance(delta_sec)
-                lap = int(cursor.distance_m // geometry.length)
-                if lap != previous_lap:
-                    previous_lap = lap
-                    print(f"[{simulation_time:9.3f}] convoy lap {lap + 1}")
 
                 poses = fleet.vehicle_poses()
                 missing = [robot for robot in robots if robot not in poses]
@@ -456,6 +484,41 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
                     raise ScenarioError(
                         "vehicle state PDU is missing: " + ", ".join(missing)
                     )
+                # Hold the target while a vehicle is too far behind it.
+                lags = {
+                    vehicle.name: route_lag_m(geometry, cursor, vehicle, poses[vehicle.name])
+                    for vehicle in scenario.vehicles
+                }
+                slowest = hold_for_slowest(lags, max_lead)
+                if slowest is not None:
+                    if waiting_for != slowest:
+                        print(
+                            f"[{simulation_time:9.3f}] waiting for {slowest}: "
+                            f"{lags[slowest]:.1f} m behind its target",
+                            flush=True,
+                        )
+                    delta_sec = 0.0
+                elif waiting_for is not None:
+                    print(f"[{simulation_time:9.3f}] {waiting_for} caught up; resuming", flush=True)
+                waiting_for = slowest
+                stop_name = cursor.advance(delta_sec)
+                lap = int(cursor.distance_m // geometry.length)
+                if lap != previous_lap:
+                    previous_lap = lap
+                    print(f"[{simulation_time:9.3f}] convoy lap {lap + 1}", flush=True)
+                if simulation_time >= next_status:
+                    next_status = simulation_time + STATUS_INTERVAL_SEC
+                    for vehicle in scenario.vehicles:
+                        pose = poses[vehicle.name]
+                        actual_s = geometry.project(pose.east_m, pose.north_m)
+                        print(
+                            f"[{simulation_time:9.3f}] status {vehicle.name} route={scenario.name} "
+                            f"lap={lap + 1} s={actual_s:.1f}/{geometry.length:.1f}m "
+                            f"pos=({pose.east_m:.2f}E,{pose.north_m:.2f}N,{pose.up_m:.2f}U) "
+                            f"yaw={math.degrees(pose.yaw_rad):.0f}deg "
+                            f"cmd={commands.get(vehicle.name, 0.0):.2f}m/s lag={lags[vehicle.name]:.1f}m",
+                            flush=True,
+                        )
                 if stop_name is not None:
                     positions = ", ".join(
                         f"{robot}=({poses[robot].east_m:.2f}E,"
@@ -470,6 +533,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
                     speed, steering = route_command(
                         geometry, cursor, vehicle, poses[vehicle.name], scenario.control
                     )
+                    commands[vehicle.name] = speed
                     fleet.send(vehicle.name, speed, steering)
 
                 next_tick += period

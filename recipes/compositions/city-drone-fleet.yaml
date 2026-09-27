@@ -1,0 +1,15 @@
+# City + a Drone fleet (docs/asset-contract.md 5.8): thirty Drone Core quads
+# laid out around the launch area on the Shizuoka City; they take off
+# together and fly the HAKONIWA formation above the City.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/city-drone-fleet.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/city-drone-fleet.yaml
+schema: hakoniwa.composition/v1
+id: city-drone-fleet
+world: shizuoka-22203-lat35.099-lon138.859
+fleets:
+  - name: Fleet
+    asset: drone-core-quad
+    control: api
+    count: 30
+    spacing_m: 1.5
+    area: {east_m: 10.0, north_m: 0.0}

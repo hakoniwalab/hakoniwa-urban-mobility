@@ -1,0 +1,786 @@
+# Urban Mobility Asset / Composition contract
+
+## 1. Status and scope
+
+This document fixes the Asset and Composition contract proposed in
+[issue #5](https://github.com/hakoniwalab/hakoniwa-urban-mobility/issues/5)
+(integrated City / Assets / Compose / Simulation browser pack). It is the
+target contract; the existing Recipes in `recipes/experiments/` and
+`recipes/usecases/` do not follow it yet. Section 7 maps them onto it.
+
+The v1 goal is to re-integrate what already runs, as combinations of Assets:
+
+```text
+World + Car
+World + Drone
+World + Car + Drone
+World + Drone (the finished FPV Drone as one more Drone Asset)
+
+World = a PLATEAU City, or a plain ground with optional obstacles (section 6)
+```
+
+The runtime architecture does not change:
+
+- Car and Drone are separate simulators (separate processes, separate
+  physics). A Car-only or Drone-only Composition runs that simulator alone.
+- A Car + Drone Composition starts both simulators; Hakoniwa owns time
+  synchronization and PDU communication between them.
+- The browser view is the existing Three.js viewer. The browser backend only
+  drives the Recipe lifecycle (`configure`, `start`, `stop`, `status`).
+
+The central user loop is place, simulate, stop, and place again (section 5.5).
+
+## 2. Two layers
+
+| Layer | Answers | Owned by | Changes when |
+|---|---|---|---|
+| Asset manifest | What the Asset is and what it can do | The Asset's source repository | The Asset itself changes |
+| Composition | What the user selected for one simulation | The user (browser or CLI) | The user edits the scenario |
+
+A Composition references Assets by `id`. It never copies an Asset's model,
+controller, or PDU definitions; the builder resolves them from the manifest.
+
+Browser and CLI produce the same Composition file and the same Recipe
+workspace artifacts (issue #5 principle 4).
+
+### 2.1 Standard managed Recipe
+
+The current managed Recipe (`recipes/usecases/urban-car-rc.yaml`) mixes two
+concerns: preparing the environment (dependencies, Foundation, Python
+requirements) and selecting what to simulate (a tracked Car composition
+template filled by `--city-receipt`). The contract separates them:
+
+```text
+Standard Urban managed Recipe (one, Business Pack contract)
+  = environment: dependencies, Foundation, requirements
+      dependencies are derived from the selected Assets' source.repository
+  input: --composition <Composition file>
+       | configure
+Builder: reads the Composition and dispatches by Asset simulator
+  |- Car builder    (ackermann-mujoco)
+  |- Drone builder  (drone-core; the FPV Drone included)
+       |
+Launcher config, Three.js config, Recipe workspace
+```
+
+- The Composition is the only user-facing Recipe input. One entrypoint serves
+  every combination:
+  `tools/urban_mobility.py plan|configure|start|status|open-viewer|stop --composition <file>`.
+  It delegates to `tools/urban_simulation.py`, the API the browser backend
+  calls: `plan(composition)` validates the Composition and returns its route
+  (`car`, `drone`, `integrated`, `fpv`), managed Recipe, and workspace
+  (`Plan.to_json()` for the browser; the `plan` command prints it), and
+  `run(command, composition)` executes a lifecycle command on that route.
+  The Car and integrated routes run the managed Recipe lifecycle in
+  `tools/urban_mobility.py --recipe <managed> --composition <file>`.
+- A Car-only Composition materializes only the Car dependencies; the Recipe
+  never requires the union of all Assets.
+- The Recipes in `recipes/experiments/` retire once their Composition
+  reproduces them (section 7.1).
+
+## 3. Asset manifest
+
+### 3.1 Placement
+
+The target placement is the Asset's source repository. For v1:
+
+- `hakoniwa-fpv-drone` owns its manifests (`assets/<id>.asset.yaml`): the
+  Master3X FPV Drone and the `fpv-training-course` plain World.
+- All other manifests live in this repository under `assets/`, and point into
+  their source repositories (`hakoniwa-mbody-registry`, `hakoniwa-drone-core`,
+  ...). They move to their source repositories later without changing the
+  schema.
+- User-generated City Assets live in the Business Pack work directory,
+  `work/urban/assets/cities/<id>.asset.yaml`, written by
+  `tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+  The id defaults to the City World job name.
+  `tools/urban_assets.py unregister-city --id <id>` removes a registration
+  (the City World job is kept). `tools/urban_assets.py prune-cities`
+  unregisters Cities whose City World Web UI job was deleted; Urban Studio
+  does this on every City page refresh. Only Cities registered from a job
+  under `work/recipes/city-world-web-ui/runtime/jobs/` are pruned, so a City
+  registered from another location is never removed silently. A City whose
+  receipt is missing stays in the catalog but is marked unavailable and cannot
+  be selected as a World.
+- `tools/urban_assets.py prune-cache` removes derived caches that no City or
+  World uses any more (section 5.4); it is a dry run unless `--apply`.
+
+The catalog reads this repository's `assets/` (recursively), the top level of
+every workspace repository's `assets/` (`<repo>/assets/*.asset.yaml`; those
+directories also hold models, so they are not searched recursively), and the
+user City Assets. `tools/urban_assets.py list` prints it.
+
+### 3.2 Fields (vehicle)
+
+```yaml
+schema: hakoniwa.asset/v1
+id: <unique id>                 # referenced by Compositions
+kind: vehicle
+category: car | drone
+version: <semver>
+title: <display name>
+source:
+  repository: <repository name>
+  generator: <command that materializes the model, optional>
+simulator: ackermann-mujoco | drone-core
+model:
+  physics: <MJCF path or generated-model reference>
+  visual: <Three.js view model / GLB manifest>
+spawn:
+  ground_clearance_m: <base-frame height above the ground at spawn>
+viewer:
+  front_camera: <optional vehicle-mounted Three.js camera>
+pdu:
+  definition: <PDU definition path>
+controls:
+  rc: <control program, section 4>
+  api: <control program, section 4>
+```
+
+`spawn.ground_clearance_m` is the only height input; see section 5.4.
+
+Paths are relative to the manifest file unless they start with a repository
+name placeholder such as `${repo:hakoniwa-drone-core}`.
+
+An Asset may declare only one of `rc` / `api`. The browser offers only the
+declared controls.
+
+## 4. Controls: `rc` and `api`
+
+Users choose one control per vehicle: `rc` (a game controller operates it) or
+`api` (a program operates it remotely). The internal names used by the current
+tools remain as implementation details:
+
+| Category | `rc` today | `api` today |
+|---|---|---|
+| Car | `control_mode: ps5` (`apps/car/ps5_ackermann_sender.py`) | `control_mode: external_python` (`apps/car/scenario_executor.py`) |
+| Drone | `control.mode: ps4-rc` (Drone Core `drone_api/rc/rc-custom.py`) | `control.mode: fleet-rpc` (`apps/drone/city_fleet_mission.py`) |
+
+### 4.1 A control is a program with arguments
+
+Car and Drone cannot share one control program, so each control declares the
+program the Launcher starts and its argument template:
+
+```yaml
+controls:
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
+    scope: composition           # vehicle | composition (section 4.3)
+    args: [ "${param.scenario}", "--pdu-def", "${runtime.pdu_def}" ]
+    params:
+      scenario: { type: path, required: true, kinds: [car-route-scenario] }
+```
+
+Argument templates use two placeholder namespaces:
+
+| Placeholder | Filled by | Examples |
+|---|---|---|
+| `${runtime.<name>}` | The builder at configure time; never written by the user | `pdu_def`, `service_config`, `city_marker`, `summary_json`, `drone_root` |
+| `${param.<name>}` | The Composition (user input), validated against `params` | `scenario`, `mission`, `max_speed` |
+| `${vehicle.name}` | The vehicle instance name in the Composition | `Car-1`, `Drone-1` |
+| `${vehicle.index}` | The vehicle's 0-based index among the vehicles of its simulator | `0` |
+| `${repo:<name>}` | A workspace repository; an argument starting with it is normalized as a path | `${repo:hakoniwa-drone-core}/drone_api` |
+
+`${vehicle.*}` is not available to `composition`-scoped controls. An
+unknown or unavailable placeholder is an error naming it.
+
+Param values are typed by the manifest: `path` resolves against the
+Composition file, `number` is written as a decimal, and a missing optional
+param takes its `default`.
+
+A control may set `cwd` (same placeholders). The manifest's `program`,
+`args`, and `cwd` are the defaults. A Composition may replace `program` and
+`args` (section 5.2) to run a user program; the process then runs in the
+Composition directory, and `${runtime.*}` placeholders remain available, so
+user programs receive the same generated paths.
+
+`tools/urban_controls.py` expands the controls into Launcher processes named
+`control-<vehicle>-<control>` (`control-<asset>-<control>` for a
+`composition` scope). Each depends on its simulator's service asset and
+starts after the simulation starts.
+
+### 4.2 Program types
+
+`program` is a Python file run by the Foundation Python unless `runner` says
+otherwise:
+
+```yaml
+runner: python             # python (default) | executable
+interpreter_args: ["-u"]   # python only: arguments before the program
+```
+
+Python control programs must not rely on the current directory or the script
+directory being on `sys.path`: the Windows portable package runs an embedded
+Python whose `._pth` file excludes both.
+
+### 4.3 Scope
+
+- `vehicle`: one program instance per vehicle (every `rc` control; Drone
+  `api`).
+- `composition`: one program instance drives all vehicles of that Asset that
+  selected this control with the same arguments; vehicles with different
+  arguments get another instance (`control-<asset>-<control>-2`, ...). The Car
+  route scenario executor is this type: one executor per route.
+
+A Car's route selection (`params.scenario`) is authoritative. A route's
+`vehicles` list only provides offsets: when a route is selected by a different
+set of Cars than it names, the builder writes a derived copy under
+`work/urban/cache/routes/` naming exactly those Cars (keeping their offsets,
+adding unnamed Cars 6 m behind, the leading Car at offset 0), and the Cars use
+it. A Car on a route starts at the route start set back by its offset, facing
+along the route; its placed spawn is not used. Route files are never modified.
+
+## 5. Composition
+
+### 5.1 Fields
+
+```yaml
+schema: hakoniwa.composition/v1
+id: <composition id, becomes the Recipe id>
+world: <World Asset id>                 # city or plain, section 6
+vehicles:
+  - name: <instance name, unique>
+    asset: <vehicle Asset id>
+    control: rc | api
+    params: { <param>: <value> }          # optional, section 4.1
+    spawn: { east_m, north_m, yaw_deg }   # section 5.4
+interactions: []                          # optional, section 5.3
+viewer: { http_port, web_bridge_port }    # optional
+```
+
+The user places every vehicle explicitly; in the browser this is drag and
+drop onto the World (section 5.5). The Composition therefore always lists each vehicle
+instance, for Cars and Drones alike. Nothing generates vehicles implicitly:
+
+- A Car route scenario (`api` param `scenario`) only drives vehicles. Every
+  vehicle name the scenario references must be a `vehicles[]` entry that
+  selected that scenario; the builder rejects unknown or missing names.
+- A Drone launch point is the Drone's `spawn`. There is no automatic
+  launch-point search.
+
+### 5.2 Replacing a control program
+
+```yaml
+  - name: Drone-1
+    asset: eams-hexa
+    control: api
+    program: ./my_patrol.py
+    args: [ "--service-config", "${runtime.service_config}", "--route", "./patrol.json" ]
+```
+
+`program` and `args` replace the manifest defaults together. Relative paths
+resolve against the Composition file.
+
+### 5.3 Derived runtime
+
+The builder derives the runtime from the Composition; the user does not list
+it:
+
+- Simulators to start: the set of `simulator` values of the selected vehicle
+  Assets. One simulator means a standalone run; two mean both start and
+  Hakoniwa synchronizes them.
+- Control processes: one per `vehicle`-scoped control instance, one per
+  distinct `composition`-scoped program.
+
+Cross-simulator interactions (the current `drone_mirrors`: Drone mirror body
+and contact impulse in the Car world) depend on the pair of Assets, not on one
+Asset. They are optional Composition entries:
+
+```yaml
+interactions:
+  - type: drone-mirror
+    drone: Drone-1
+    restitution_coefficient: 0.3
+```
+
+High-precision inter-Asset collision is not required (issue #5 non-goal).
+
+### 5.4 Spawn height
+
+The user gives only `east_m`, `north_m` (ENU, relative to the World origin)
+and `yaw_deg`. The builder computes the height for every category:
+
+```text
+spawn up = ground height at (east_m, north_m) + Asset spawn.ground_clearance_m
+```
+
+Ground height is the top of the compiled World collision geometry at that
+point, found by a downward MuJoCo ray: terrain and buildings for a City,
+ground and obstacles for a plain World. A vehicle dropped on a rooftop starts
+just above the roof. Visual-only geoms (no `contype` / `conaffinity`) are
+passed through. The same rule applies to Cars and Drones; the builders
+receive the result as an absolute height.
+
+`tools/world_height.py` implements the ray on the City World MJCF named by
+the receipt. The City World workflow converts PLATEAU into MJCF, but the ray
+needs that MJCF compiled into a MuJoCo model, and a compile grows faster than
+linearly with the mesh count (Shizuoka, 18k meshes: 116 s in one piece). The
+height only needs the highest hit, so the World is split into up to 8 chunks
+(meshes and primitive geoms spread evenly, the terrain in chunk 0) compiled
+in parallel child processes; the ray is cast on every chunk and the highest
+colliding hit wins (Shizuoka: 6.8 s, identical heights).
+
+The compiled chunks are cached as MJBs under
+`work/urban/cache/world-height/<fingerprint>-mujoco-<version>/`, keyed by the
+MJCF, the files it references (issue #5 principle 3), and the MuJoCo version
+(an MJB only loads in the version that wrote it). They belong to the City
+Asset (section 6.1). Each entry's `manifest.json` records the MJCF path, which
+is how `tools/urban_assets.py prune-cache` (`tools/urban_cache.py`) maps an
+entry back to its World. The prune removes an entry when:
+
+| Condition | Reason printed |
+|---|---|
+| its MJCF is under a City World Web UI job that no longer exists / whose City is not registered | `City World job deleted` / `City not registered` |
+| its MJCF was deleted, or no longer has that fingerprint | `World MJCF deleted` / `World regenerated since` |
+| it was written by another MuJoCo version and the running version has an entry with the same fingerprint (all other versions with `--other-mujoco-versions`) | `MuJoCo <v> (current <v>), superseded` |
+| it is a `<key>.partial/` staging directory older than one hour | `abandoned compile` |
+| its `manifest.json` is missing or unreadable | `manifest missing or unreadable` |
+
+The version rule only removes superseded entries by default: run from an
+interpreter with another MuJoCo (for example outside the Workspace shell), the
+prune keeps the entries the Workspace uses. Names that are not cache entries
+are left untouched. `--plain-world` also removes the plain-World MJCFs
+(section 6.2), which are regenerated on demand. Nothing is removed without
+`--apply`. The compile reports progress as plain lines and as
+`[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
+events, the City World job progress format. MuJoCo Python is pinned to the
+Drone Core version (`mujoco==3.13.0`) in the managed Recipe requirements, so
+the Workspace Python that runs Urban Studio has it; without it, the height
+falls back to the terrain hfield with a warning that rooftops are ignored.
+
+The simulation itself still compiles the City together with the vehicles
+into one MJB at `configure` (`multi_car.py`, `drone_one.py`); compiled
+models cannot be merged afterwards, so the height model and the simulation
+model are separate compiles.
+
+Spawn edits do not recompile the World; like the current `spawn_pose_enu`,
+they are applied to the runtime configuration before start.
+
+### 5.5 Placement loop
+
+The user iterates:
+
+```text
+place vehicles -> start -> observe -> stop -> adjust placement -> start ...
+```
+
+- A placement-only change (`spawn` of existing vehicles) needs no `configure`:
+  `stop`, edit the Composition, `start`. The World model and generated Asset
+  models are reused.
+- Control params and replaced programs (section 5.2) also need no
+  `configure`: every `start` regenerates the control processes.
+- Adding or removing a vehicle, or changing its Asset or control (`rc` /
+  `api`), requires `configure` before the next `start`.
+- The browser does not check collisions while dragging. It shows the World's
+  obstacles so the user can place around them; any remaining mismatch is found
+  by running the simulation and adjusted in the next iteration.
+
+Placement UI (Urban Studio, section 5.7):
+
+| World | Coarse position | Fine position and yaw |
+|---|---|---|
+| `city` | Map view (OpenStreetMap): a click moves the selected vehicle there | Three.js view of the City GLB: drag the vehicle marker |
+| `plain` | — (no map) | Three.js view of the whole plain World with its obstacles |
+
+The map converts a click to ENU coordinates relative to the City origin
+(from the City World Receipt). While a marker is dragged in the Three.js
+view it rides on the World meshes; on release the backend height (section
+5.4) gives the spawn height shown on the vehicle card. Yaw is set in 15°
+steps or typed.
+
+### 5.7 Browser UI (Urban Studio)
+
+`tools/urban_studio.py` serves `web/` on `127.0.0.1` (default port 8090)
+with a JSON API over the tools of this contract. Start it from the Business
+Pack Workspace shell so the simulations it runs inherit the Workspace
+environment. The tabs follow issue #5:
+
+| Tab | Does | API |
+|---|---|---|
+| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile), and a City whose job was deleted in the Web UI is unregistered. The "キャッシュ" panel shows the Urban cache and what `prune-cache` would remove, runs `urban_assets.py prune-cache --apply` (refused while another Studio command runs), and shows the City World PLATEAU download size read-only with the Business Pack `cache-clean` command that owns it | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop`, `GET /api/cache`, `POST /api/cache/prune` |
+| Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
+| Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
+| Route | edits Car route scenarios (waypoint loops) on the City World map, or by number for a plain World: points, dwell, speed, loops, and the Cars with their offsets. Saved under `work/urban/scenarios/<id>.yaml` with `meta.world`; examples in `recipes/scenarios/` are read-only and saving one writes a copy. In Compose an API Car picks its route from a selector (routes of the same World first) and warns when the route names no such Car or belongs to another World | `GET /api/scenarios`, `GET/PUT /api/scenarios/<id>` |
+| Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer; the selector labels each Composition with its World and vehicle make-up and shows a summary (World, vehicles and control, route, save time) | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>`, `GET /api/compositions` |
+
+A City World job counts as finished once its
+`artifacts/result-manifest.json` exists (the Worker writes it last); a
+registered City whose receipt changed (regenerated) is registered again.
+Commands run as child processes, one at a time per Composition; their
+`[HAKO_PROGRESS]` lines drive the progress bar. Examples in
+`recipes/compositions/` are read-only; saving one writes an editable copy
+under `work/urban/compositions/`. Placement-only fields (the ground height
+under a vehicle) are never saved.
+
+Compose and Simulation share one Composition: opening or saving a
+Composition in Compose selects it in Simulation, and the last one used is
+reopened after a reload (browser storage). Simulation runs the saved file,
+so it warns while Compose holds unsaved edits of that Composition.
+"Compose で開く" (Simulation) and "Simulation へ" (Compose) move between the
+two; opening another Composition asks before discarding unsaved edits.
+
+
+### 5.6 Real-time pacing
+
+Every route runs one real-time pacer (`apps/realtime/realtime_pacer.py`,
+adapted from hakoniwa-fpv-drone's): a Hakoniwa asset whose time follows the
+wall clock. The Conductor advances world time only while every asset is
+within its max_delay, so the pacer bounds the whole simulation, Car and
+Drone alike, to real time on every OS. The simulators therefore do not sleep
+on their own: the Car plant runs with `realtime_sync_cycle_msec: 0`, and
+Drone services with `--real-sleep-msec 0`. (Before, the Car plant slept
+per sync cycle, which is coarse on Windows, and the Urban Drone routes had
+no pacing once the Drone Show runner was replaced by the controls.)
+
+`tools/urban_realtime.py` inserts the pacer (`urban-realtime-pacer`,
+`before_start`, delta 10 ms) right after the Conductor owner, with that
+owner's max_delay: the Car plant (100 ms) in the `car` route, the Drone
+service (20 ms) in the `drone`, `integrated`, and `fpv` routes. It is
+applied with the controls, after `configure` and at every `start`; in the
+`fpv` route it replaces tools/fpv.py's own pacer, so one implementation paces
+every route.
+
+## 6. World Asset
+
+Every Composition selects exactly one World Asset. There are two kinds; both
+wrap an existing artifact instead of redefining it.
+
+### 6.1 City (`kind: city`)
+
+```yaml
+schema: hakoniwa.asset/v1
+id: hokkaido-01100-lat43.062-lon141.355
+kind: city
+version: <receipt build id>
+receipt: <path to city-world-receipt.json>
+```
+
+The receipt remains the source of MJCF, GLB, origin, extent, and coordinate
+systems. The City step of the browser produces a receipt through the existing
+City World workflow (Business Pack / `hakoniwa-envsim`), then registers this
+manifest.
+
+A registered City is ready for placement: registration
+(`urban_assets.py register-city`) also compiles the City height model of
+section 5.4, reporting progress, so the placement loop only loads it.
+`--no-precompile` defers it to the first `configure`. A later option is for
+the City World workflow itself to emit that model and list it in the
+receipt.
+
+### 6.2 Plain (`kind: plain`)
+
+A plain World is a ground plane with optional obstacles and no map. It uses
+the existing FPV World YAML (`hakoniwa-fpv-drone/docs/fpv-world.md`): sky,
+lights, ground size and color, contact parameters, and `gate` / `pylon` /
+`box` obstacles, all with MuJoCo collision.
+
+`plain` is a kind, not one World: any environment the user prepared
+beforehand (the FPV training course, a custom World YAML) is a plain World
+Asset, and a Composition that selects neither a City nor an environment
+uses the default `plain-ground` (this repository's
+`worlds/plain-ground.yaml`: open flat ground, 200 m x 200 m, no obstacles).
+`tools/urban_assets.py register-world --world <World YAML> [--id <id>]`
+registers an environment under `work/urban/assets/worlds/`; like
+`register-city` it also prepares the World (below) unless
+`--no-precompile`.
+
+Cars and the EAMS Hexa run on a plain World through a generated City World
+job (`tools/plain_world.py`, cached under `work/urban/worlds/`): the ground
+becomes a flat hfield terrain, the obstacles keep the FPV generator's
+geometry (yaw as quaternions, which no compiler angle setting of the MJCF they
+are composed into can reinterpret), a GLB of
+the same geometry serves Three.js and the collider view, and the receipt
+carries `"kind": "plain"` with no geographic origin. The City routes then run
+unchanged; for a plain receipt the Car and integrated viewers open Three.js
+directly instead of the Map Viewer. The FPV Drone keeps its own route
+(`fpv`) on plain Worlds, because tools/fpv.py already generates the vehicle
+on the World YAML; in a City the same route composes the vehicle into the
+City World (section 7.1, step 3.4 D).
+
+```yaml
+schema: hakoniwa.asset/v1
+id: fpv-training-course
+kind: plain
+version: 0.1.0
+world: ${repo:hakoniwa-fpv-drone}/recipes/environments/fpv-training-course.yaml
+```
+
+A World YAML without `obstacles` is the empty plain World. The same YAML also
+produces the Three.js course (`fpv-course.json`), so the placement view shows
+the same obstacles the physics uses.
+
+The World YAML uses MuJoCo world coordinates; the contract uses ENU with the
+World origin at the MuJoCo origin. The builder converts between them
+(MuJoCo `x` = north, `y` = -east, as in the current City tooling).
+
+For spawn heights (section 5.4) the FPV generator writes the World alone
+(`generate_world_mujoco()`: ground and obstacles, the same geometry it
+merges into the FPV vehicle model) to `work/urban/cache/plain-world/`, keyed
+by the YAML and the generator source (`prune-cache --plain-world` clears it); the ray then lands a vehicle on the
+ground or on an obstacle top. Without MuJoCo Python the height is the flat
+ground.
+
+## 7. Mapping from the existing Recipes
+
+| Concept | `urban-car-one` | `urban-drone-one` | `drone-car-rc` | Contract |
+|---|---|---|---|---|
+| City | `inputs.business_pack_city_receipt.path` | `city_world.receipt` | `inputs.business_pack_city_receipt.path` | `world` → City World Asset |
+| Vehicle model | `ackermann_vehicles.types[]` | `drone.profile` | `types[]` + `drone_mirrors[].mjcf_model` | `vehicles[].asset` → manifest `model` |
+| Control | `control_mode: ps5` | `control.mode: ps4-rc` | `control_mode: external_python` | `vehicles[].control: rc / api` |
+| API input | — | `mission.path` | `scenarios.car` | `vehicles[].params` |
+| Spawn | `spawn_pose_enu` + `ground_clearance_m` | `spawn_pose_enu` + `up_m`, `launch_area` | `up_m`, `initial_position_mjcf` | `vehicles[].spawn` (east/north/yaw) + computed height |
+| Vehicle list | `vehicles[]` | one Drone | `vehicles.generated_from_route` | explicit `vehicles[]` |
+| Mirror | — | — | `drone_mirrors[]` | `interactions[]` |
+
+Dropped by the contract: `launch_area` (the user places the Drone),
+`vehicles.generated_from_route` (the user places the Cars), and absolute
+heights (`up_m`, `initial_position_mjcf`; section 5.4). The existing
+experiment Recipes keep them until they are migrated.
+
+### 7.1 Migration steps
+
+The migration keeps a running reference at every step:
+
+1. Adapter: translate a Composition into the current tool inputs
+   (`multi_car.py` composition, `drone_one.py` recipe) without changing the
+   tools' internals. Order: City + Car, City + Drone, City + Car + Drone.
+   All three are adapted by `tools/urban_composition.py` behind
+   `urban_mobility.py <command> --composition <file>`, which selects the
+   managed Recipe from the Composition simulators:
+
+   | Composition | Tool | Managed Recipe |
+   |---|---|---|
+   | City + Car | `multi_car.py` | `recipes/usecases/urban-car-rc.yaml` |
+   | City + one Drone | `drone_one.py` (own workspace) | — |
+   | City + Car + one Drone | `urban_composer.py` | `recipes/experiments/urban-mobility-rc.yaml` |
+
+   Every adapter re-reads the Composition at `start`, so placement-only
+   edits need no `configure` (section 5.5); other edits are rejected before
+   anything is written.
+
+   Small tool changes made for explicit placement (existing Recipes keep
+   their behavior):
+   - `multi_car.py` accepts `ackermann_vehicles.route_scenario` for explicit
+     vehicles; the scenario auto-starts and drives only the vehicles it
+     names, which must be `external_python`. This makes Car `api` adaptable.
+   - `urban_composer.py` accepts explicit Cars, an optional Car scenario,
+     zero or one Drone Mirror, and merges every selected Car control
+     (scenario executor and PS5 senders).
+
+   The Drone adapters pass the spawn surface to the tools under their
+   existing `rooftop` field name.
+2. Parity: for each of the three combinations, the Composition path must
+   generate the same Launcher configuration as the current Recipe (modulo
+   paths and ids), and run.
+3. Builders, in sub-steps:
+   1. Control processes from manifest controls (done): the adapters replace
+      the tools' control assets with the processes of section 4, after
+      `configure` and at every `start`. `drone_one.py` applies them from
+      `urban-composition-controls.json` whenever it writes its Launcher.
+      This enables Car `rc` params, program replacement (section 5.2), and
+      Drone `api` together with Cars (`urban_composer.py` now takes the
+      Drone control from the Drone recipe instead of forcing PS4 RC). The
+      generated processes match the tools' previous ones (tested per
+      control).
+   2. Ray-based spawn height on the World (done, section 5.4): Cars and
+      Drones start on rooftops as well as on the ground. On open ground
+      the ray equals the previous terrain sampling.
+   3. Plain World + FPV Drone (done): `urban_mobility.py <command>
+      --composition` runs a plain World + one FPV Drone through
+      `hakoniwa-fpv-drone/tools/fpv.py` (output under `work/urban/fpv/<id>/`).
+      A vehicle whose manifest has `source.generator.tool: tools/fpv.py` is
+      an FPV Drone. `configure` generates the vehicle on the World YAML with
+      the manifest's Assembly Graph and the Three.js viewer; `configure` and
+      every `start` write the spawn into the runtime `drone_config_0.json`
+      (`droneDynamics.position_meter` = [north, east, -up], NED yaw) and
+      replace `fpv-remote-controller` with the manifest control. A different
+      World or FPV Asset needs `configure`. The adapter rejects a manifest
+      `ground_clearance_m` that differs from the generated report's
+      `initial_pose.mujoco_z_m`.
+   4. Consolidation and coverage, in parts:
+      - A. Simulation model build progress (done): Business Pack
+        `mujoco_model_compiler` reports `[HAKO_PROGRESS]` phase
+        `mujoco_compile` (start, 10 s heartbeats, done) for every Urban
+        simulation MJB.
+      - B. One Composition API (done): `tools/urban_simulation.py`
+        (`plan`, `run`, section 2.1). The adapter-only defaults
+        (`launch_area`, the RC mission file, the `rooftop` field) stay
+        inside it and `tools/urban_composition.py`.
+      - C. Plain Worlds for Cars and the EAMS Hexa (done, section 6.2).
+      - D. The FPV Drone in a City (done): the `fpv` route generates the
+        vehicle with tools/fpv.py on open ground (`worlds/plain-ground.yaml`),
+        composes its `drone_base` body with the City MJCF
+        (hakoniwa-mbody-registry `compose_mujoco_world.py`, as for the Urban
+        Hexa), compiles the result once into an MJB that Drone Core loads
+        (`droneDynamics.mujoco.modelPath`; reused while the composed model is
+        unchanged), and shows the City GLB in Three.js. Shizuoka: 119 s to
+        compile, spawn on a 21 m rooftop verified.
+      Rewriting the builders' internals to read the Composition directly is
+      deferred: the adapters are tested for parity, so it would add risk
+      without adding capability.
+   5. Several Drones per Composition.
+4. Browser UI (section 5.7), in steps:
+   - UI-1 (done): Assets, Compose (form editing), Simulation (lifecycle
+     jobs with output and progress, embedded Viewer).
+   - UI-2 (done): placement in Compose: Three.js drag, City map click, and
+     the backend spawn height per vehicle.
+   - UI-3 (done): City: start the City World Web UI and register finished
+     City World jobs automatically.
+
+   Remaining limits: one Drone per Composition, the FPV Drone only alone
+   (no Cars or other Drones with it), and the `eams-nominal-9kg` profile for
+   the other City Drone. The Drone-only route still opens the Map Viewer on
+   a plain World (with no map origin). Drone `api` together with Cars is
+   configured but not yet run end to end.
+
+## 8. Examples
+
+### 8.1 Golf Cart (`assets/golf-cart.asset.yaml`)
+
+```yaml
+schema: hakoniwa.asset/v1
+id: golf-cart
+kind: vehicle
+category: car
+version: 0.1.0
+title: Generic Ackermann Golf Cart
+source:
+  repository: hakoniwa-mbody-registry
+simulator: ackermann-mujoco
+model:
+  physics: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
+  contract: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/config/ackermann-forge.yaml
+  visual: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/view-model.json
+spawn:
+  ground_clearance_m: 0.45
+controls:
+  rc:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/ps5_ackermann_sender.py
+    scope: vehicle
+    args: [ "--pdu-def", "${runtime.pdu_def}", "--rc-config", "${runtime.rc_config}",
+            "--robot", "${vehicle.name}", "--pdu", "ackermann_cmd",
+            "--max-speed", "${param.max_speed}" ]
+    params:
+      max_speed: { type: number, default: 3.5 }
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
+    scope: composition
+    args: [ "${param.scenario}", "--pdu-def", "${runtime.pdu_def}" ]
+    params:
+      scenario: { type: path, required: true, kinds: [car-route-scenario] }
+```
+
+### 8.2 EAMS Hexa (`assets/eams-hexa.asset.yaml`)
+
+```yaml
+schema: hakoniwa.asset/v1
+id: eams-hexa
+kind: vehicle
+category: drone
+version: 0.1.0
+title: Urban EAMS Hexa (nominal 9 kg)
+source:
+  repository: hakoniwa-urban-mobility
+  profile: eams-nominal-9kg
+simulator: drone-core
+model:
+  physics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa/drone.xml
+spawn:
+  ground_clearance_m: 0.3      # example; set from the model's landing gear
+pdu:
+  definition: ${runtime.pdu_def}
+controls:
+  rc:
+    program: ${repo:hakoniwa-drone-core}/drone_api/rc/rc-custom.py
+    scope: vehicle
+    args: [ "${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json" ]
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/drone/city_fleet_mission.py
+    scope: vehicle
+    args: [ "--drone-root", "${runtime.drone_root}",
+            "--service-config", "${runtime.service_config}",
+            "--city-marker", "${runtime.city_marker}",
+            "--mission", "${param.mission}",
+            "--summary-json", "${runtime.summary_json}" ]
+    params:
+      mission: { type: path, required: true, kinds: [drone-mission] }
+```
+
+### 8.3 FPV Drone (`hakoniwa-fpv-drone/assets/fpv-drone-master3x.asset.yaml`)
+
+```yaml
+schema: hakoniwa.asset/v1
+id: fpv-drone-master3x
+kind: vehicle
+category: drone
+version: 0.1.0
+title: FPV Drone (Master3X)
+source:
+  repository: hakoniwa-fpv-drone
+  generator:
+    tool: tools/fpv.py
+    assembly: recipes/examples/master3x-visual-demo.assembly.json
+simulator: drone-core
+spawn:
+  # The generated report's initial_pose.mujoco_z_m for this assembly.
+  ground_clearance_m: 0.016
+controls:
+  rc:
+    program: ${repo:hakoniwa-fpv-drone}/tools/fpv_rc_bootstrap.py
+    interpreter_args: ["-u"]
+    scope: vehicle
+    cwd: ${repo:hakoniwa-fpv-drone}
+    args: ["${runtime.pdu_def}", "${repo:hakoniwa-drone-core}/drone_api/rc/rc_config/ps4-control.json",
+           "--rc-root", "${repo:hakoniwa-drone-core}/drone_api/rc"]
+```
+
+The vehicle model is generated, so the manifest has no `model` paths.
+
+The FPV Drone is an `rc`-only Asset; the browser offers no `api` control for it.
+
+### 8.4 Composition: City + Car + Drone
+
+```yaml
+schema: hakoniwa.composition/v1
+id: urban-drone-car-rc
+world: hokkaido-01100-lat43.062-lon141.355
+vehicles:
+  - name: Car-1
+    asset: golf-cart
+    control: api
+    params: { scenario: recipes/scenarios/golf-cart-demo-loop.yaml }
+    spawn: { east_m: 0.0, north_m: 0.0, yaw_deg: 0.0 }
+  - name: Drone-1
+    asset: eams-hexa
+    control: rc
+    spawn: { east_m: 5.0, north_m: -45.0, yaw_deg: 0.0 }
+interactions:
+  - type: drone-mirror
+    drone: Drone-1
+    restitution_coefficient: 0.3
+```
+
+### 8.5 Composition: plain World + FPV Drone
+
+```yaml
+schema: hakoniwa.composition/v1
+id: fpv-course-rc
+world: fpv-training-course
+vehicles:
+  - name: Drone-1
+    asset: fpv-drone-master3x
+    control: rc
+    spawn: { east_m: 0.0, north_m: 0.0, yaw_deg: 0.0 }
+```
+
+## 9. Open items
+
+- `${runtime.*}` names: fix the list per simulator once the builders are
+  refactored.
+- JSON Schema files for `hakoniwa.asset/v1` and `hakoniwa.composition/v1`,
+  aligned with the Business Pack `schemas/` conventions.
+- The compiled-model cache fingerprint (issue #5 principle 3) for the
+  simulation MJBs; the World height model already has one (section 5.4).
+- The Compose phase (issue #5) owns the simulation model build: the single
+  World + vehicles MJB compile at `configure` reports progress in the same
+  `[HAKO_PROGRESS]` format as the City height model (section 5.4).

@@ -1,0 +1,7 @@
+# Default plain World Asset (docs/asset-contract.md 6.2): flat open ground.
+schema: hakoniwa.asset/v1
+id: plain-ground
+kind: plain
+version: 0.1.0
+title: Plain ground (200 m x 200 m)
+world: ../worlds/plain-ground.yaml

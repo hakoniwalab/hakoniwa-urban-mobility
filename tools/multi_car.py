@@ -92,6 +92,15 @@ def materialize_browser_asset(source: Path, target: Path) -> Path:
 
 def map_viewer_url(resolved: dict, viewer_config: Path) -> str:
     receipt = load_json(resolved["city_receipt"], "City World receipt")
+    if receipt.get("kind") == "plain":
+        # A plain World (tools/plain_world.py) has no map origin: open Three.js directly.
+        query = urlencode({"viewerConfigPath": workspace_url(viewer_config)})
+        return (
+            f"http://127.0.0.1:{resolved['visualization']['http_port']}"
+            + workspace_url(resolved["visualization"]["threejs_root"] / "index.html")
+            + "?"
+            + query
+        )
     try:
         origin = receipt["coordinate_frame"]["origin"]
         latitude = float(origin["latitude"])
@@ -211,6 +220,44 @@ def resolve_path(raw: str, label: str) -> Path:
         raise RecipeError(f"{label} must be a non-empty path")
     path = Path(raw.strip()).expanduser()
     return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+
+
+def resolve_explicit_route_scenario(value: object, vehicles: list[dict]) -> dict:
+    """Select a scenario that drives explicitly placed vehicles.
+
+    The scenario only drives vehicles; every vehicle it names must be one of
+    the configured vehicles and use external_python control.
+    """
+    from scenario_executor import ScenarioError, load_scenario
+
+    if not isinstance(value, dict):
+        raise RecipeError("ackermann_vehicles.route_scenario must be a mapping")
+    try:
+        path = resolve_path(value["path"], "Car route scenario")
+    except (KeyError, TypeError) as error:
+        raise RecipeError("ackermann_vehicles.route_scenario.path is required") from error
+    auto_start = value.get("auto_start", True)
+    if not isinstance(auto_start, bool):
+        raise RecipeError("ackermann_vehicles.route_scenario.auto_start must be boolean")
+    try:
+        scenario = load_scenario(required(path, "Car route scenario"))
+    except ScenarioError as error:
+        raise RecipeError(f"invalid Car route scenario {path}: {error}") from error
+    names = (
+        set(scenario.schedules)
+        if hasattr(scenario, "schedules")
+        else {vehicle.name for vehicle in scenario.vehicles}
+    )
+    modes = {vehicle["name"]: vehicle["control_mode"] for vehicle in vehicles}
+    unknown = sorted(names - set(modes))
+    if unknown:
+        raise RecipeError(f"Car route scenario drives unconfigured vehicles: {unknown}")
+    not_external = sorted(name for name in names if modes[name] != "external_python")
+    if not_external:
+        raise RecipeError(
+            f"Car route scenario vehicles must use external_python control: {not_external}"
+        )
+    return {"scenario": path, "auto_start_scenario": auto_start, "vehicles": sorted(names)}
 
 
 def expand_config_vehicle_inputs(
@@ -526,6 +573,41 @@ def resolve_config(config_path: Path) -> dict:
             "relative_normal_speed_threshold_mps": speed_threshold,
             "cooldown_sec": cooldown_sec,
         })
+    scenario_input = vehicle_config.get("route_scenario")
+    if vehicle_generation is not None:
+        if scenario_input is not None:
+            raise RecipeError(
+                "ackermann_vehicles.route_scenario is only for explicit vehicles; "
+                "generated_from_route already selects its scenario"
+            )
+        route_scenario = {
+            "scenario": vehicle_generation["scenario"],
+            "auto_start_scenario": vehicle_generation["auto_start_scenario"],
+        }
+    elif scenario_input is not None:
+        route_scenario = resolve_explicit_route_scenario(scenario_input, vehicles)
+    else:
+        route_scenario = None
+    # Several routes, one executor each (Cars following different routes).
+    route_scenarios = [route_scenario] if route_scenario is not None else []
+    scenarios_input = vehicle_config.get("route_scenarios")
+    if scenarios_input is not None:
+        if scenario_input is not None or vehicle_generation is not None:
+            raise RecipeError(
+                "ackermann_vehicles.route_scenarios replaces route_scenario and generated_from_route"
+            )
+        if not isinstance(scenarios_input, list) or not scenarios_input:
+            raise RecipeError("ackermann_vehicles.route_scenarios must be a non-empty list")
+        route_scenarios = [resolve_explicit_route_scenario(item, vehicles) for item in scenarios_input]
+        driven: dict[str, Path] = {}
+        for item in route_scenarios:
+            for name in item["vehicles"]:
+                if name in driven:
+                    raise RecipeError(
+                        f"vehicle {name} is driven by two route scenarios: {driven[name]} and {item['scenario']}"
+                    )
+                driven[name] = item["scenario"]
+        route_scenario = route_scenarios[0] if len(route_scenarios) == 1 else None
     return {
         "raw": config,
         "path": config_path.resolve(),
@@ -536,6 +618,8 @@ def resolve_config(config_path: Path) -> dict:
         "mirrors": mirrors,
         "vehicle_types": vehicle_types,
         "vehicle_generation": vehicle_generation,
+        "route_scenario": route_scenario,
+        "route_scenarios": route_scenarios,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
         "native_mujoco_viewer": native_mujoco_viewer,
         "visualization": {
@@ -1670,6 +1754,7 @@ def materialize_launcher(
     browser_files: dict[str, Path | str] | None = None,
     native_mujoco_viewer: bool = True,
     vehicle_generation: dict | None = None,
+    route_scenario: dict | None = None,
 ) -> Path:
     source = paths()
     python = foundation_python()
@@ -1721,13 +1806,21 @@ def materialize_launcher(
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,
         })
-    # All generated vehicles share one route scenario. The opt-in keeps older
+    # One route scenario drives its vehicles. The opt-in keeps older
     # external_python recipes manual while allowing exactly one executor per demo.
+    # A generated fleet is driven entirely by its scenario; an explicit
+    # route_scenario drives only the vehicles it names.
+    scenario_source = route_scenario or vehicle_generation
     if (
-        vehicle_generation is not None
-        and vehicle_generation.get("auto_start_scenario") is True
+        scenario_source is not None
+        and scenario_source.get("auto_start_scenario") is True
     ):
-        if any(vehicle["control_mode"] != "external_python" for vehicle in vehicles):
+        driven = set(scenario_source.get("vehicles", [vehicle["name"] for vehicle in vehicles]))
+        if any(
+            vehicle["control_mode"] != "external_python"
+            for vehicle in vehicles
+            if vehicle["name"] in driven
+        ):
             raise RecipeError(
                 "auto-started route scenarios require external_python for every vehicle"
             )
@@ -1737,7 +1830,7 @@ def materialize_launcher(
             "command": str(python),
             "args": [
                 str(source["scenario_executor"]),
-                str(vehicle_generation["scenario"]),
+                str(scenario_source["scenario"]),
                 "--pdu-def", str(runtime_files["pdu_def"]),
             ],
             "depends_on": ["urban-car-fleet-plant"],
@@ -1916,6 +2009,7 @@ def configure(resolved: dict) -> int:
         browser_files,
         resolved["native_mujoco_viewer"],
         resolved["vehicle_generation"],
+        resolved["route_scenario"],
     )
     compose_receipt = {
         "schema_version": 1,
@@ -1945,6 +2039,15 @@ def configure(resolved: dict) -> int:
                 "scenario": str(resolved["vehicle_generation"]["scenario"]),
             }
         ),
+        "route_scenario": (
+            None if resolved["route_scenario"] is None else {
+                **resolved["route_scenario"],
+                "scenario": str(resolved["route_scenario"]["scenario"]),
+            }
+        ),
+        "route_scenarios": [
+            {**item, "scenario": str(item["scenario"])} for item in resolved.get("route_scenarios", [])
+        ],
         "output_mjcf": {"path": str(output), "sha256": sha256(output)},
         "runtime_mjb": {
             "path": str(mjb),
@@ -2017,13 +2120,18 @@ def configure(resolved: dict) -> int:
     if mirrors:
         print("Drone Mirrors: " + ", ".join(mirror["name"] for mirror in mirrors))
     if (
-        resolved["vehicle_generation"] is not None
-        and resolved["vehicle_generation"].get("auto_start_scenario") is True
+        resolved["route_scenario"] is not None
+        and resolved["route_scenario"].get("auto_start_scenario") is True
     ):
         print(
             "External control: one scenario executor starts with the Launcher: "
-            + str(resolved["vehicle_generation"]["scenario"])
+            + str(resolved["route_scenario"]["scenario"])
         )
+    elif len(resolved.get("route_scenarios", [])) > 1:
+        for item in resolved["route_scenarios"]:
+            print(
+                f"External control: a scenario executor drives {', '.join(item['vehicles'])}: {item['scenario']}"
+            )
     elif any(vehicle["control_mode"] == "external_python" for vehicle in vehicles):
         print("External control: run apps/car/ackermann_command.py with --robot NAME")
     print("Use 'start' for the configured runtime, or 'view' for Viewer-only inspection.")

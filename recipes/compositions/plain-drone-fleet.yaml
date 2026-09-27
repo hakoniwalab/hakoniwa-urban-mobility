@@ -1,0 +1,15 @@
+# Plain World + a Drone fleet (docs/asset-contract.md 5.8): ten Drone Core
+# quads laid out around the launch area; they take off together and fly the
+# HAKONIWA formation.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/plain-drone-fleet.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/plain-drone-fleet.yaml
+schema: hakoniwa.composition/v1
+id: plain-drone-fleet
+world: plain-ground
+fleets:
+  - name: Fleet
+    asset: drone-core-quad
+    control: api
+    count: 10
+    spacing_m: 1.5
+    area: {east_m: 0.0, north_m: 0.0}
