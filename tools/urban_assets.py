@@ -189,6 +189,25 @@ def register_city(receipt: Path, asset_id: str | None = None, directory: Path = 
     return path
 
 
+def register_world(world: Path, asset_id: str | None = None, directory: Path = USER_ASSETS) -> Path:
+    """Register a prepared environment (World YAML) as a plain World Asset."""
+    world = world.expanduser().resolve()
+    if not world.is_file():
+        raise AssetError(f"World YAML not found: {world}")
+    asset_id = asset_id or world.stem
+    path = directory / "worlds" / f"{asset_id}{MANIFEST_SUFFIX}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "schema": ASSET_SCHEMA,
+        "id": asset_id,
+        "kind": "plain",
+        "version": world.stat().st_mtime_ns,
+        "world": world.as_posix(),
+    }
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    return path
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
@@ -200,6 +219,14 @@ def parser() -> argparse.ArgumentParser:
         "--no-precompile",
         action="store_true",
         help="skip compiling the City model for spawn heights (otherwise done once here)",
+    )
+    world = commands.add_parser("register-world", help="register a prepared environment (World YAML)")
+    world.add_argument("--world", type=Path, required=True)
+    world.add_argument("--id", help="plain World Asset id (default: the YAML file name)")
+    world.add_argument(
+        "--no-precompile",
+        action="store_true",
+        help="skip generating the World job and its height model (otherwise done once here)",
     )
     return result
 
@@ -232,6 +259,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Registered City Asset: {register_city(args.receipt, args.id)}")
         if not args.no_precompile:
             precompile_height(args.receipt.expanduser().resolve())
+        return 0
+    if args.command == "register-world":
+        print(f"Registered plain World Asset: {register_world(args.world, args.id)}")
+        if not args.no_precompile:
+            import plain_world
+
+            receipt = plain_world.materialize(args.world)
+            print(f"Generated plain World job: {receipt.parents[2]}")
+            precompile_height(receipt)
         return 0
     for asset in catalog().values():
         detail = asset.category or asset.kind

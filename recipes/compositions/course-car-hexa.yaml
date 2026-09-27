@@ -1,0 +1,19 @@
+# A prepared environment + Car + Drone (docs/asset-contract.md): a PS5-driven
+# Golf Cart and a PS4-flown EAMS Hexa on the FPV training course, whose gates,
+# pylons, and boxes collide with both. Select any registered plain World
+# (tools/urban_assets.py register-world) the same way.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/course-car-hexa.yaml
+schema: hakoniwa.composition/v1
+id: course-car-hexa
+world: fpv-training-course
+vehicles:
+  - name: Car-1
+    asset: golf-cart
+    control: rc
+    spawn: {east_m: -10.0, north_m: 0.0, yaw_deg: 90.0}
+  - name: Drone-1
+    asset: eams-hexa
+    control: rc
+    spawn: {east_m: 0.0, north_m: -10.0, yaw_deg: 90.0}
+interactions:
+  - {type: drone-mirror, drone: Drone-1}

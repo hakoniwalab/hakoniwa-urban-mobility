@@ -16,6 +16,7 @@ import urban_assets  # noqa: E402
 import urban_composition  # noqa: E402
 import urban_controls  # noqa: E402
 import urban_simulation  # noqa: E402
+import plain_world  # noqa: E402
 from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
@@ -56,9 +57,13 @@ class Fixture(unittest.TestCase):
             ground.start()
             self.addCleanup(ground.stop)
         # Generated plain World models go to the test directory, not the workspace.
-        cache = mock.patch.object(urban_composition, "PLAIN_WORLD_CACHE", self.work / "plain-world-cache")
-        cache.start()
-        self.addCleanup(cache.stop)
+        for module, name, directory in (
+            (urban_composition, "PLAIN_WORLD_CACHE", "plain-world-cache"),
+            (plain_world, "JOBS_DIR", "plain-world-jobs"),
+        ):
+            cache = mock.patch.object(module, name, self.work / directory)
+            cache.start()
+            self.addCleanup(cache.stop)
 
     def composition(self, **overrides) -> Path:
         vehicle = {
@@ -893,9 +898,6 @@ class FpvCompositionTest(Fixture):
             "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
         with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds only"):
             urban_composition.fpv_vehicle(self.load(city_fpv))
-        car = self.composition(world="fpv-training-course", viewer={})
-        with self.assertRaisesRegex(urban_composition.CompositionError, "plain Worlds are not adapted"):
-            urban_composition.to_car_config(self.load(car), "urban-car-rc")
 
 
 class PlanTest(IntegratedFixture):
@@ -939,9 +941,14 @@ class PlanTest(IntegratedFixture):
             "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}}])
         with self.assertRaisesRegex(urban_simulation.SimulationError, "plain Worlds only"):
             self.plan(city_fpv)
-        plain_car = self.composition(world="fpv-training-course", viewer={})
-        with self.assertRaisesRegex(urban_simulation.SimulationError, "FPV Drone"):
-            self.plan(plain_car)
+        fpv_with_car = self.composition(world="fpv-training-course", viewer={}, vehicles=[
+            {"name": "Car-1", "asset": "golf-cart", "control": "rc",
+             "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}},
+            {"name": "Drone-1", "asset": "fpv-drone-master3x", "control": "rc",
+             "spawn": {"east_m": 5, "north_m": 0, "yaw_deg": 0}},
+        ])
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "exactly one FPV Drone"):
+            self.plan(fpv_with_car)
 
     def test_plan_command_prints_json_without_running_tools(self):
         output = io.StringIO()
@@ -962,6 +969,106 @@ class PlanTest(IntegratedFixture):
             "configure", "--recipe", str(ROOT / "recipes/experiments/urban-mobility-rc.yaml"),
             "--composition", str(composition.resolve()),
         ])
+
+
+class PlainWorldTest(IntegratedFixture):
+    """A plain World runs Cars and the EAMS Hexa through its City World job."""
+
+    COURSE = FPV_ASSETS.parent / "recipes/environments/fpv-training-course.yaml"
+
+    def on_plain(self, *vehicles: dict, world: str = "plain-ground") -> Path:
+        return self.composition(world=world, viewer={}, vehicles=list(vehicles))
+
+    def car(self, name="Car-1", east=0.0):
+        return {"name": name, "asset": "golf-cart", "control": "rc",
+                "spawn": {"east_m": east, "north_m": 0.0, "yaw_deg": 0.0}}
+
+    def hexa(self):
+        return {"name": "Drone-1", "asset": "eams-hexa", "control": "rc",
+                "spawn": {"east_m": 5.0, "north_m": 5.0, "yaw_deg": 0.0}}
+
+    def test_default_plain_world_is_in_the_catalog(self):
+        default = urban_assets.catalog()["plain-ground"]
+        self.assertEqual(default.kind, "plain")
+        self.assertTrue(default.resolve(default.data["world"]).is_file())
+
+    def test_job_has_the_city_world_layout_the_builders_read(self):
+        receipt_path = plain_world.materialize(self.COURSE)
+        job = receipt_path.parents[2]
+        self.assertEqual(job.parent, self.work / "plain-world-jobs")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["kind"], "plain")
+        mjcf, glb, loaded = multi_car.city_inputs(receipt_path)
+        self.assertEqual(multi_car.city_collider_glb(receipt_path), job / "viewer/city-world-colliders.glb")
+        self.assertEqual(multi_car.terrain_height_mjcf(loaded, 3.0, -4.0), 0.0)
+        resolved = drone_one.city.city_drone._resolve_city_world(receipt_path)
+        self.assertEqual(resolved.half_extent_m, {"north_south": 30.0, "east_west": 30.0})
+        self.assertEqual(plain_world.materialize(self.COURSE), receipt_path, "cached")
+
+    def test_obstacles_keep_their_yaw_as_quaternions(self):
+        import math
+        import xml.etree.ElementTree as ET
+
+        mjcf, _, _ = multi_car.city_inputs(plain_world.materialize(self.COURSE))
+        root = ET.parse(mjcf).getroot()
+        self.assertIsNone(root.find("./compiler"), "City World MJCFs use radians")
+        tower = root.find("./worldbody/body[@name='course_tower']")
+        self.assertIsNone(tower.get("euler"))
+        w, _, _, z = (float(value) for value in tower.get("quat").split())
+        self.assertAlmostEqual(math.degrees(2 * math.atan2(z, w)), 20.0, places=6)
+        self.assertEqual(root.find("./worldbody/geom").get("type"), "hfield")
+
+    def test_glb_holds_the_ground_and_every_obstacle_geom(self):
+        import trimesh
+
+        receipt = json.loads(plain_world.materialize(self.COURSE).read_text(encoding="utf-8"))
+        scene = trimesh.load(receipt["glb"]["path"])
+        # 1 ground + 5 gates x 4 bars + 3 pylons + 2 boxes.
+        self.assertEqual(len(scene.geometry), 26)
+        low, high = scene.bounds
+        self.assertAlmostEqual(low[0], -30.0, places=6)
+        self.assertAlmostEqual(high[1], 5.1, places=6, msg="GLB Y is up; the high gate tops out at 5.1 m")
+
+    def test_plain_world_routes_like_a_city(self):
+        cases = {
+            "car": (self.car(),),
+            "drone": (self.hexa(),),
+            "integrated": (self.car(), self.hexa()),
+        }
+        for route, vehicles in cases.items():
+            with self.subTest(route=route), self.catalog():
+                self.assertEqual(urban_simulation.plan(self.on_plain(*vehicles)).route, route)
+
+    def test_car_config_reads_the_plain_world_job(self):
+        config = urban_composition.to_car_config(self.load(self.on_plain(self.car())), "urban-car-rc")
+        receipt = Path(config["inputs"]["business_pack_city_receipt"]["path"])
+        self.assertEqual(receipt.parents[3], self.work / "plain-world-jobs")
+        self.assertEqual(config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]["up_m"], 0.45)
+
+    def test_plain_world_viewer_opens_threejs_directly(self):
+        receipt = plain_world.materialize(self.COURSE)
+        resolved = {"city_receipt": receipt, "visualization": {
+            "http_port": 8000, "threejs_root": urban_assets.WORKSPACE / "hakoniwa-threejs-drone"}}
+        url = multi_car.map_viewer_url(resolved, urban_assets.WORKSPACE / "x/threejs/viewer-config.json")
+        self.assertTrue(url.startswith("http://127.0.0.1:8000/hakoniwa-threejs-drone/index.html?viewerConfigPath="))
+        self.assertNotIn("originLat", url)
+
+    def test_register_world_adds_a_plain_world_asset(self):
+        manifest = urban_assets.register_world(self.COURSE, "my-course", directory=self.work / "user")
+        asset = urban_assets.load_manifest(manifest)
+        self.assertEqual((asset.id, asset.kind), ("my-course", "plain"))
+        self.assertEqual(asset.resolve(asset.data["world"]), self.COURSE.resolve())
+
+    @unittest.skipIf(mujoco is None, "MuJoCo Python is not installed")
+    def test_plain_world_job_heights_match_the_course(self):
+        import world_height
+
+        mjcf, _, _ = multi_car.city_inputs(plain_world.materialize(self.COURSE))
+        with contextlib.redirect_stdout(io.StringIO()):
+            ground = world_height.ray_ground(mjcf, cache_dir=self.work / "heights")
+        self.assertAlmostEqual(ground(4.0, 17.0), 5.0, places=6)
+        self.assertAlmostEqual(ground(-3.5, 11.0), 1.3, places=6)
+        self.assertAlmostEqual(ground(20.0, -20.0), 0.0, places=6)
 
 
 if __name__ == "__main__":

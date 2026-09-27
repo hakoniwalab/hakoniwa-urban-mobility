@@ -382,6 +382,27 @@ the existing FPV World YAML (`hakoniwa-fpv-drone/docs/fpv-world.md`): sky,
 lights, ground size and color, contact parameters, and `gate` / `pylon` /
 `box` obstacles, all with MuJoCo collision.
 
+`plain` is a kind, not one World: any environment the user prepared
+beforehand (the FPV training course, a custom World YAML) is a plain World
+Asset, and a Composition that selects neither a City nor an environment
+uses the default `plain-ground` (this repository's
+`worlds/plain-ground.yaml`: open flat ground, 200 m x 200 m, no obstacles).
+`tools/urban_assets.py register-world --world <World YAML> [--id <id>]`
+registers an environment under `work/urban/assets/worlds/`; like
+`register-city` it also prepares the World (below) unless
+`--no-precompile`.
+
+Cars and the EAMS Hexa run on a plain World through a generated City World
+job (`tools/plain_world.py`, cached under `work/urban/worlds/`): the ground
+becomes a flat hfield terrain, the obstacles keep the FPV generator's
+geometry (yaw as quaternions, since City World MJCFs use radians), a GLB of
+the same geometry serves Three.js and the collider view, and the receipt
+carries `"kind": "plain"` with no geographic origin. The City routes then run
+unchanged; for a plain receipt the Car and integrated viewers open Three.js
+directly instead of the Map Viewer. The FPV Drone keeps its own route on
+plain Worlds (`fpv`), because tools/fpv.py already generates the vehicle on
+the World YAML.
+
 ```yaml
 schema: hakoniwa.asset/v1
 id: fpv-training-course
@@ -482,16 +503,27 @@ The migration keeps a running reference at every step:
       World or FPV Asset needs `configure`. The adapter rejects a manifest
       `ground_clearance_m` that differs from the generated report's
       `initial_pose.mujoco_z_m`.
-   4. Builders read the Composition directly; the adapter-only defaults
-      (`launch_area`, the RC mission file, the `rooftop` field) go away.
-      Plain Worlds for Cars and the EAMS Hexa, and the FPV Drone in a City,
-      belong here.
+   4. Consolidation and coverage, in parts:
+      - A. Simulation model build progress (done): Business Pack
+        `mujoco_model_compiler` reports `[HAKO_PROGRESS]` phase
+        `mujoco_compile` (start, 10 s heartbeats, done) for every Urban
+        simulation MJB.
+      - B. One Composition API (done): `tools/urban_simulation.py`
+        (`plan`, `run`, section 2.1). The adapter-only defaults
+        (`launch_area`, the RC mission file, the `rooftop` field) stay
+        inside it and `tools/urban_composition.py`.
+      - C. Plain Worlds for Cars and the EAMS Hexa (done, section 6.2).
+      - D. The FPV Drone in a City.
+      Rewriting the builders' internals to read the Composition directly is
+      deferred: the adapters are tested for parity, so it would add risk
+      without adding capability.
    5. Several Drones per Composition.
 
    Remaining limits: one Drone per Composition, the `eams-nominal-9kg` Drone
-   profile only for the City Drone adapters, plain Worlds only with the FPV
-   Drone, and the FPV Drone only on plain Worlds. Drone `api` together with
-   Cars is configured but not yet run end to end.
+   profile only for the City Drone adapters, and the FPV Drone only on plain
+   Worlds (alone). The Drone-only route still opens the Map Viewer on a plain
+   World (with no map origin). Drone `api` together with Cars is configured
+   but not yet run end to end.
 
 ## 8. Examples
 

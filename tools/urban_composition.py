@@ -207,8 +207,18 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
 
 
 def city_receipt(composition: Composition) -> Path:
-    if composition.world.kind != "city":
-        raise CompositionError("plain Worlds are not adapted yet (asset-contract 7.1 step 3)")
+    """Return the City World receipt the builders read.
+
+    A plain World is materialized as a City World job (tools/plain_world.py),
+    so the City builders run on it unchanged.
+    """
+    if composition.world.kind == "plain":
+        import plain_world
+
+        try:
+            return plain_world.materialize(plain_world_yaml(composition))
+        except plain_world.PlainWorldError as exc:
+            raise CompositionError(str(exc)) from exc
     return composition.world.resolve(composition.world.data["receipt"])
 
 

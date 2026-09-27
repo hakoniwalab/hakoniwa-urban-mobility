@@ -92,6 +92,15 @@ def materialize_browser_asset(source: Path, target: Path) -> Path:
 
 def map_viewer_url(resolved: dict, viewer_config: Path) -> str:
     receipt = load_json(resolved["city_receipt"], "City World receipt")
+    if receipt.get("kind") == "plain":
+        # A plain World (tools/plain_world.py) has no map origin: open Three.js directly.
+        query = urlencode({"viewerConfigPath": workspace_url(viewer_config)})
+        return (
+            f"http://127.0.0.1:{resolved['visualization']['http_port']}"
+            + workspace_url(resolved["visualization"]["threejs_root"] / "index.html")
+            + "?"
+            + query
+        )
     try:
         origin = receipt["coordinate_frame"]["origin"]
         latitude = float(origin["latitude"])

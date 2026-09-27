@@ -109,14 +109,17 @@ def plan(composition_path: Path) -> Plan:
     composition = load_composition(composition_path)
     simulators = frozenset(composition.simulators())
     plain = composition.world.kind == "plain"
-    if plain:
+    fpv = [vehicle for vehicle in composition.vehicles if urban_composition.is_fpv(vehicle)]
+    if fpv:
+        if not plain:
+            raise SimulationError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
         try:
             urban_composition.fpv_vehicle(composition)
         except urban_composition.CompositionError as exc:
             raise SimulationError(str(exc)) from exc
         return Plan(composition, "fpv", None, FPV_OUTPUT_ROOT / composition.id)
-    if any(urban_composition.is_fpv(vehicle) for vehicle in composition.vehicles):
-        raise SimulationError("the FPV Drone runs on plain Worlds only so far (asset-contract 7.1)")
+    # Other vehicles run on a plain World through its City World job
+    # (tools/plain_world.py) on the same routes as on a City.
     if simulators == DRONE:
         return Plan(composition, "drone", None, _recipe_root(DRONE_WORKSPACE_ID))
     route = {CAR: "car", CAR_AND_DRONE: "integrated"}.get(simulators)

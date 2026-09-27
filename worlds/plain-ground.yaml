@@ -1,0 +1,23 @@
+# Default plain World (docs/asset-contract.md 6.2): open flat ground with no
+# obstacles, used when a Composition selects neither a City nor a prepared
+# environment. The schema is the FPV World YAML
+# (hakoniwa-fpv-drone/docs/fpv-world.md). ground.size_m are MuJoCo plane half
+# sizes, so this ground spans 200 m x 200 m, the extent of a typical City World.
+schema_version: 1
+
+visual:
+  sky_rgba: [0.62, 0.78, 0.95, 1.0]
+  haze_rgba: [0.72, 0.84, 0.96, 1.0]
+
+ground:
+  size_m: [100.0, 100.0]
+  rgba: [0.42, 0.44, 0.40, 1.0]
+
+lights:
+  - name: sun
+    pos_m: [0.0, 0.0, 50.0]
+    direction: [0.3, 0.2, -1.0]
+    diffuse: [0.9, 0.9, 0.88]
+    ambient: [0.3, 0.3, 0.3]
+
+obstacles: []
