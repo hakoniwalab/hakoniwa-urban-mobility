@@ -315,12 +315,16 @@ class StudioServerTest(StudioTestBase):
     def test_city_footprints_come_from_the_lod1_outlines(self):
         self.fake_world()
         (self.work / "city-world-lod1.json").write_text(json.dumps({"polygons": [
-            {"id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]], "zmax": 12.0},
+            {"id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]], "zmax": 12.0,
+             "interior_rings": [[[6, 1], [8, 1], [8, 2]]]},
             {"id": "degenerate", "vertices": [[0, 0], [1, 1]]},
         ]}), encoding="utf-8")
         status, body = self.call("GET", "/api/worlds/test-city/footprints")
         self.assertEqual(status, 200)
-        self.assertEqual(body["buildings"], [{"id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]], "height_m": 12.0}])
+        self.assertEqual(body["buildings"], [{
+            "id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]],
+            "holes": [[[6, 1], [8, 1], [8, 2]]], "height_m": 12.0,
+        }])
 
     def test_plain_worlds_have_no_footprints(self):
         self.fake_world(kind="plain")

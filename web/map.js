@@ -110,9 +110,11 @@ export class MapView {
     this.footprints?.remove();
     this.footprints = null;
     if (!visible || !buildings?.length) return;
+    const ring = (points) => points.map(([east, north]) => this.toLatLng(east, north));
+    // The outline plus its courtyards as holes, so open ground inside a building stays clear.
     this.footprints = L.layerGroup(buildings.map((building) => L.polygon(
-      building.vertices.map(([east, north]) => this.toLatLng(east, north)),
-      { color: "#d32f2f", weight: 1, fillColor: "#d32f2f", fillOpacity: 0.25, interactive: false },
+      [ring(building.vertices), ...(building.holes || []).map(ring)],
+      { color: "#d32f2f", weight: 1, fillColor: "#d32f2f", fillOpacity: 0.3, interactive: false },
     ))).addTo(this.map);
   }
 }

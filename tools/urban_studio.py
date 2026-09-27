@@ -471,7 +471,13 @@ def world_footprints(world_id: str) -> dict:
         return {"id": world_id, "buildings": []}
     data = json.loads(lod1.read_text(encoding="utf-8"))
     buildings = [
-        {"id": item.get("id"), "vertices": item.get("vertices") or [], "height_m": item.get("zmax")}
+        {
+            "id": item.get("id"),
+            "vertices": item.get("vertices") or [],
+            # Courtyards: open ground inside the outline, drawn as holes.
+            "holes": [ring for ring in item.get("interior_rings") or [] if len(ring) >= 3],
+            "height_m": item.get("zmax"),
+        }
         for item in data.get("polygons") or []
         if isinstance(item, dict) and len(item.get("vertices") or []) >= 3
     ]
