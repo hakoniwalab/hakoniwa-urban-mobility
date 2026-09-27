@@ -86,11 +86,18 @@ def _set_arg(args: list, flag: str, value: str) -> list:
     return [*args, flag, value]
 
 
+WEB_BRIDGE_EXECUTABLE = "hakoniwa-pdu-web-bridge"
+WEB_BRIDGE_NO_SLEEP_ARG = "--disable-real-sleep"
+
+
 def apply_pacer(launcher: dict, pacer: dict, *, drone_services: tuple[str, ...] = ()) -> dict:
     """Insert the pacer right after its Conductor owner, in place.
 
     Any other pacer is removed, and the named Drone services stop sleeping
-    per step (--real-sleep-msec 0), since the pacer now paces them.
+    per step (--real-sleep-msec 0), since the pacer now paces them. WebBridge
+    assets stop sleeping too: by default a WebBridge sleeps its 20 ms step in
+    wall time on top of its work, so its asset time falls behind wall time and
+    the Conductor holds the whole simulation to about 0.83x real time.
     """
     conductor = pacer["depends_on"][0]
     assets = [
@@ -103,6 +110,9 @@ def apply_pacer(launcher: dict, pacer: dict, *, drone_services: tuple[str, ...] 
     for asset in assets:
         if asset.get("name") in drone_services:
             asset["args"] = _set_arg(list(asset.get("args", [])), DRONE_SLEEP_ARG, "0")
+        is_web_bridge = Path(str(asset.get("command", ""))).stem == WEB_BRIDGE_EXECUTABLE
+        if is_web_bridge and WEB_BRIDGE_NO_SLEEP_ARG not in asset.get("args", []):
+            asset["args"] = [*asset.get("args", []), WEB_BRIDGE_NO_SLEEP_ARG]
     position = names.index(conductor) + 1
     launcher["assets"] = assets[:position] + [pacer] + assets[position:]
     return launcher
