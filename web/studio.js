@@ -264,8 +264,10 @@ async function fetchHeight(vehicle) {
       "GET", `worlds/${world}/height?east=${vehicle.spawn.east_m}&north=${vehicle.spawn.north_m}`);
     vehicle._ground = ground;
     vehicle._rooftops = rooftops;
+    vehicle._heightError = false;
   } catch {
     vehicle._ground = undefined;
+    vehicle._heightError = true;
   }
 }
 
@@ -275,9 +277,22 @@ async function loadWorld() {
   try {
     state.world = await api("GET", `worlds/${worldId}`);
   } catch (error) {
-    setStatus($("#compose-status"), `World を読み込めません: ${error.message}`, "error");
+    state.world = null;
+    state.placement?.clearWorld();
+    $('#placement-views [data-view="map"]').disabled = true;
+    if (state.view === "map") showPlacementView("three");
+    const missing = !assetById(worldId);
+    setStatus($("#compose-status"), missing
+      ? `World「${worldId}」は登録されていません。World を選び直すか、City タブで作成・登録してください。`
+      : `World を読み込めません: ${error.message}`, "error");
+    for (const vehicle of state.current.composition.vehicles) {
+      vehicle._ground = undefined;
+      vehicle._heightError = true;
+    }
+    renderEditor();
     return;
   }
+  if ($("#compose-status").classList.contains("error")) setStatus($("#compose-status"), "");
   const mapButton = $('#placement-views [data-view="map"]');
   mapButton.disabled = !state.world.map;
   if (!state.world.map && state.view === "map") showPlacementView("three");
@@ -315,6 +330,7 @@ async function moveVehicle(index, east, north) {
   state.selected = index;
   vehicle.spawn = { ...vehicle.spawn, east_m: round2(east), north_m: round2(north) };
   vehicle._ground = undefined;
+  vehicle._heightError = false;
   renderEditor();
   await fetchHeight(vehicle);
   renderEditor();
@@ -387,6 +403,7 @@ function spawnInput(vehicle, label, key, step) {
     vehicle.spawn[key] = value;
     if (key !== "yaw_deg") {
       vehicle._ground = undefined;
+      vehicle._heightError = false;
       await fetchHeight(vehicle);
     }
     renderEditor();
@@ -430,7 +447,8 @@ function renderVehicle(vehicle, index) {
     })) : null;
 
   const clearance = Number(asset?.ground_clearance_m ?? 0);
-  const height = el("span", { class: "height" }, vehicle._ground === undefined ? "高さ: 計算中…"
+  const height = el("span", { class: "height" }, vehicle._heightError ? "高さ: 不明"
+    : vehicle._ground === undefined ? "高さ: 計算中…"
     : `地面 ${vehicle._ground.toFixed(2)} m + ${clearance} m = ${(vehicle._ground + clearance).toFixed(2)} m`
       + (vehicle._rooftops === false ? "（屋上は未考慮）" : ""));
   return el("div", {
@@ -473,7 +491,12 @@ function renderEditor() {
   if (!current) return;
   const composition = current.composition;
   $("#composition-id").value = current.id;
-  $("#world-select").value = composition.world;
+  const worldSelect = $("#world-select");
+  worldSelect.querySelector("option[data-missing]")?.remove();
+  if (composition.world && !assetById(composition.world)) {
+    worldSelect.prepend(el("option", { value: composition.world, "data-missing": true }, `（未登録）${composition.world}`));
+  }
+  worldSelect.value = composition.world;
   $("#vehicles").replaceChildren(...(composition.vehicles.length
     ? composition.vehicles.map(renderVehicle)
     : [el("p", { class: "hint" }, "車両を追加してください")]));
@@ -620,7 +643,7 @@ async function main() {
   $("#world-select").addEventListener("change", (event) => {
     if (!state.current) return;
     state.current.composition.world = event.target.value;
-    for (const vehicle of state.current.composition.vehicles) vehicle._ground = undefined;
+    for (const vehicle of state.current.composition.vehicles) { vehicle._ground = undefined; vehicle._heightError = false; }
     renderEditor();
     loadWorld();
   });

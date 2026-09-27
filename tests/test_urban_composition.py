@@ -139,9 +139,11 @@ class CarCompositionTest(Fixture):
             (ROOT / "recipes/experiments/urban-car-one.yaml").read_text(encoding="utf-8")
         )
         expected = template["inputs"]
-        actual = urban_composition.to_car_config(
-            self.load(ROOT / "recipes/compositions/city-golf-cart-rc.yaml"), "urban-car-rc"
-        )
+        # The example's City is swapped for the fixture City; everything else is the example.
+        example = yaml.safe_load((ROOT / "recipes/compositions/city-golf-cart-rc.yaml").read_text(encoding="utf-8"))
+        path = self.work / "city-golf-cart-rc.yaml"
+        path.write_text(yaml.safe_dump({**example, "world": CITY_ID}), encoding="utf-8")
+        actual = urban_composition.to_car_config(self.load(path), "urban-car-rc")
         inputs = actual["inputs"]
 
         self.assertEqual(actual["id"], "urban-car-rc")

@@ -77,6 +77,11 @@ export class PlacementView {
     this.worldGroup.add(gltf.scene);
   }
 
+  clearWorld() {
+    this.worldId = null;
+    this.worldGroup.clear();
+  }
+
   setVehicles(vehicles, selected) {
     this.vehicles = vehicles;
     this.markerGroup.clear();

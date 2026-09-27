@@ -1,11 +1,12 @@
 # City + Car: the Composition equivalent of recipes/experiments/urban-car-one.yaml
-# (docs/asset-contract.md). Register the City first:
+# (docs/asset-contract.md), on the same Shizuoka City as the other examples.
+# Register the City first:
 #   python tools/urban_assets.py register-city --receipt <city-world-receipt.json>
 # then configure with:
 #   python tools/urban_mobility.py configure --composition recipes/compositions/city-golf-cart-rc.yaml
 schema: hakoniwa.composition/v1
 id: city-golf-cart-rc
-world: hokkaido-01100-lat43.062-lon141.355
+world: shizuoka-22203-lat35.099-lon138.859
 vehicles:
   - name: Car-1
     asset: golf-cart
