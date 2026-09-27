@@ -131,6 +131,31 @@ def plan(composition_path: Path) -> Plan:
     return Plan(composition, route, ROOT / recipe, _recipe_root(recipe_id))
 
 
+def viewer_url(selected: Plan) -> str | None:
+    """Return the browser Viewer URL of a configured plan, or None before configure."""
+    if selected.route in {"car", "integrated"}:
+        contract = selected.workspace / "config/viewer-url.json"
+        if not contract.is_file():
+            return None
+        return json.loads(contract.read_text(encoding="utf-8")).get("url")
+    if selected.route == "fpv":
+        threejs = selected.workspace / "runtime/threejs"
+        if not (threejs / "viewer-config.json").is_file():
+            return None
+        ports = json.loads((threejs / "ports.json").read_text(encoding="utf-8"))
+        config = (threejs / "viewer-config.json").resolve().relative_to(WORKSPACE.resolve())
+        return (
+            f"http://127.0.0.1:{int(ports['http'])}/hakoniwa-threejs-drone/index.html"
+            f"?viewerConfigPath=/{config.as_posix()}"
+        )
+    if not (selected.workspace / "config" / DRONE_RECIPE_FILE).is_file():
+        return None
+    import drone_one
+
+    # As tools/drone_one.py open-viewer with its default bottom-left map layout.
+    return drone_one.base.viewer_url(1, map_viewer=True) + "&layout=three-main"
+
+
 def run(command: str, composition_path: Path) -> int:
     """Run a lifecycle command for a Composition."""
     selected = plan(composition_path)

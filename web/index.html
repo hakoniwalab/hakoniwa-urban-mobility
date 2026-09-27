@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Urban Studio</title>
+  <link rel="stylesheet" href="studio.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Urban Studio</h1>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="city">City</button>
+      <button role="tab" data-tab="assets">Assets</button>
+      <button role="tab" data-tab="compose" aria-selected="true">Compose</button>
+      <button role="tab" data-tab="simulation">Simulation</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-city" class="tab" hidden>
+      <div class="panel">
+        <h2>City</h2>
+        <p class="hint">登録済みの City World です。新しい City の作成（City World Web UI との連携）は次の段階で追加します。当面は <code>python tools/urban_assets.py register-city --receipt &lt;city-world-receipt.json&gt;</code> で登録してください。</p>
+        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Receipt</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="tab-assets" class="tab" hidden>
+      <div class="panel">
+        <h2>World</h2>
+        <table class="grid" id="world-table"><thead><tr><th>ID</th><th>種類</th><th>名前</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>車両</h2>
+        <table class="grid" id="vehicle-table"><thead><tr><th>ID</th><th>カテゴリ</th><th>名前</th><th>シミュレータ</th><th>制御</th><th>地上高 (m)</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="tab-compose" class="tab">
+      <div class="layout">
+        <aside class="panel list-panel">
+          <div class="row between">
+            <h2>Composition</h2>
+            <button id="new-composition" class="secondary">新規</button>
+          </div>
+          <ul id="composition-list" class="list"></ul>
+        </aside>
+        <div class="panel editor">
+          <div class="row">
+            <label class="field">ID<input id="composition-id" placeholder="my-composition" autocomplete="off"></label>
+            <label class="field grow">World<select id="world-select"></select></label>
+          </div>
+          <div class="row between">
+            <h3>車両</h3>
+            <div class="row">
+              <select id="add-asset"></select>
+              <button id="add-vehicle" class="secondary">追加</button>
+            </div>
+          </div>
+          <div id="vehicles"></div>
+          <p class="hint">位置は World 原点からの東 (east) / 北 (north) [m] と向き (yaw, 東=0°, 反時計回り) です。高さは地面（屋上を含む）＋車両の地上高で自動計算されます。</p>
+          <div class="row between footer">
+            <div id="compose-status" class="status" role="status"></div>
+            <button id="save-composition">保存して検証</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-simulation" class="tab" hidden>
+      <div class="panel">
+        <div class="row">
+          <label class="field grow">Composition<select id="run-composition"></select></label>
+          <div id="run-plan" class="plan"></div>
+        </div>
+        <div class="row buttons">
+          <button data-command="configure">Configure</button>
+          <button data-command="start">Start</button>
+          <button data-command="stop" class="secondary">Stop</button>
+          <button data-command="status" class="secondary">Status</button>
+          <a id="viewer-link" class="button-link" target="_blank" rel="noopener" hidden>Viewer を開く</a>
+        </div>
+        <div class="progress-block">
+          <div class="progress"><div id="progress-bar"></div></div>
+          <div id="progress-text" class="status" role="status"></div>
+        </div>
+        <pre id="log" class="log" aria-live="polite"></pre>
+      </div>
+      <div class="panel viewer-panel" id="viewer-panel" hidden>
+        <iframe id="viewer-frame" title="Viewer"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="studio.js"></script>
+</body>
+</html>

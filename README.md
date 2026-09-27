@@ -20,6 +20,32 @@ contract is tracked in
 The target ownership and lifecycle contract is defined in
 [`docs/foundation-contract.md`](docs/foundation-contract.md).
 
+## Compositions and Urban Studio
+
+A Composition selects a World (a PLATEAU City or a plain World), places
+vehicle Assets (Golf Cart, EAMS Hexa, FPV Drone), and picks each vehicle's
+control (`rc` or `api`). The contract is
+[`docs/asset-contract.md`](docs/asset-contract.md); examples are in
+`recipes/compositions/`. One entrypoint runs every combination:
+
+```bash
+python tools/urban_mobility.py plan --composition recipes/compositions/plain-hexa-rc.yaml
+python tools/urban_mobility.py configure --composition recipes/compositions/plain-hexa-rc.yaml
+python tools/urban_mobility.py start --composition recipes/compositions/plain-hexa-rc.yaml
+```
+
+Urban Studio is the browser UI over the same API (Assets, Compose,
+Simulation). Start it from the Business Pack Workspace shell, so the
+simulations it runs inherit the Workspace environment:
+
+```bash
+python tools/urban_studio.py --open-browser
+```
+
+It serves `http://127.0.0.1:8090/` and saves Compositions under
+`hakoniwa-business-pack/work/urban/compositions/`. Register a City first with
+`python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
+
 ## Standard managed Recipe entrypoint
 
 `tools/urban_mobility.py` is the user-facing lifecycle entrypoint. The
