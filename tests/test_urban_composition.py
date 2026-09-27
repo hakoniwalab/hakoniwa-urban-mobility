@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -23,7 +24,11 @@ import drone_one  # noqa: E402
 import multi_car  # noqa: E402
 
 FPV_ASSETS = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/assets"
-RECEIPT = Path("C:/cities/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json")
+# An absolute receipt path on the host OS ("C:/..." is relative on POSIX).
+RECEIPT = Path(
+    ("C:" if os.name == "nt" else "")
+    + "/cities/jobs/hokkaido-01100-lat43.062-lon141.355/build/world/city-world-receipt.json"
+)
 CITY_ID = "hokkaido-01100-lat43.062-lon141.355"
 
 
@@ -38,7 +43,8 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.work = Path(self.directory.name)
+        # Resolved: on macOS the temporary directory is a /var -> /private/var symlink.
+        self.work = Path(self.directory.name).resolve()
         city = self.work / "assets/cities" / f"{CITY_ID}.asset.yaml"
         city.parent.mkdir(parents=True)
         city.write_text(yaml.safe_dump({
