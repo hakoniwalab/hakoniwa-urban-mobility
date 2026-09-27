@@ -13,6 +13,12 @@ Deadlock-freedom requires this asset's delta to be at most the Conductor's
 max_delay (max_i dT_i <= M): the Drone service's built-in Conductor uses
 20 ms, the Car plant's 100 ms.
 
+Every --report-sec it prints
+  [pacer] wall=<s>s sim=<s>s rtf=<sim/wall> idle=<%>
+idle is the share of the last interval the pacer spent waiting for the wall
+clock. rtf stays near 1 until the simulators cannot keep up, so idle shows
+the remaining headroom: near 0 % means the simulation is at its limit.
+
 Adapted from hakoniwa-fpv-drone tools/fpv_realtime_pacer.py.
 """
 
@@ -33,7 +39,7 @@ def parser() -> argparse.ArgumentParser:
         "--max-delay-msec", type=int, default=20,
         help="the Conductor owner's max_delay (Drone service 20 ms, Car plant 100 ms)",
     )
-    result.add_argument("--report-sec", type=float, default=5.0)
+    result.add_argument("--report-sec", type=float, default=2.0)
     return result
 
 
@@ -61,7 +67,22 @@ def main(argv: list[str] | None = None) -> int:
     def pace() -> int:
         print("[pacer] manual timing control started", flush=True)
         start = time.monotonic()
-        next_report = start + args.report_sec
+        report = {"next": start + args.report_sec, "last": start, "idle": 0.0}
+
+        def maybe_report(now: float) -> None:
+            # Checked while advancing too: a simulation at its limit never
+            # leaves the advance loop, and that is when the report matters.
+            if now < report["next"]:
+                return
+            sim_sec = hakopy.simulation_time() / 1_000_000
+            wall_sec = now - start
+            idle = 100.0 * report["idle"] / max(now - report["last"], 1e-9)
+            print(
+                f"[pacer] wall={wall_sec:.1f}s sim={sim_sec:.1f}s rtf={sim_sec / wall_sec:.3f} idle={idle:.0f}%",
+                flush=True,
+            )
+            report.update(next=now + args.report_sec, last=now, idle=0.0)
+
         while True:
             now = time.monotonic()
             # Follow elapsed wall time rather than counting sleeps, so coarse
@@ -73,15 +94,11 @@ def main(argv: list[str] | None = None) -> int:
                 if not hakopy.usleep(delta_usec):
                     print("[pacer] simulation stopped", flush=True)
                     return 0
-            if now >= next_report:
-                sim_sec = hakopy.simulation_time() / 1_000_000
-                wall_sec = now - start
-                print(
-                    f"[pacer] wall={wall_sec:.1f}s sim={sim_sec:.1f}s rtf={sim_sec / wall_sec:.3f}",
-                    flush=True,
-                )
-                next_report += args.report_sec
+                maybe_report(time.monotonic())
+            maybe_report(now)
+            slept = time.monotonic()
             time.sleep(delta_usec / 1_000_000)
+            report["idle"] += time.monotonic() - slept
 
     callbacks = {
         "on_initialize": lambda context: 0,

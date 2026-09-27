@@ -176,6 +176,13 @@ def viewer_url(selected: Plan) -> str | None:
     return drone_one.base.viewer_url(1, map_viewer=True) + "&layout=three-main"
 
 
+def pacer_log(selected: Plan) -> Path:
+    """Where the route's Launcher writes the real-time pacer output."""
+    import urban_realtime
+
+    return selected.workspace / "logs" / f"{urban_realtime.PACER_ASSET}.out"
+
+
 def run(command: str, composition_path: Path) -> int:
     """Run a lifecycle command for a Composition."""
     selected = plan(composition_path)

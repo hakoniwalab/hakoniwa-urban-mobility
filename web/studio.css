@@ -98,6 +98,9 @@ button.icon { background: transparent; color: var(--danger); border-color: trans
 #progress-bar.indeterminate { width: 30%; animation: slide 1.4s infinite ease-in-out; }
 @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
 .progress-block { margin-bottom: 10px; }
+.rtf { font: 13px ui-monospace, Consolas, monospace; color: var(--muted); min-height: 1.5em; }
+.rtf.ok { color: var(--ok); }
+.rtf.slow { color: var(--danger); }
 .log {
   background: var(--code-bg); color: var(--code-text); border-radius: 6px; padding: 10px;
   height: 320px; overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; margin: 0;

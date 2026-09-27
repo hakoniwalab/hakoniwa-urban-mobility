@@ -19,6 +19,7 @@ API (all JSON):
   GET  /api/compositions/<id>/plan       its route (tools/urban_simulation.py plan)
   POST /api/compositions/<id>/<command>  run plan|configure|start|stop|status
   GET  /api/compositions/<id>/viewer     the configured Viewer URL
+  GET  /api/compositions/<id>/rtf        the latest real-time factor from the pacer log
   GET  /api/jobs/<job>?since=<line>      a command's state, output, and progress
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
@@ -270,6 +271,22 @@ def viewer(composition_id: str) -> dict:
     except urban_simulation.SimulationError as exc:
         raise StudioError(str(exc)) from exc
     return {"url": urban_simulation.viewer_url(selected)}
+
+
+def realtime_factor(composition_id: str) -> dict:
+    """The pacer's latest report (wall, sim, rtf), or null before one exists."""
+    import urban_realtime
+    import urban_simulation
+
+    try:
+        selected = urban_simulation.plan(composition_path(composition_id))
+    except urban_simulation.SimulationError as exc:
+        raise StudioError(str(exc)) from exc
+    log = urban_simulation.pacer_log(selected)
+    report = urban_realtime.latest_rtf(log)
+    if report is not None:
+        report["age_sec"] = round(max(0.0, time.time() - report.pop("updated")), 1)
+    return {"log": str(log), "report": report}
 
 
 # --- Jobs -----------------------------------------------------------------------------
@@ -540,6 +557,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
             if len(parts) == 3 and parts[0] == "compositions":
                 if method == "GET" and parts[2] == "viewer":
                     return self._json(viewer(parts[1]))
+                if method == "GET" and parts[2] == "rtf":
+                    return self._json(realtime_factor(parts[1]))
                 if method == "GET" and parts[2] == "plan":
                     return self._json(plan_json(parts[1]))
                 if method == "POST":

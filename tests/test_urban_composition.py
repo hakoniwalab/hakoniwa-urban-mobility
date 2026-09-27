@@ -1295,6 +1295,8 @@ class FleetCompositionTest(Fixture):
             ({"asset": "eams-hexa"}, "no fleet-capable Drone Asset"),
             ({"control": "rc"}, "offers controls"),
             ({"layout": "ring"}, "unknown fields"),
+            ({"processes": 0}, "processes must be auto"),
+            ({"processes": 11}, "processes must be auto"),
         ):
             with self.subTest(fleet=fleet), self.assertRaisesRegex(urban_composition.CompositionError, message):
                 self.load(self.fleet(**fleet))
@@ -1309,6 +1311,10 @@ class FleetCompositionTest(Fixture):
         recipe = urban_composition.to_fleet_recipe(self.load(self.fleet(count=120)))
         self.assertEqual(recipe["city_receipt"], self.receipt.resolve().as_posix())
         self.assertEqual((recipe["drone_count"], recipe["process_count"]), (120, 3))
+        explicit = urban_composition.to_fleet_recipe(self.load(self.fleet(count=120, processes=6)))
+        self.assertEqual(explicit["process_count"], 6)
+        auto = urban_composition.to_fleet_recipe(self.load(self.fleet(count=120, processes="auto")))
+        self.assertEqual(auto["process_count"], 3)
         self.assertEqual(recipe["area"], {"east_m": 10.0, "north_m": -4.0})
         self.assertEqual((recipe["spacing_m"], recipe["ground_clearance_m"]), (1.5, 0.5))
         # The fixture Composition sets viewer.web_bridge_port.

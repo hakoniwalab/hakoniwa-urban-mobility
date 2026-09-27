@@ -36,6 +36,7 @@ const state = {
   pollTimer: null,
   cities: null,      // /api/cities
   cityTimer: null,
+  rtfTimer: null,
 };
 
 // Placement-only vehicle fields (the ground height under the vehicle) are
@@ -623,6 +624,36 @@ function setRunning(running) {
   for (const button of document.querySelectorAll("[data-command]")) button.disabled = running;
 }
 
+// Real-time factor from the running simulation's pacer (GET .../rtf).
+const RTF_SLOW = 0.95;       // below this the simulation cannot keep up
+const RTF_STALE_SEC = 15;    // no report for this long: not running (the pacer reports every 2 s)
+
+async function pollRtf() {
+  clearTimeout(state.rtfTimer);
+  const id = $("#run-composition").value;
+  const node = $("#rtf");
+  if (id && !$("#tab-simulation").hidden) {
+    try {
+      const { report } = await api("GET", `compositions/${id}/rtf`);
+      if (!report) {
+        node.textContent = "";
+      } else if (report.age_sec > RTF_STALE_SEC) {
+        node.className = "rtf";
+        node.textContent = `rtf ${report.rtf.toFixed(3)}（最終: sim ${report.sim_sec.toFixed(1)} s / 実時間 ${report.wall_sec.toFixed(1)} s・停止中）`;
+      } else {
+        const idle = report.idle_percent;
+        node.className = `rtf ${report.rtf < RTF_SLOW ? "slow" : "ok"}`;
+        node.textContent = `rtf ${report.rtf.toFixed(3)}（sim ${report.sim_sec.toFixed(1)} s / 実時間 ${report.wall_sec.toFixed(1)} s）`
+          + (idle === null ? "" : `  余裕 ${idle.toFixed(0)}%`)
+          + (report.rtf < RTF_SLOW ? "  実時間に追いついていません" : idle !== null && idle < 10 ? "  限界に近い" : "");
+      }
+    } catch {
+      node.textContent = "";
+    }
+  }
+  state.rtfTimer = setTimeout(pollRtf, 2000);
+}
+
 async function runCommand(command) {
   const id = $("#run-composition").value;
   if (!id) return;
@@ -673,7 +704,7 @@ async function main() {
   $("#city-new").addEventListener("click", newCity);
   $("#city-stop").addEventListener("click", stopCityWebUi);
   $("#save-composition").addEventListener("click", saveComposition);
-  $("#run-composition").addEventListener("change", refreshRunPlan);
+  $("#run-composition").addEventListener("change", () => { refreshRunPlan(); pollRtf(); });
   for (const button of document.querySelectorAll("[data-command]")) button.addEventListener("click", () => runCommand(button.dataset.command));
 
   state.assets = await api("GET", "assets");
@@ -686,6 +717,7 @@ async function main() {
   try { tab = localStorage.getItem("urban-studio-tab") || tab; } catch { /* storage may be unavailable */ }
   showTab(tab);
   if (tab !== "city") pollCities(); // keeps registering finished Cities while another tab is open
+  pollRtf();
 }
 
 main().catch((error) => {

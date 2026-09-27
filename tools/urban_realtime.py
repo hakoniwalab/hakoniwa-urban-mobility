@@ -11,12 +11,36 @@ no pacing at all once the Drone Show runner was replaced by the controls).
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PACER = ROOT / "apps/realtime/realtime_pacer.py"
 PACER_CONFIG = ROOT / "config/realtime/pacer-asset.json"
 PACER_ASSET = "urban-realtime-pacer"
+# apps/realtime/realtime_pacer.py reports "[pacer] wall=<s>s sim=<s>s rtf=<r> idle=<%>"
+# (idle, the headroom, is absent in older logs).
+PACER_REPORT = re.compile(r"\[pacer\] wall=([0-9.]+)s sim=([0-9.]+)s rtf=([0-9.]+)(?: idle=([0-9.]+)%)?")
+
+
+def latest_rtf(log: Path) -> dict | None:
+    """The last real-time report in a pacer log, or None before the first one."""
+    try:
+        with Path(log).open("rb") as handle:
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 16384))
+            tail = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    reports = PACER_REPORT.findall(tail)
+    if not reports:
+        return None
+    wall, sim, rtf, idle = reports[-1]
+    return {
+        "wall_sec": float(wall), "sim_sec": float(sim), "rtf": float(rtf),
+        "idle_percent": float(idle) if idle else None,
+        "updated": Path(log).stat().st_mtime,
+    }
 # Pacers other tools write; the Urban pacer replaces them.
 LEGACY_PACERS = {"fpv-realtime-pacer"}
 DELTA_MSEC = 10

@@ -90,6 +90,8 @@ class Fleet:
     count: int
     spacing_m: float
     area: dict
+    # Drone service processes; None lets the builder choose (FLEET_DRONES_PER_PROCESS).
+    processes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -174,7 +176,7 @@ def _fleet(entry: object, index: int, assets: dict[str, Asset]) -> Fleet:
     name = str(entry.get("name", "")).strip()
     if not name:
         raise CompositionError(f"fleets[{index}] has no name")
-    unknown = set(entry) - {"name", "asset", "control", "params", "count", "spacing_m", "area"}
+    unknown = set(entry) - {"name", "asset", "control", "params", "count", "spacing_m", "area", "processes"}
     if unknown:
         raise CompositionError(f"fleet {name} has unknown fields: {sorted(unknown)}")
     asset = assets.get(entry.get("asset"))
@@ -203,7 +205,15 @@ def _fleet(entry: object, index: int, assets: dict[str, Asset]) -> Fleet:
             f"fleet {name} area must have exactly {sorted(AREA_KEYS)}; the layout and heights are computed"
         )
     area = {key: _finite(area[key], f"fleet {name} area.{key}") for key in sorted(AREA_KEYS)}
-    return Fleet(name=name, asset=asset, control=control, params=params, count=count, spacing_m=spacing, area=area)
+    processes = entry.get("processes", "auto")
+    if processes == "auto":
+        processes = None
+    elif not isinstance(processes, int) or isinstance(processes, bool) or not 1 <= processes <= count:
+        raise CompositionError(f"fleet {name} processes must be auto or an integer in [1, count]")
+    return Fleet(
+        name=name, asset=asset, control=control, params=params, count=count, spacing_m=spacing,
+        area=area, processes=processes,
+    )
 
 
 def _interaction(entry: object, index: int, vehicles: dict[str, Vehicle]) -> dict:
@@ -576,7 +586,7 @@ def to_fleet_recipe(composition: Composition) -> dict:
         "fleet": fleet.name,
         "city_receipt": city_receipt(composition).as_posix(),
         "drone_count": fleet.count,
-        "process_count": math.ceil(fleet.count / FLEET_DRONES_PER_PROCESS),
+        "process_count": fleet.processes or math.ceil(fleet.count / FLEET_DRONES_PER_PROCESS),
         "spacing_m": fleet.spacing_m,
         # The builder lays the grid out around this centre and raycasts each
         # drone's ground (roofs included) itself.
