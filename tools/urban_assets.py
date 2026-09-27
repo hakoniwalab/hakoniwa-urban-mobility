@@ -284,6 +284,22 @@ def parser() -> argparse.ArgumentParser:
         "prune-cities",
         help="unregister Cities whose City World Web UI job was deleted",
     )
+    cache = commands.add_parser(
+        "prune-cache",
+        help="remove World height caches of other MuJoCo versions, unregistered Cities, "
+        "and deleted or regenerated Worlds (dry run unless --apply)",
+    )
+    cache.add_argument("--apply", action="store_true", help="delete instead of a dry run")
+    cache.add_argument(
+        "--plain-world", action="store_true",
+        help="also remove the plain-world MJCF cache (regenerated on demand)",
+    )
+    cache.add_argument(
+        "--other-mujoco-versions", action="store_true",
+        help="remove every World height entry of another MuJoCo version, even when the "
+        "running version has no replacement yet",
+    )
+    cache.add_argument("--json", action="store_true", help="print a JSON report")
     world = commands.add_parser("register-world", help="register a prepared environment (World YAML)")
     world.add_argument("--world", type=Path, required=True)
     world.add_argument("--id", help="plain World Asset id (default: the YAML file name)")
@@ -330,6 +346,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "prune-cities":
         removed = prune_missing_cities(CITY_WORLD_JOBS)
         print(f"Unregistered Cities with a deleted City World job: {', '.join(removed) or 'none'}")
+        return 0
+    if args.command == "prune-cache":
+        import json
+
+        import urban_cache
+
+        report = urban_cache.prune(
+            apply=args.apply,
+            plain_world=args.plain_world,
+            other_versions=args.other_mujoco_versions,
+            mujoco_version=urban_cache.current_mujoco_version(),
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else urban_cache.render(report))
         return 0
     if args.command == "register-world":
         print(f"Registered plain World Asset: {register_world(args.world, args.id)}")

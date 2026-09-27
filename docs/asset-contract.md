@@ -102,6 +102,8 @@ The target placement is the Asset's source repository. For v1:
   registered from another location is never removed silently. A City whose
   receipt is missing stays in the catalog but is marked unavailable and cannot
   be selected as a World.
+- `tools/urban_assets.py prune-cache` removes derived caches that no City or
+  World uses any more (section 5.4); it is a dry run unless `--apply`.
 
 The catalog reads this repository's `assets/` (recursively), the top level of
 every workspace repository's `assets/` (`<repo>/assets/*.asset.yaml`; those
@@ -314,7 +316,24 @@ The compiled chunks are cached as MJBs under
 `work/urban/cache/world-height/<fingerprint>-mujoco-<version>/`, keyed by the
 MJCF, the files it references (issue #5 principle 3), and the MuJoCo version
 (an MJB only loads in the version that wrote it). They belong to the City
-Asset (section 6.1). The compile reports progress as plain lines and as
+Asset (section 6.1). Each entry's `manifest.json` records the MJCF path, which
+is how `tools/urban_assets.py prune-cache` (`tools/urban_cache.py`) maps an
+entry back to its World. The prune removes an entry when:
+
+| Condition | Reason printed |
+|---|---|
+| its MJCF is under a City World Web UI job that no longer exists / whose City is not registered | `City World job deleted` / `City not registered` |
+| its MJCF was deleted, or no longer has that fingerprint | `World MJCF deleted` / `World regenerated since` |
+| it was written by another MuJoCo version and the running version has an entry with the same fingerprint (all other versions with `--other-mujoco-versions`) | `MuJoCo <v> (current <v>), superseded` |
+| it is a `<key>.partial/` staging directory older than one hour | `abandoned compile` |
+| its `manifest.json` is missing or unreadable | `manifest missing or unreadable` |
+
+The version rule only removes superseded entries by default: run from an
+interpreter with another MuJoCo (for example outside the Workspace shell), the
+prune keeps the entries the Workspace uses. Names that are not cache entries
+are left untouched. `--plain-world` also removes the plain-World MJCFs
+(section 6.2), which are regenerated on demand. Nothing is removed without
+`--apply`. The compile reports progress as plain lines and as
 `[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
 events, the City World job progress format. MuJoCo Python is pinned to the
 Drone Core version (`mujoco==3.13.0`) in the managed Recipe requirements, so
@@ -370,7 +389,7 @@ environment. The tabs follow issue #5:
 
 | Tab | Does | API |
 |---|---|---|
-| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile), and a City whose job was deleted in the Web UI is unregistered | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop` |
+| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile), and a City whose job was deleted in the Web UI is unregistered. The "キャッシュ" panel shows the Urban cache and what `prune-cache` would remove, runs `urban_assets.py prune-cache --apply` (refused while another Studio command runs), and shows the City World PLATEAU download size read-only with the Business Pack `cache-clean` command that owns it | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop`, `GET /api/cache`, `POST /api/cache/prune` |
 | Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
 | Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
 | Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>` |
@@ -480,7 +499,7 @@ World origin at the MuJoCo origin. The builder converts between them
 For spawn heights (section 5.4) the FPV generator writes the World alone
 (`generate_world_mujoco()`: ground and obstacles, the same geometry it
 merges into the FPV vehicle model) to `work/urban/cache/plain-world/`, keyed
-by the YAML and the generator source; the ray then lands a vehicle on the
+by the YAML and the generator source (`prune-cache --plain-world` clears it); the ray then lands a vehicle on the
 ground or on an obstacle top. Without MuJoCo Python the height is the flat
 ground.
 

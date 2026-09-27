@@ -61,7 +61,7 @@ function showTab(name) {
   for (const section of document.querySelectorAll(".tab")) section.hidden = section.id !== `tab-${name}`;
   try { localStorage.setItem("urban-studio-tab", name); } catch { /* storage may be unavailable */ }
   if (name === "simulation") refreshRunPlan();
-  if (name === "city") pollCities();
+  if (name === "city") { pollCities(); loadCache(); }
 }
 
 // --- Assets and City ----------------------------------------------------------------
@@ -207,6 +207,73 @@ async function stopCityWebUi() {
     setStatus($("#city-web-status"), error.message, "error");
   }
   pollCities();
+}
+
+// --- Caches ------------------------------------------------------------------------------
+
+function formatBytes(value) {
+  const units = ["B", "KiB", "MiB", "GiB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+  return unit === 0 ? `${size} B` : `${size.toFixed(1)} ${units[unit]}`;
+}
+
+function renderCache() {
+  const cache = state.cache;
+  if (!cache) return;
+  const urban = cache.urban;
+  const height = urban.world_height;
+  const plain = urban.plain_world;
+  const sum = (entries, removable) => entries.reduce((total, entry) => total + (removable && !entry.remove ? 0 : entry.size_bytes), 0);
+  const city = cache.city_world;
+  const rows = [
+    ["Urban 高さモデル (world-height)", formatBytes(sum(height, false)), formatBytes(sum(height, true))],
+    ["Urban プレーン World (plain-world)", formatBytes(sum(plain, false)), formatBytes(sum(plain, true))],
+    city.available
+      ? ["City World PLATEAU ダウンロード", formatBytes(city.shared_cache_bytes), `${formatBytes(city.reclaimable_bytes.both)}（Business Pack で整理）`]
+      : ["City World PLATEAU ダウンロード", "取得できません", "—"],
+  ];
+  $("#cache-table tbody").replaceChildren(...rows.map((cells) => el("tr", {}, ...cells.map((cell) => el("td", {}, cell)))));
+  $("#cache-prune").disabled = cache.prune_job?.state === "running" || urban.reclaimable_bytes === 0;
+  const details = $("#cache-details");
+  details.hidden = height.length === 0;
+  $("#cache-entry-table tbody").replaceChildren(...height.map((entry) => el("tr", {},
+    el("td", {}, entry.remove ? "削除" : "保持"),
+    el("td", {}, formatBytes(entry.size_bytes)),
+    el("td", {}, entry.reason),
+    el("td", {}, el("code", {}, entry.mjcf || entry.path.split(/[\\/]/).pop())))));
+  const status = $("#cache-status");
+  if (!city.available) setStatus(status, `City World の容量は ${city.command} で確認・整理してください。`);
+  else if (city.reclaimable_bytes.both > 0) setStatus(status, `City World の PLATEAU ダウンロードを整理するには Business Pack で「${city.command}」を実行してください（既定は dry run、--apply で削除）。`);
+  else setStatus(status, "");
+}
+
+async function loadCache() {
+  try {
+    state.cache = await api("GET", "cache");
+    renderCache();
+  } catch (error) {
+    setStatus($("#cache-status"), error.message, "error");
+  }
+}
+
+async function pruneCache() {
+  const urban = state.cache?.urban;
+  if (!urban) return;
+  const count = [...urban.world_height, ...urban.plain_world].filter((entry) => entry.remove).length;
+  if (!window.confirm(`Urban キャッシュ ${count} 件（${formatBytes(urban.reclaimable_bytes)}）を削除しますか？\n登録済み City の World と City World のジョブは削除しません。`)) return;
+  $("#cache-prune").disabled = true;
+  try {
+    const job = await api("POST", "cache/prune");
+    const finished = await waitForJob(job.id);
+    await loadCache();
+    if (finished.state === "succeeded") setStatus($("#cache-status"), `Urban キャッシュを整理しました（${formatBytes(urban.reclaimable_bytes)}）`, "ok");
+    else setStatus($("#cache-status"), `Urban キャッシュの整理に失敗しました（終了コード ${finished.exit_code}）: ${finished.lines.slice(-3).join(" ")}`, "error");
+  } catch (error) {
+    setStatus($("#cache-status"), error.message, "error");
+    renderCache();
+  }
 }
 
 // --- Composition list and editor -------------------------------------------------------
@@ -712,6 +779,8 @@ async function main() {
   $("#add-vehicle").addEventListener("click", addVehicle);
   $("#city-new").addEventListener("click", newCity);
   $("#city-stop").addEventListener("click", stopCityWebUi);
+  $("#cache-refresh").addEventListener("click", loadCache);
+  $("#cache-prune").addEventListener("click", pruneCache);
   $("#save-composition").addEventListener("click", saveComposition);
   $("#run-composition").addEventListener("change", () => { refreshRunPlan(); pollRtf(); });
   for (const button of document.querySelectorAll("[data-command]")) button.addEventListener("click", () => runCommand(button.dataset.command));

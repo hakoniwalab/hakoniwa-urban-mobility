@@ -50,6 +50,19 @@
         <h2>登録済みの City</h2>
         <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Asset</th><th>状態</th></tr></thead><tbody></tbody></table>
       </div>
+      <div class="panel">
+        <div class="row between">
+          <h2>キャッシュ</h2>
+          <div class="row">
+            <button id="cache-refresh" class="secondary">再計算</button>
+            <button id="cache-prune">Urban キャッシュを整理</button>
+          </div>
+        </div>
+        <p class="hint">「Urban キャッシュを整理」は、別の MuJoCo 版で置き換え済みのもの、登録されていない・削除された City のもの、再生成前の World の高さモデルを削除します。登録済み City の World は削除しません。City World の PLATEAU ダウンロードは Business Pack のコマンドで整理します。</p>
+        <table class="grid" id="cache-table"><thead><tr><th>対象</th><th>サイズ</th><th>削除可能</th></tr></thead><tbody></tbody></table>
+        <div id="cache-status" class="status" role="status"></div>
+        <details id="cache-details" hidden><summary>高さモデルの内訳</summary><table class="grid" id="cache-entry-table"><tbody></tbody></table></details>
+      </div>
     </section>
 
     <section id="tab-assets" class="tab" hidden>

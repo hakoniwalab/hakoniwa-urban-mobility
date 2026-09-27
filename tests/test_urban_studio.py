@@ -236,8 +236,8 @@ class StudioServerTest(StudioTestBase):
         self.assertIn("receipt", body["error"])
 
 
-class CityPageTest(StudioTestBase):
-    """GET /api/cities and the City World Web UI commands, on a fake jobs folder."""
+class CityTestBase(StudioTestBase):
+    """A fake City World Web UI jobs folder and fake tool scripts."""
 
     def setUp(self):
         super().setUp()
@@ -282,6 +282,10 @@ class CityPageTest(StudioTestBase):
                 return job["registration"]
             time.sleep(0.05)
         self.fail("registration did not finish")
+
+
+class CityPageTest(CityTestBase):
+    """GET /api/cities and the City World Web UI commands, on a fake jobs folder."""
 
     def test_a_finished_unregistered_job_is_registered_once(self):
         receipt = self.make_job("tokyo")
@@ -362,6 +366,62 @@ class CityPageTest(StudioTestBase):
     def test_unknown_web_ui_command(self):
         status, _ = self.call("POST", "/api/cities/web-ui/explode")
         self.assertEqual(status, 404)
+
+
+class CachePageTest(CityTestBase):
+    """GET /api/cache and POST /api/cache/prune, on a fake cache and a fake urban_assets.py."""
+
+    def setUp(self):
+        super().setUp()
+        import urban_cache
+
+        self.cache = self.work / "urban-cache"
+        stale = self.cache / "world-height" / f"{'0' * 64}-mujoco-3.13.0"
+        stale.mkdir(parents=True)
+        (stale / "chunk-00.mjb").write_bytes(b"m" * 64)
+        (stale / "manifest.json").write_text(
+            json.dumps({"layout": 2, "mjcf": str(self.jobs / "deleted/build/world/city-world.xml")}),
+            encoding="utf-8",
+        )
+        for patch in (mock.patch.object(urban_cache, "CACHE_ROOT", self.cache),
+                      mock.patch.object(urban_studio, "city_world_cache",
+                                        return_value={"available": False, "command": "x"})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_cache_state_reports_what_prune_would_remove(self):
+        status, state = self.call("GET", "/api/cache")
+        self.assertEqual(status, 200)
+        [entry] = state["urban"]["world_height"]
+        self.assertTrue(entry["remove"])
+        self.assertEqual(entry["reason"], "City World job deleted")
+        self.assertEqual(state["urban"]["reclaimable_bytes"], entry["size_bytes"])
+        self.assertIsNone(state["prune_job"])
+        self.assertFalse(state["city_world"]["available"])
+
+    def test_prune_runs_the_urban_assets_command(self):
+        status, job = self.call("POST", "/api/cache/prune")
+        self.assertEqual(status, 202)
+        self.assertEqual(self.wait(job["id"])["lines"], ["ran prune-cache --apply"])
+        _, state = self.call("GET", "/api/cache")
+        self.assertEqual(state["prune_job"]["state"], "succeeded")
+
+    def test_prune_waits_for_other_studio_commands(self):
+        runner = self.server.RequestHandlerClass.runner
+        busy = runner.launch("city:tokyo", "register", [[sys.executable, "-c", "import time; time.sleep(2)"]])
+        status, body = self.call("POST", "/api/cache/prune")
+        self.assertEqual(status, 409)
+        self.assertIn("register of city:tokyo", body["error"])
+        self.wait(busy.id)
+
+
+class CityWorldCacheSummaryTest(unittest.TestCase):
+    def test_missing_business_pack_tool_is_reported_not_raised(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(urban_studio, "BUSINESS_PACK", Path(directory)):
+            summary = urban_studio.city_world_cache()
+        self.assertFalse(summary["available"])
+        self.assertIn("cache-clean", summary["command"])
 
 
 class ProgressParseTest(unittest.TestCase):

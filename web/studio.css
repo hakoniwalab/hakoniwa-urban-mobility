@@ -91,6 +91,7 @@ button.icon { background: transparent; color: var(--danger); border-color: trans
 .grid th, .grid td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .grid th { color: var(--muted); font-weight: 600; }
 .grid td code { font-size: 12px; word-break: break-all; }
+#cache-entry-table td:nth-child(-n+2) { white-space: nowrap; }
 .plan { font-size: 13px; color: var(--muted); padding-bottom: 6px; }
 .buttons { margin: 12px 0; }
 .progress { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }

@@ -28,6 +28,10 @@ API (all JSON):
                                          unregistered job starts its registration
   POST /api/cities/web-ui/start          start the City World Web UI (configured once)
   POST /api/cities/web-ui/stop           stop it
+  GET  /api/cache                        Urban cache (world-height, plain-world) and what
+                                         prune-cache would remove; City World download
+                                         sizes (read-only, from the Business Pack tool)
+  POST /api/cache/prune                  run urban_assets.py prune-cache --apply
 """
 
 from __future__ import annotations
@@ -66,6 +70,7 @@ CITY_WEB_UI = BUSINESS_PACK / "tools/recipe/city_world_web_ui.py"
 CITY_RECIPE_ROOT = BUSINESS_PACK / "work/recipes/city-world-web-ui"
 CITY_WEB_PORT = 8008
 URBAN_ASSETS = ROOT / "tools/urban_assets.py"
+CACHE_KEY = "cache:urban"
 
 for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
@@ -513,6 +518,59 @@ def city_web_ui(runner: "JobRunner", command: str) -> "Job":
     return runner.launch("city:web-ui", command, steps)
 
 
+# --- Caches ---------------------------------------------------------------------------
+
+def city_world_cache() -> dict:
+    """City World download sizes from the Business Pack tool that owns that data.
+
+    Studio only reports them; removing them stays a Business Pack command.
+    """
+    command = "python tools/recipe/city_world_web_ui.py cache-clean --job-sources --source-cache"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "tools.remote_operation.city_world.cache_cleanup", "status",
+             "--json", "--runtime-dir", str(CITY_RECIPE_ROOT / "runtime")],
+            cwd=BUSINESS_PACK, capture_output=True, text=True, encoding="utf-8", timeout=120,
+        )
+        report = json.loads(result.stdout) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        report = None
+    if report is None:
+        return {"available": False, "command": command}
+    return {
+        "available": True,
+        "command": command,
+        "shared_cache_bytes": report["shared_cache"]["apparent_bytes"],
+        "reclaimable_bytes": report["reclaimable_bytes"],
+        "busy_reasons": report["busy_reasons"],
+    }
+
+
+def cache_state(runner: "JobRunner") -> dict:
+    import urban_cache
+
+    job = runner.latest(CACHE_KEY)
+    return {
+        "urban": urban_cache.plan(
+            jobs_root=CITY_RECIPE_ROOT / "runtime/jobs",
+            mujoco_version=urban_cache.current_mujoco_version(),
+        ),
+        "prune_job": job.snapshot() if job else None,
+        "city_world": city_world_cache(),
+    }
+
+
+def prune_cache(runner: "JobRunner") -> "Job":
+    """Prune the Urban cache while no Studio command (configure, registration) runs."""
+    busy = [job for job in runner.jobs.values() if job.state == "running" and job.composition != CACHE_KEY]
+    if busy:
+        raise StudioError(
+            f"wait for {busy[0].command} of {busy[0].composition} to finish before pruning the cache",
+            HTTPStatus.CONFLICT,
+        )
+    return runner.launch(CACHE_KEY, "prune", [[runner.python, "-u", str(URBAN_ASSETS), "prune-cache", "--apply"]])
+
+
 # --- HTTP -----------------------------------------------------------------------------
 
 class StudioHandler(SimpleHTTPRequestHandler):
@@ -577,6 +635,10 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(city_state(self.runner))
             if method == "POST" and len(parts) == 3 and parts[:2] == ["cities", "web-ui"]:
                 return self._json(city_web_ui(self.runner, parts[2]).snapshot(), HTTPStatus.ACCEPTED)
+            if method == "GET" and parts == ["cache"]:
+                return self._json(cache_state(self.runner))
+            if method == "POST" and parts == ["cache", "prune"]:
+                return self._json(prune_cache(self.runner).snapshot(), HTTPStatus.ACCEPTED)
             if len(parts) == 2 and parts[0] == "compositions":
                 if method == "GET":
                     return self._json(read_composition(parts[1]))

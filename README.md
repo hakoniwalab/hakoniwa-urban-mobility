@@ -53,10 +53,35 @@ It serves `http://127.0.0.1:8090/` and saves Compositions under
   `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
   Deleting a job in the City World Web UI unregisters its City on the next
   City page refresh; `python tools/urban_assets.py unregister-city --id <id>`
-  removes a registration by hand.
+  removes a registration by hand. The City page's "キャッシュ" panel shows
+  the cache sizes, and "Urban キャッシュを整理" runs
+  `python tools/urban_assets.py prune-cache --apply` (see Cache cleanup).
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
   obstacles included) plus the vehicle's clearance.
+
+## Cache cleanup
+
+Spawn heights use compiled World models cached under
+`hakoniwa-business-pack/work/urban/cache/world-height/` (one entry per World
+and MuJoCo version). Run from the Workspace shell, so the MuJoCo version is
+the one the simulations use:
+
+```bash
+python tools/urban_assets.py prune-cache            # dry run: what would be removed and why
+python tools/urban_assets.py prune-cache --apply    # delete
+```
+
+It removes entries of deleted or unregistered Cities, of Worlds regenerated
+since, abandoned compiles, and entries of another MuJoCo version once the
+current version has its own entry for that World. `--other-mujoco-versions`
+removes the latter regardless; `--plain-world` also clears the plain-world
+MJCF cache (regenerated on demand); `--json` prints the report as JSON.
+A registered City's World and the City World jobs are never touched.
+
+The large PLATEAU downloads (gigabytes) belong to the Business Pack City World
+Web UI and are cleaned there:
+`python tools/recipe/city_world_web_ui.py cache-clean --job-sources --source-cache [--apply]`.
 
 ## Standard managed Recipe entrypoint
 
