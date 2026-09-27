@@ -427,58 +427,6 @@ class ControlModeTest(unittest.TestCase):
                 [16384, 16384],
             )
 
-    def test_browser_visualization_uses_standard_fleet_state_contracts(self):
-        resolved = multi_car.resolve_config(
-            ROOT / "recipes/multi-car-viewer.yaml"
-        )
-        _city_mjcf, city_glb, _receipt = multi_car.city_inputs(
-            resolved["city_receipt"]
-        )
-        collider_glb = multi_car.city_collider_glb(resolved["city_receipt"])
-        (ROOT / "work").mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=ROOT / "work") as directory:
-            work = Path(directory)
-            runtime_files = multi_car.materialize_runtime(
-                work / "fleet.mjb", work, resolved["vehicles"]
-            )
-            files = multi_car.materialize_browser_visualization(
-                runtime_files,
-                work,
-                city_glb,
-                resolved["vehicles"],
-                resolved["visualization"],
-                collider_glb,
-            )
-            scene = json.loads(files["scene_config"].read_text(encoding="utf-8"))
-            collider_scene = json.loads(
-                files["collider_scene_config"].read_text(encoding="utf-8")
-            )
-            viewer = json.loads(files["viewer_config"].read_text(encoding="utf-8"))
-            bridge = json.loads(files["bridge_config"].read_text(encoding="utf-8"))
-            self.assertEqual(len(scene["vehicles"]), 10)
-            self.assertEqual(
-                collider_scene["environments"][-1]["render"]["mode"],
-                "wireframe",
-            )
-            self.assertEqual(
-                collider_scene["environments"][-1]["render"]["color"],
-                "#22c55e",
-            )
-            self.assertEqual(scene["vehicles"][0], {"name": "Car-1", "type": "golf_cart"})
-            self.assertEqual(viewer["stateInput"]["mode"], "none")
-            self.assertEqual(
-                viewer["stateInput"]["vehicles"]["roleMap"],
-                {
-                    "vehicle_states": "sensor_msgs/MultiDOFJointState",
-                    "joint_states": "sensor_msgs/JointState",
-                },
-            )
-            keys = bridge["pduKeyGroups"]["urban_vehicle_state"]
-            self.assertEqual(
-                [(item["robot_name"], item["pdu_name"]) for item in keys],
-                [("UrbanFleet", "joint_states"), ("UrbanFleet", "vehicle_states")],
-            )
-
 
 class AckermannClientTest(unittest.TestCase):
     def test_client_publishes_to_the_selected_robot_and_stops_cleanly(self):

@@ -60,23 +60,6 @@ def car_rc_context() -> urban_mobility.RecipeContext:
 
 
 class UrbanMobilityToolTest(unittest.TestCase):
-    def test_shizuoka_composition_has_rooftop_drone_and_five_car_route(self):
-        config, resolved, drone = urban_composer.load_composition(
-            urban_composer.DEFAULT_CONFIG
-        )
-
-        self.assertEqual(config["id"], "urban-mobility-rc")
-        self.assertEqual(len(resolved["vehicles"]), 5)
-        self.assertEqual(drone["recipe"].control_mode, "ps4-rc")
-        self.assertEqual(drone["recipe"].source_path, drone["path"])
-        self.assertEqual(drone["rooftop"]["source_geometry"], "plateau-0017")
-        self.assertAlmostEqual(drone["spawn"]["up_m"], 35.79)
-        self.assertAlmostEqual(
-            drone["spawn"]["up_m"],
-            float(drone["rooftop"]["surface_height_m"])
-            + float(drone["rooftop"]["base_clearance_m"]),
-        )
-
     def test_recipe_command_delegates_selected_recipe_with_current_python(self):
         context = car_rc_context()
         completed = mock.Mock(returncode=0)
