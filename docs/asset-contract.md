@@ -303,13 +303,15 @@ in parallel child processes; the ray is cast on every chunk and the highest
 colliding hit wins (Shizuoka: 6.8 s, identical heights).
 
 The compiled chunks are cached as MJBs under
-`work/urban/cache/world-height/<fingerprint>/`, keyed by the MJCF and the
-files it references (issue #5 principle 3), and belong to the City Asset
-(section 6.1). The compile reports progress as plain lines and as
+`work/urban/cache/world-height/<fingerprint>-mujoco-<version>/`, keyed by the
+MJCF, the files it references (issue #5 principle 3), and the MuJoCo version
+(an MJB only loads in the version that wrote it). They belong to the City
+Asset (section 6.1). The compile reports progress as plain lines and as
 `[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
-events, the City World job progress format. Without MuJoCo Python (the
-managed Recipe configure installs it), the height falls back to the terrain
-hfield with a warning that rooftops are ignored.
+events, the City World job progress format. MuJoCo Python is pinned to the
+Drone Core version (`mujoco==3.13.0`) in the managed Recipe requirements, so
+the Workspace Python that runs Urban Studio has it; without it, the height
+falls back to the terrain hfield with a warning that rooftops are ignored.
 
 The simulation itself still compiles the City together with the vehicles
 into one MJB at `configure` (`multi_car.py`, `drone_one.py`); compiled
@@ -338,15 +340,41 @@ place vehicles -> start -> observe -> stop -> adjust placement -> start ...
   obstacles so the user can place around them; any remaining mismatch is found
   by running the simulation and adjusted in the next iteration.
 
-Placement UI:
+Placement UI (Urban Studio, section 5.7):
 
 | World | Coarse position | Fine position and yaw |
 |---|---|---|
-| `city` | Map Viewer (select the area on the map) | Three.js view with City GLB and collider overlay |
-| `plain` | — (Map Viewer has no map) | Three.js overview of the whole plain World with its obstacles |
+| `city` | Map view (OpenStreetMap): a click moves the selected vehicle there | Three.js view of the City GLB: drag the vehicle marker |
+| `plain` | — (no map) | Three.js view of the whole plain World with its obstacles |
 
-The Map Viewer hands the selected point to the Three.js view as ENU
-coordinates relative to the City origin (from the City World Receipt).
+The map converts a click to ENU coordinates relative to the City origin
+(from the City World Receipt). While a marker is dragged in the Three.js
+view it rides on the World meshes; on release the backend height (section
+5.4) gives the spawn height shown on the vehicle card. Yaw is set in 15°
+steps or typed.
+
+### 5.7 Browser UI (Urban Studio)
+
+`tools/urban_studio.py` serves `web/` on `127.0.0.1` (default port 8090)
+with a JSON API over the tools of this contract. Start it from the Business
+Pack Workspace shell so the simulations it runs inherit the Workspace
+environment. The tabs follow issue #5:
+
+| Tab | Does | API |
+|---|---|---|
+| City | "新規作成" starts the Business Pack City World Web UI (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it; every finished City World job is registered as a City Asset once (`urban_assets.py register-city`, with the height model precompile) | `GET /api/cities`, `POST /api/cities/web-ui/start\|stop` |
+| Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
+| Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
+| Simulation | runs `configure`, `start`, `stop`, `status` with live output and progress, and embeds the Viewer | `POST /api/compositions/<id>/<command>`, `GET /api/jobs/<job>` |
+
+A City World job counts as finished once its
+`artifacts/result-manifest.json` exists (the Worker writes it last); a
+registered City whose receipt changed (regenerated) is registered again.
+Commands run as child processes, one at a time per Composition; their
+`[HAKO_PROGRESS]` lines drive the progress bar. Examples in
+`recipes/compositions/` are read-only; saving one writes an editable copy
+under `work/urban/compositions/`. Placement-only fields (the ground height
+under a vehicle) are never saved.
 
 ### 5.6 Real-time pacing
 
@@ -547,6 +575,13 @@ The migration keeps a running reference at every step:
       deferred: the adapters are tested for parity, so it would add risk
       without adding capability.
    5. Several Drones per Composition.
+4. Browser UI (section 5.7), in steps:
+   - UI-1 (done): Assets, Compose (form editing), Simulation (lifecycle
+     jobs with output and progress, embedded Viewer).
+   - UI-2 (done): placement in Compose: Three.js drag, City map click, and
+     the backend spawn height per vehicle.
+   - UI-3 (done): City: start the City World Web UI and register finished
+     City World jobs automatically.
 
    Remaining limits: one Drone per Composition, the FPV Drone only alone
    (no Cars or other Drones with it), and the `eams-nominal-9kg` profile for
@@ -696,14 +731,12 @@ vehicles:
 
 ## 9. Open items
 
-- Plain World builders: today only the FPV generator consumes the World YAML
-  (it merges the course into the FPV Drone MJCF). The Car plant and the Urban
-  Drone builder need a plain World path equivalent to their City World path.
 - `${runtime.*}` names: fix the list per simulator once the builders are
   refactored.
 - JSON Schema files for `hakoniwa.asset/v1` and `hakoniwa.composition/v1`,
   aligned with the Business Pack `schemas/` conventions.
-- The compiled-model cache fingerprint (issue #5 principle 3).
+- The compiled-model cache fingerprint (issue #5 principle 3) for the
+  simulation MJBs; the World height model already has one (section 5.4).
 - The Compose phase (issue #5) owns the simulation model build: the single
   World + vehicles MJB compile at `configure` reports progress in the same
   `[HAKO_PROGRESS]` format as the City height model (section 5.4).
