@@ -45,7 +45,8 @@ export class PlacementView {
     this.scene.add(sun);
     this.worldGroup = new THREE.Group();
     this.markerGroup = new THREE.Group();
-    this.scene.add(this.worldGroup, this.markerGroup);
+    this.fleetGroup = new THREE.Group();
+    this.scene.add(this.worldGroup, this.markerGroup, this.fleetGroup);
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -94,6 +95,7 @@ export class PlacementView {
     const gltf = await new GLTFLoader().loadAsync(info.glb);
     if (this.worldId !== info.id) return; // another World was selected meanwhile
     this.worldGroup.add(gltf.scene);
+    if (this.fleetPoints?.length) this.setFleets(this.fleetPoints);
   }
 
   // Moves the orbit target (and the camera with it) over FOCUS_ANIMATION_MS.
@@ -142,6 +144,23 @@ export class PlacementView {
   clearWorld() {
     this.worldId = null;
     this.worldGroup.clear();
+  }
+
+  // Fleet drones ({east, north, clearance} grid points) as small spheres
+  // resting on the World surface under each point (roofs included).
+  setFleets(points) {
+    this.fleetPoints = points || [];
+    this.fleetGroup.clear();
+    const material = new THREE.MeshStandardMaterial({ color: COLORS.drone });
+    const geometry = new THREE.SphereGeometry(0.35, 12, 8);
+    const down = new THREE.Raycaster();
+    for (const point of this.fleetPoints) {
+      down.set(new THREE.Vector3(point.east, 1000, -point.north), new THREE.Vector3(0, -1, 0));
+      const hit = down.intersectObjects(this.worldGroup.children, true)[0];
+      const dot = new THREE.Mesh(geometry, material);
+      dot.position.set(point.east, (hit ? hit.point.y : 0) + point.clearance, -point.north);
+      this.fleetGroup.add(dot);
+    }
   }
 
   setVehicles(vehicles, selected) {

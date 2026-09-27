@@ -213,7 +213,10 @@ def list_compositions() -> list[dict]:
             # A saved Composition hides the example of the same id.
             result[path.stem] = {
                 "id": path.stem,
-                "vehicles": len(data.get("vehicles") or []),
+                # Vehicles plus every drone of every fleet.
+                "vehicles": len(data.get("vehicles") or []) + sum(
+                    int(item.get("count") or 0) for item in data.get("fleets") or [] if isinstance(item, dict)
+                ),
                 "editable": editable,
                 "path": str(path),
                 "updated_at": path.stat().st_mtime,
