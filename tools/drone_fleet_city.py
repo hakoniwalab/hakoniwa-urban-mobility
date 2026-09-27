@@ -21,7 +21,9 @@ import hashlib
 import importlib.util
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -76,6 +78,13 @@ DEFAULT_OUTPUT = (
     / "drone"
     / "mujoco-city-fleet"
 )
+# Compiled process models, keyed by their MJCF and the MuJoCo library: a
+# configure that produces the same model reuses the MJB instead of spending
+# minutes on the City again.
+MJB_CACHE_DIR = BUSINESS_PACK_ROOT / "work" / "cache" / "mujoco-fleet-mjb"
+# Process models compile concurrently (MuJoCo releases the GIL); each City
+# compile needs gigabytes, so only a few at a time.
+MAX_PARALLEL_COMPILES = 4
 DRONE_COLLISION_MASK = {"contype": "2", "conaffinity": "1"}
 MODEL_SIZE = {"nstack": "40000000", "nconmax": "500000"}
 DRONE_BODY_PATTERN = re.compile(r"d[1-9][0-9]*_b_drone_base")
@@ -1001,7 +1010,7 @@ def build_shared_model(
         composition = city_drone._compose_drone_and_city_mjcf(
             base_xml, city_world.mjcf_path, shared_xml
         )
-        compiled = compile_mujoco_xml(
+        compiled = _compile_cached(
             shared_xml, shared_mjb, find_mujoco_library(drone_root)
         )
     except (city_drone.RecipeError, MujocoCompileError, ET.ParseError) as exc:
@@ -1056,6 +1065,29 @@ def _partition_drone_ids(drone_count: int, process_count: int) -> list[list[int]
     return result
 
 
+def _compile_cached(xml_path: Path, mjb_path: Path, library_path: Path) -> dict[str, Any]:
+    """compile_mujoco_xml, reusing an MJB compiled earlier from the same inputs."""
+    digest = hashlib.sha256(xml_path.read_bytes())
+    digest.update(Path(library_path).read_bytes())
+    key = digest.hexdigest()
+    cached_mjb = MJB_CACHE_DIR / f"{key}.mjb"
+    cached_receipt = MJB_CACHE_DIR / f"{key}.json"
+    if cached_mjb.is_file() and cached_receipt.is_file():
+        shutil.copyfile(cached_mjb, mjb_path)
+        compiled = json.loads(cached_receipt.read_text(encoding="utf-8"))
+        compiled["output_mjb"] = str(mjb_path)
+        compiled["cache"] = {"hit": True, "key": key}
+        print(f"MuJoCo compile: {xml_path.name} reused from cache ({cached_mjb})", flush=True)
+        return compiled
+    compiled = compile_mujoco_xml(xml_path, mjb_path, library_path)
+    MJB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    partial = cached_mjb.with_suffix(f".{os.getpid()}.partial")
+    shutil.copyfile(mjb_path, partial)
+    partial.replace(cached_mjb)
+    cached_receipt.write_text(json.dumps(compiled, indent=2) + "\n", encoding="utf-8")
+    return {**compiled, "cache": {"hit": False, "key": key}}
+
+
 def build_process_models(
     *,
     drone_root: Path,
@@ -1064,19 +1096,20 @@ def build_process_models(
     process_count: int,
     output_dir: Path,
 ) -> dict[str, Any]:
-    process_models: list[dict[str, Any]] = []
-    for process_index, drone_ids in enumerate(
-        _partition_drone_ids(drone_count, process_count), start=1
-    ):
-        process_models.append(
-            build_shared_model(
-                drone_root=drone_root,
-                city_world_path=city_world_path,
-                drone_count=drone_count,
-                output_dir=output_dir / f"process-{process_index:02d}",
-                drone_ids=drone_ids,
-            )
+    partitions = _partition_drone_ids(drone_count, process_count)
+
+    def build(indexed: tuple[int, list[int]]) -> dict[str, Any]:
+        process_index, drone_ids = indexed
+        return build_shared_model(
+            drone_root=drone_root,
+            city_world_path=city_world_path,
+            drone_count=drone_count,
+            output_dir=output_dir / f"process-{process_index:02d}",
+            drone_ids=drone_ids,
         )
+
+    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_COMPILES, len(partitions))) as pool:
+        process_models = list(pool.map(build, enumerate(partitions, start=1)))
     aggregate = {
         "schema_version": 1,
         "component": "drone-fleet-mujoco-city-process-models",

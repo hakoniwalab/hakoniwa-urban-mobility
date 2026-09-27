@@ -542,3 +542,29 @@ def generate_xml(scene, drone, count):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompileCacheTest(unittest.TestCase):
+    def test_the_same_model_compiles_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            xml, library = root / "city-fleet.xml", root / "mujoco.dll"
+            xml.write_text("<mujoco/>", encoding="utf-8")
+            library.write_bytes(b"lib")
+            calls = []
+
+            def compile_xml(source, output, _library):
+                calls.append(source)
+                Path(output).write_bytes(b"MJB")
+                return {"source_xml": str(source), "output_mjb": str(output)}
+
+            with mock.patch.object(recipe, "MJB_CACHE_DIR", root / "cache"), \
+                    mock.patch.object(recipe, "compile_mujoco_xml", side_effect=compile_xml):
+                first = recipe._compile_cached(xml, root / "a.mjb", library)
+                second = recipe._compile_cached(xml, root / "b.mjb", library)
+                xml.write_text("<mujoco><worldbody/></mujoco>", encoding="utf-8")
+                third = recipe._compile_cached(xml, root / "c.mjb", library)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual((first["cache"]["hit"], second["cache"]["hit"], third["cache"]["hit"]), (False, True, False))
+            self.assertEqual((root / "b.mjb").read_bytes(), b"MJB")
+            self.assertEqual(second["output_mjb"], str(root / "b.mjb"))
