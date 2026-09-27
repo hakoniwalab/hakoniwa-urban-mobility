@@ -1,2 +1,4 @@
 # Urban composition and scenario YAML parsing.
 PyYAML>=6.0,<7
+# Spawn heights (tools/world_height.py); the same version as the Drone Core MuJoCo.
+mujoco==3.13.0

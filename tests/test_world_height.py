@@ -112,6 +112,18 @@ class WorldHeightTest(unittest.TestCase):
         self.assertEqual(model.ngeom, 3)
         self.assertIn("loaded from cache", output.getvalue())
 
+    @needs_mujoco
+    def test_another_mujoco_version_does_not_reuse_the_cache(self):
+        path = self.mjcf(WORLD)
+        cache = self.work / "cache"
+        with self.quiet():
+            world_height.load_models(path, cache_dir=cache)
+        output = io.StringIO()
+        with mock.patch.object(mujoco, "__version__", "0.0.0"), contextlib.redirect_stdout(output):
+            world_height.load_models(path, cache_dir=cache)
+        self.assertIn("compiling", output.getvalue())
+        self.assertEqual(len([entry for entry in cache.iterdir() if entry.is_dir()]), 2)
+
     def test_split_keeps_every_geom_once_and_the_terrain_in_chunk_zero(self):
         chunks = world_height.split_world(self.mjcf(city(7)), chunks=3)
         self.assertEqual(len(chunks), 3)

@@ -178,7 +178,8 @@ def load_models(mjcf: Path, *, cache_dir: Path = CACHE_DIR, mujoco=None) -> list
     if mujoco is None:
         import mujoco
     mjcf = mjcf.resolve()
-    key = fingerprint(mjcf)
+    # An MJB only loads in the MuJoCo version that wrote it.
+    key = f"{fingerprint(mjcf)}-mujoco-{getattr(mujoco, '__version__', 'unknown')}"
     cached = cache_dir / key
     manifest = cached / "manifest.json"
     if manifest.is_file():
