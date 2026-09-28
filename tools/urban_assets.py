@@ -120,6 +120,14 @@ def validate(asset: Asset) -> None:
             raise AssetError(f"Asset {asset.id} control {name} scope must be vehicle or composition")
         if not isinstance(control.get("args", []), list):
             raise AssetError(f"Asset {asset.id} control {name} args must be a list")
+    dimensions = data.get("dimensions")
+    if dimensions is not None:
+        # The Car's outer size [m]; route checks keep half its width off walls.
+        if not isinstance(dimensions, dict) or not all(
+            isinstance(dimensions.get(key), (int, float)) and not isinstance(dimensions.get(key), bool)
+            and dimensions[key] > 0 for key in ("width_m", "length_m")
+        ):
+            raise AssetError(f"Asset {asset.id} dimensions need positive width_m and length_m")
     import asset_preview
 
     try:

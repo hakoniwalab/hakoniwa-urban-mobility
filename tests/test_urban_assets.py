@@ -69,5 +69,21 @@ class CityRegistrationLifecycleTest(unittest.TestCase):
         self.assertEqual(urban_assets.prune_missing_cities(self.jobs, directory=self.user), [])
 
 
+
+class VehicleDimensionsTest(unittest.TestCase):
+    def test_the_golf_cart_declares_its_outer_size(self):
+        cart = urban_assets.catalog()["golf-cart"]
+        self.assertEqual(cart.data["dimensions"], {"width_m": 1.22, "length_m": 2.05})
+
+    def test_dimensions_must_be_positive_numbers(self):
+        cart = urban_assets.catalog()["golf-cart"]
+        for dimensions in ({"width_m": 1.2}, {"width_m": 0, "length_m": 2.0}, {"width_m": True, "length_m": 2.0}, "1x2"):
+            with self.subTest(dimensions=dimensions):
+                asset = urban_assets.Asset(id="cart", kind="vehicle", path=cart.path,
+                                           data={**cart.data, "dimensions": dimensions})
+                with self.assertRaisesRegex(urban_assets.AssetError, "dimensions"):
+                    urban_assets.validate(asset)
+
+
 if __name__ == "__main__":
     unittest.main()

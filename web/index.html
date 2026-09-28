@@ -141,6 +141,7 @@
             <button id="new-route" class="secondary">新規</button>
           </div>
           <ul id="route-list" class="list"></ul>
+          <div id="route-list-status" class="status" role="status"></div>
         </aside>
         <div class="panel route-editor">
           <div class="row">
@@ -168,10 +169,14 @@
             <button id="route-add-point" class="secondary">点を追加</button>
           </div>
           <ul id="route-conflicts" class="conflicts" hidden></ul>
+          <p id="route-clearance" class="hint"></p>
           <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th></th></tr></thead><tbody></tbody></table>
           <div class="row between footer">
             <div id="route-status" class="status" role="status"></div>
-            <button id="route-save">保存して検証</button>
+            <div class="row">
+              <button id="route-delete" class="secondary danger" hidden>削除</button>
+              <button id="route-save">保存して検証</button>
+            </div>
           </div>
         </div>
       </div>
