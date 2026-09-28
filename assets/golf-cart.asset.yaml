@@ -17,6 +17,11 @@ model:
 preview:
   format: view-model
   path: ${repo:hakoniwa-mbody-registry}/bodies/generic_ackermann_golf_cart/generated/view-model.json
+# Outer size from the MJCF collision geometry (bounding box); route checks
+# keep half the width plus a margin off building walls (tools/route_check.py).
+dimensions:
+  width_m: 1.22
+  length_m: 2.05
 spawn:
   # Base-frame height above the ground at startup.
   ground_clearance_m: 0.45

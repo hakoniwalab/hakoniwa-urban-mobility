@@ -42,6 +42,13 @@ class RouteCheckTest(unittest.TestCase):
         conflicts = route_check.route_conflicts(route((0, 5), (0, 30), (40, 30), (40, 5)), [BUILDING])
         self.assertEqual([(item["from"], item["to"]) for item in conflicts], [(4, 1)])
 
+    def test_a_wider_car_needs_more_room(self):
+        # 1.0 m north of the wall: a 1.2 m wide Car fits, a 2.0 m wide one does not.
+        loop = route((0, 11.0), (40, 11.0), (40, 30), (0, 30))
+        self.assertEqual(route_check.route_conflicts(loop, [BUILDING], route_check.clearance_for_width(1.2)), [])
+        wide = route_check.route_conflicts(loop, [BUILDING], route_check.clearance_for_width(2.0))
+        self.assertEqual([(item["from"], item["reason"]) for item in wide], [(1, "near_wall")])
+
     def test_fewer_than_three_points_are_not_checked(self):
         self.assertEqual(route_check.route_conflicts(route((0, 5), (40, 5)), [BUILDING]), [])
 

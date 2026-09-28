@@ -130,6 +130,9 @@ preview:                        # optional Urban Studio 3D preview
   format: drone-type | view-model | fpv-assembly
   path: <drone_types-*.json | hako_viewer_model JSON | FPV Assembly Graph>
   type: <drone type name, drone-type only>
+dimensions:                     # optional; Cars (route wall checks)
+  width_m: <outer width>
+  length_m: <outer length>
 spawn:
   ground_clearance_m: <base-frame height above the ground at spawn>
 viewer:
@@ -142,6 +145,11 @@ controls:
 ```
 
 `spawn.ground_clearance_m` is the only height input; see section 5.4.
+
+`dimensions` is a Car's outer size. Route checks keep half the width plus
+0.2 m off building walls (`tools/route_check.py`): in Compose for the widest
+Car following that route, in the Route tab for the widest Car Asset (a
+route does not know its Cars). Without any, the check keeps 0.8 m.
 
 `preview` names the display model the Studio's Assets tab turns in 3D
 (`tools/asset_preview.py`): a hakoniwa-threejs-drone drone type (frame,

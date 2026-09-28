@@ -990,6 +990,7 @@ async function openRoute(id) {
   state.route = {
     id, editable: loaded.editable, savedId: loaded.editable ? id : null,
     scenario, conflicts: loaded.conflicts || [], checked: true,
+    clearance: { clearance_m: loaded.clearance_m, vehicle: loaded.vehicle },
   };
   state.routePoint = -1;
   setStatus($("#route-list-status"), "");
@@ -1058,6 +1059,15 @@ function routeNumber(value, fallback) {
 // A point edit makes the last building check stale until the next save.
 const ROUTE_CHECK_DELAY_MS = 400;
 
+// {clearance_m, vehicle} from the route check: which Car's width it used.
+function clearanceText(clearance, which) {
+  if (!clearance) return "";
+  const vehicle = clearance.vehicle;
+  return vehicle
+    ? `当たりの判定: ${vehicle.title}（幅 ${vehicle.width_m} m、${which}）が壁から ${clearance.clearance_m} m 以上離れて通れるか。`
+    : `当たりの判定: 壁から ${clearance.clearance_m} m 以上離れて通れるか（車の寸法が未登録のため既定値）。`;
+}
+
 // Points changed: check the route against the World's walls once editing pauses.
 function routeEdited() {
   const route = state.route;
@@ -1072,9 +1082,12 @@ async function checkRouteNow(route) {
   const points = route.scenario.route.points;
   const version = (route.checkVersion = (route.checkVersion || 0) + 1);
   let conflicts = [];
+  let clearance = route.clearance;
   if (world && points.length >= 3) {
     try {
-      ({ conflicts } = await api("POST", `worlds/${world}/route-check`, { points }));
+      const checked = await api("POST", `worlds/${world}/route-check`, { points });
+      conflicts = checked.conflicts;
+      clearance = { clearance_m: checked.clearance_m, vehicle: checked.vehicle };
     } catch {
       return; // leave it unchecked; saving checks again
     }
@@ -1082,6 +1095,7 @@ async function checkRouteNow(route) {
   // A newer edit (or another route) supersedes this answer.
   if (state.route !== route || route.checkVersion !== version) return;
   route.conflicts = conflicts;
+  route.clearance = clearance;
   route.checked = true;
   renderRoute();
 }
@@ -1153,9 +1167,10 @@ function renderRoute() {
   conflictList.hidden = !conflicts.length && route.checked;
   conflictList.replaceChildren(...(conflicts.length
     ? conflicts.map((conflict) => el("li", {},
-      `点${conflict.from}→点${conflict.to}：${conflict.reason === "inside" ? "建物の中に入ります" : "建物の壁に近すぎます（車の幅を考えると通れません）"}`
+      `点${conflict.from}→点${conflict.to}：${conflict.reason === "inside" ? "建物の中に入ります" : "建物の壁に近すぎます（車の幅では通れません）"}`
       + `（${conflict.at[0]}E, ${conflict.at[1]}N）`))
     : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりをチェックしています…")]));
+  $("#route-clearance").textContent = clearanceText(route.clearance, "登録済みの車で一番幅が広いもの");
   if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts);
 }
 
@@ -1179,6 +1194,7 @@ async function saveRoute() {
     state.routeData = {}; // Compose re-reads the saved route for its route starts
     state.routeChecks = {};
     route.conflicts = saved.conflicts || [];
+    route.clearance = { clearance_m: saved.clearance_m, vehicle: saved.vehicle };
     route.checked = true;
     await loadScenarios();
     renderEditor(); // Compose selectors list the new or renamed route
@@ -1296,9 +1312,10 @@ function routeParamField(vehicle, name, definition) {
   const warning = chosen && chosen.world && chosen.world !== composition.world
     ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
     : null;
-  const conflicts = value ? composedRouteConflicts(value, composition.world) : null;
-  const blocked = conflicts?.length
-    ? el("span", { class: "hint error" }, `このルートは ${conflicts.length} 区間がこの World の建物の壁にぶつかります（車が止まります）。「ルートを編集」で直してください。`)
+  const check = value ? composedRouteCheck(value, composition) : null;
+  const blocked = check?.conflicts.length
+    ? el("span", { class: "hint error" }, `このルートは ${check.conflicts.length} 区間がこの World の建物の壁にぶつかります（車が止まります）。「ルートを編集」で直してください。`
+      + (check.vehicle ? `判定は ${check.vehicle.title}（幅 ${check.vehicle.width_m} m）。` : ""))
     : null;
   // The route decides where the Car starts; its placed spawn is not used.
   const note = value
@@ -1310,17 +1327,20 @@ function routeParamField(vehicle, name, definition) {
     warning, blocked, note);
 }
 
-// Blocked segments of a Composition's route on its World, checked once per
-// (route, World) and cached; null until known.
-function composedRouteConflicts(reference, world) {
+// A Composition's route checked on its World for the widest Car following it,
+// once per (route, World, Cars) and cached; null until known.
+function composedRouteCheck(reference, composition) {
+  const world = composition.world;
   const points = state.routeData?.[reference]?.route?.points;
   if (!world || !points || points.length < 3) return null;
+  const assets = [...new Set(composition.vehicles
+    .filter((vehicle) => routeReferenceOf(vehicle) === reference).map((vehicle) => vehicle.asset))].sort();
   state.routeChecks = state.routeChecks || {};
-  const key = `${reference}|${world}`;
+  const key = `${reference}|${world}|${assets.join(",")}`;
   if (!(key in state.routeChecks)) {
     state.routeChecks[key] = null;
-    api("POST", `worlds/${world}/route-check`, { points })
-      .then(({ conflicts }) => { state.routeChecks[key] = conflicts; renderEditor(); })
+    api("POST", `worlds/${world}/route-check`, { points, assets })
+      .then((checked) => { state.routeChecks[key] = checked; renderEditor(); })
       .catch(() => { delete state.routeChecks[key]; });
   }
   return state.routeChecks[key];

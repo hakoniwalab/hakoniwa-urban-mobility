@@ -127,6 +127,7 @@ def asset_catalog() -> list[dict]:
                 "interactions": sorted(data.get("interactions", {})),
                 "fleet": data.get("fleet"),
                 "preview": data.get("preview") is not None,
+                "dimensions": data.get("dimensions"),
             })
         assets.append(entry)
     order = {"city": 0, "plain": 1, "vehicle": 2}
@@ -318,8 +319,36 @@ def _load_route_scenarios() -> dict[str, tuple[Path, dict, bool]]:
     return found
 
 
+def route_clearance(asset_ids: list[str] | None = None) -> dict:
+    """The wall clearance for the widest Car: of asset_ids, or of every Car Asset.
+
+    Returns {"clearance_m", "vehicle"}; vehicle ({"asset", "title", "width_m"})
+    is null when no such Car declares its dimensions.
+    """
+    import route_check
+    import urban_assets
+
+    cars = [
+        asset for asset in urban_assets.catalog().values()
+        if asset.kind == "vehicle" and asset.category == "car" and asset.data.get("dimensions")
+        and (asset_ids is None or asset.id in asset_ids)
+    ]
+    if not cars:
+        return {"clearance_m": route_check.DEFAULT_CLEARANCE_M, "vehicle": None}
+    widest = max(cars, key=lambda asset: asset.data["dimensions"]["width_m"])
+    width = float(widest.data["dimensions"]["width_m"])
+    return {
+        "clearance_m": round(route_check.clearance_for_width(width), 3),
+        "vehicle": {"asset": widest.id, "title": widest.data.get("title", widest.id), "width_m": width},
+    }
+
+
 def route_conflicts_for(scenario: dict) -> list[dict]:
-    """Segments of a route blocked by City World building walls (tools/route_check.py)."""
+    """Segments of a route blocked by City World building walls (tools/route_check.py).
+
+    A saved route does not know which Cars will follow it, so the widest Car
+    Asset sets the clearance.
+    """
     import route_check
 
     world_id = (scenario.get("meta") or {}).get("world")
@@ -330,22 +359,31 @@ def route_conflicts_for(scenario: dict) -> list[dict]:
         buildings = world_footprints(world_id)["buildings"]
     except StudioError:
         return []
-    return route_check.route_conflicts(points, buildings)
+    return route_check.route_conflicts(points, buildings, route_clearance()["clearance_m"])
 
 
 def check_route(world_id: str, body: object) -> dict:
-    """Blocked segments of unsaved route points on a World (the live check while editing)."""
+    """Blocked segments of unsaved route points on a World (the live check while editing).
+
+    body: {"points": [...], "assets": [Car Asset ids following the route]}; without
+    assets the widest Car Asset sets the clearance.
+    """
     import route_check
 
     points = body.get("points") if isinstance(body, dict) else None
+    assets = body.get("assets") if isinstance(body, dict) else None
+    if assets is not None and (not isinstance(assets, list) or not all(isinstance(item, str) for item in assets)):
+        raise StudioError("assets must be a list of Asset ids")
     if not isinstance(points, list) or any(
         not isinstance(point, dict) or not all(isinstance(point.get(key), (int, float)) for key in ("east_m", "north_m"))
         for point in points
     ):
         raise StudioError("the request body must be {points: [{east_m, north_m}, ...]}")
+    clearance = route_clearance(assets)
     # An unknown World is a 404; a plain World has no building walls.
     buildings = world_footprints(world_id)["buildings"]
-    return {"conflicts": route_check.route_conflicts(points, buildings)}
+    conflicts = route_check.route_conflicts(points, buildings, clearance["clearance_m"]) if len(points) >= 3 else []
+    return {"conflicts": conflicts, **clearance}
 
 
 def list_scenarios() -> list[dict]:
@@ -361,7 +399,8 @@ def read_scenario(scenario_id: str) -> dict:
     if found is None:
         raise StudioError(f"route scenario {scenario_id} not found", HTTPStatus.NOT_FOUND)
     path, data, editable = found
-    return {**_route_scenario_entry(path, data, editable), "scenario": data, "conflicts": route_conflicts_for(data)}
+    return {**_route_scenario_entry(path, data, editable), "scenario": data, "conflicts": route_conflicts_for(data),
+            **route_clearance()}
 
 
 def _compositions_using(path: Path) -> list[str]:
@@ -432,7 +471,8 @@ def save_scenario(scenario_id: str, scenario: dict) -> dict:
         sys.path.remove(str(ROOT / "apps/car"))
     staging.replace(path)
     # A blocked segment is reported, not refused: the user may still be editing.
-    return {**_route_scenario_entry(path, scenario, True), "conflicts": route_conflicts_for(scenario)}
+    return {**_route_scenario_entry(path, scenario, True), "conflicts": route_conflicts_for(scenario),
+            **route_clearance()}
 
 
 def repair_saved_composition(path: Path) -> list[str]:

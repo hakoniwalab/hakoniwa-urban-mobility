@@ -266,14 +266,37 @@ class StudioServerTest(StudioTestBase):
             status, body = self.call("POST", "/api/worlds/test-city/route-check", {"points": points})
             self.assertEqual(status, 200)
             self.assertEqual(body["conflicts"][0]["building"], "bldg_a")
+            # The Golf Cart (1.22 m wide) is the widest Car: half its width plus the margin.
+            self.assertEqual(body["vehicle"], {"asset": "golf-cart", "title": "Generic Ackermann Golf Cart",
+                                               "width_m": 1.22})
+            self.assertAlmostEqual(body["clearance_m"], 0.81)
             # Fewer than three points is not a loop yet.
-            self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": points[:2]})[1],
-                             {"conflicts": []})
+            self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": points[:2]})[1]
+                             ["conflicts"], [])
             self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": "x"})[0], 400)
+            self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check",
+                                       {"points": points, "assets": "golf-cart"})[0], 400)
         # A plain World has no walls; an unknown World is a 404.
-        self.assertEqual(self.call("POST", "/api/worlds/plain-ground/route-check", {"points": points})[1],
-                         {"conflicts": []})
+        self.assertEqual(self.call("POST", "/api/worlds/plain-ground/route-check", {"points": points})[1]
+                         ["conflicts"], [])
         self.assertEqual(self.call("POST", "/api/worlds/no-such-world/route-check", {"points": points})[0], 404)
+
+    def test_the_widest_car_following_a_route_sets_its_wall_clearance(self):
+        import urban_assets
+
+        def car(asset_id, width):
+            data = {"title": asset_id, "category": "car", "dimensions": {"width_m": width, "length_m": 3.0}}
+            return urban_assets.Asset(id=asset_id, kind="vehicle", path=self.work / f"{asset_id}.yaml", data=data)
+
+        catalog = {"narrow": car("narrow", 1.0), "wide": car("wide", 2.4)}
+        with mock.patch("urban_assets.catalog", return_value=catalog):
+            self.assertEqual(urban_studio.route_clearance()["vehicle"]["asset"], "wide")
+            self.assertAlmostEqual(urban_studio.route_clearance()["clearance_m"], 1.4)
+            # Only the Cars on the route count.
+            self.assertAlmostEqual(urban_studio.route_clearance(["narrow"])["clearance_m"], 0.7)
+            # No Car with dimensions: the default.
+            fallback = urban_studio.route_clearance(["drone"])
+        self.assertEqual((fallback["vehicle"], fallback["clearance_m"]), (None, 0.8))
 
     def test_an_example_route_cannot_be_deleted(self):
         status, body = self.call("DELETE", "/api/scenarios/golf-cart-demo-convoy")

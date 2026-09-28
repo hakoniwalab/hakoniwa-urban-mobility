@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import math
 
-# Half the Golf Cart width plus a small margin, in metres.
+# Room kept on each side of a Car, beyond half its width, in metres.
+SIDE_MARGIN_M = 0.2
+# Used when no Car declares its dimensions: about half the Golf Cart width
+# (1.22 m) plus the margin.
 DEFAULT_CLEARANCE_M = 0.8
 SAMPLE_STEP_M = 0.5
 
@@ -44,6 +47,11 @@ def _in_building(point: tuple[float, float], building: dict) -> bool:
     return _inside(point, building["vertices"]) and not any(
         _inside(point, hole) for hole in building.get("holes", [])
     )
+
+
+def clearance_for_width(width_m: float) -> float:
+    """How far a route must stay from a wall for a Car of this width."""
+    return width_m / 2.0 + SIDE_MARGIN_M
 
 
 def route_conflicts(
