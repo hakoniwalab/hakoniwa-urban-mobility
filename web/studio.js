@@ -986,8 +986,13 @@ async function openRoute(id) {
   const scenario = loaded.scenario;
   scenario.meta = scenario.meta || {};
   scenario.route.points = scenario.route.points || [];
-  state.route = { id, editable: loaded.editable, scenario, conflicts: loaded.conflicts || [], checked: true };
+  // savedId: the saved (not example) file this route came from, the one 削除 removes.
+  state.route = {
+    id, editable: loaded.editable, savedId: loaded.editable ? id : null,
+    scenario, conflicts: loaded.conflicts || [], checked: true,
+  };
   state.routePoint = -1;
+  setStatus($("#route-list-status"), "");
   renderRouteList();
   renderRoute();
   setStatus($("#route-status"), loaded.editable ? ""
@@ -1000,6 +1005,7 @@ function newRoute() {
     || (usableWorlds().find((item) => item.kind === "city") || usableWorlds()[0])?.id;
   state.route = { id: "", editable: true, scenario: newRouteScenario(world), conflicts: [], checked: false };
   state.routePoint = -1;
+  setStatus($("#route-list-status"), "");
   renderRouteList();
   renderRoute();
   setStatus($("#route-status"), "");
@@ -1066,6 +1072,7 @@ function renderRoute() {
   $(".route-editor").hidden = !route;
   if (!route) return;
   const scenario = route.scenario;
+  $("#route-delete").hidden = !route.savedId;
   $("#route-id").value = route.id;
   $("#route-name").value = scenario.name || "";
   const worldSelect = $("#route-world");
@@ -1141,6 +1148,7 @@ async function saveRoute() {
   try {
     const saved = await api("PUT", `scenarios/${route.id}`, scenario);
     route.editable = true;
+    route.savedId = route.id;
     state.routeData = {}; // Compose re-reads the saved route for its route starts
     route.conflicts = saved.conflicts || [];
     route.checked = true;
@@ -1152,6 +1160,24 @@ async function saveRoute() {
     } else {
       setStatus(status, "保存しました。建物にぶつかる区間はありません。Compose の API の車で、このルートを選べます。", "ok");
     }
+  } catch (error) {
+    setStatus(status, error.message, "error");
+  }
+}
+
+async function deleteRoute() {
+  const route = state.route;
+  if (!route?.savedId) return;
+  if (!window.confirm(`ルート「${route.scenario.name || route.savedId}」（${route.savedId}）を削除しますか？\n元に戻せません。`)) return;
+  const status = $("#route-status");
+  try {
+    await api("DELETE", `scenarios/${route.savedId}`);
+    state.route = null;
+    state.routeData = {};
+    await loadScenarios();
+    renderEditor(); // Compose selectors drop the route
+    renderRoute();
+    setStatus($("#route-list-status"), `ルート ${route.savedId} を削除しました。`, "ok");
   } catch (error) {
     setStatus(status, error.message, "error");
   }
@@ -1178,6 +1204,7 @@ async function initRoute() {
     if (worldId && !$("#route-map").hidden) showRouteFootprints(worldId);
   });
   $("#route-save").addEventListener("click", saveRoute);
+  $("#route-delete").addEventListener("click", deleteRoute);
   $("#route-add-point").addEventListener("click", () => {
     if (!state.route) return;
     const last = state.route.scenario.route.points.at(-1);

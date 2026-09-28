@@ -235,6 +235,36 @@ class StudioServerTest(StudioTestBase):
         self.assertEqual(saved["conflicts"][0]["building"], "bldg_a")
         self.assertEqual(loaded["conflicts"], saved["conflicts"])
 
+    def test_a_saved_route_can_be_deleted_unless_a_composition_uses_it(self):
+        self.call("PUT", "/api/scenarios/my-loop", self.route())
+        compositions = self.work / "compositions"
+        compositions.mkdir(parents=True, exist_ok=True)
+        user = compositions / "with-route.yaml"
+        # A relative scenario path resolves against the Composition file.
+        user.write_text(
+            "world: plain-ground\nvehicles:\n  - name: Car-1\n    asset: golf-cart\n    control: api\n"
+            "    params: {scenario: ../scenarios/my-loop.yaml}\n",
+            encoding="utf-8",
+        )
+        status, body = self.call("DELETE", "/api/scenarios/my-loop")
+        self.assertEqual(status, 409)
+        self.assertIn("with-route", body["error"])
+        self.assertTrue((self.work / "scenarios/my-loop.yaml").is_file())
+
+        user.unlink()
+        status, body = self.call("DELETE", "/api/scenarios/my-loop")
+        self.assertEqual((status, body), (200, {"deleted": "my-loop"}))
+        self.assertFalse((self.work / "scenarios/my-loop.yaml").exists())
+        _, listed = self.call("GET", "/api/scenarios")
+        self.assertNotIn("my-loop", [item["id"] for item in listed])
+        self.assertEqual(self.call("DELETE", "/api/scenarios/my-loop")[0], 404)
+
+    def test_an_example_route_cannot_be_deleted(self):
+        status, body = self.call("DELETE", "/api/scenarios/golf-cart-demo-convoy")
+        self.assertEqual(status, 400)
+        self.assertIn("例のルート", body["error"])
+        self.assertTrue((urban_studio.EXAMPLE_SCENARIOS / "golf-cart-demo-convoy.yaml").is_file())
+
     def test_an_invalid_route_is_rejected_and_not_saved(self):
         status, body = self.call("PUT", "/api/scenarios/short", self.route(points=2))
         self.assertEqual(status, 400)

@@ -171,3 +171,4 @@ code { font-family: ui-monospace, Consolas, monospace; }
 .asset-card-meta code { font-size: 11px; }
 .hint.warn { color: var(--danger); }
 .vehicle.fleet { border-style: dashed; }
+button.danger { color: var(--danger); border-color: var(--danger); }

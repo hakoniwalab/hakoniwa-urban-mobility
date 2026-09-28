@@ -77,7 +77,9 @@ spin and tilt (`tools/urban_fault_injection.py`).
   map: click to add points, drag to move them, and set dwell, speed, loops, and
   which Cars follow it. Routes are saved under
   `hakoniwa-business-pack/work/urban/scenarios/`. In Compose, an API-controlled
-  Car picks its route from a selector.
+  Car picks its route from a selector. "削除" removes a saved route; examples
+  stay, and a route a saved Composition still uses is kept until no Car
+  picks it.
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
   obstacles included) plus the vehicle's clearance. Adding the Drone Core

@@ -26,6 +26,8 @@ API (all JSON):
   GET  /api/scenarios                    Car route scenarios (examples and saved)
   GET  /api/scenarios/<id>               one route scenario
   PUT  /api/scenarios/<id>               validate and save a route scenario
+  DELETE /api/scenarios/<id>             delete a saved route scenario (not an example,
+                                         not one a saved Composition uses)
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
@@ -344,6 +346,49 @@ def read_scenario(scenario_id: str) -> dict:
         raise StudioError(f"route scenario {scenario_id} not found", HTTPStatus.NOT_FOUND)
     path, data, editable = found
     return {**_route_scenario_entry(path, data, editable), "scenario": data, "conflicts": route_conflicts_for(data)}
+
+
+def _compositions_using(path: Path) -> list[str]:
+    """Saved Compositions whose vehicle params point at path (a route scenario file)."""
+    import urban_assets
+    import yaml
+
+    target = path.resolve()
+    users = []
+    for composition in sorted(USER_COMPOSITIONS.glob("*.yaml")) if USER_COMPOSITIONS.is_dir() else []:
+        try:
+            data = yaml.safe_load(composition.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        for vehicle in data.get("vehicles") or [] if isinstance(data, dict) else []:
+            values = (vehicle.get("params") or {}).values() if isinstance(vehicle, dict) else []
+            for value in values:
+                try:
+                    if isinstance(value, str) and urban_assets.resolve_reference(value, composition.parent) == target:
+                        users.append(composition.stem)
+                except urban_assets.AssetError:
+                    continue
+    return sorted(set(users))
+
+
+def delete_scenario(scenario_id: str) -> dict:
+    """Delete a saved route scenario; examples and routes still in use stay."""
+    _check_id(scenario_id)
+    found = _load_route_scenarios().get(scenario_id)
+    if found is None:
+        raise StudioError(f"route scenario {scenario_id} not found", HTTPStatus.NOT_FOUND)
+    path, _, editable = found
+    if not editable:
+        raise StudioError(f"例のルート {scenario_id} は削除できません")
+    users = _compositions_using(path)
+    if users:
+        raise StudioError(
+            f"ルート {scenario_id} は Composition {', '.join(users)} が使っています。"
+            "その車のルートを変えてから削除してください。",
+            HTTPStatus.CONFLICT,
+        )
+    path.unlink()
+    return {"deleted": scenario_id}
 
 
 def save_scenario(scenario_id: str, scenario: dict) -> dict:
@@ -972,6 +1017,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     return self._json(read_scenario(parts[1]))
                 if method == "PUT":
                     return self._json(save_scenario(parts[1], self._body()))
+                if method == "DELETE":
+                    return self._json(delete_scenario(parts[1]))
             if len(parts) == 2 and parts[0] == "compositions":
                 if method == "GET":
                     return self._json(read_composition(parts[1]))
@@ -1006,6 +1053,9 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         return self._api("POST")
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        return self._api("DELETE")
 
 
 def make_server(port: int = DEFAULT_PORT, runner: JobRunner | None = None) -> ThreadingHTTPServer:
