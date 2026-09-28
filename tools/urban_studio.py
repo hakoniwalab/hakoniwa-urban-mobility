@@ -31,6 +31,7 @@ API (all JSON):
   GET  /api/worlds/<id>                  a World's extent, map origin, and GLB URL
   GET  /api/worlds/<id>/glb              the World's display GLB
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
+  POST /api/worlds/<id>/route-check      segments of route points blocked by those walls
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
   GET  /api/cities                       City World Web UI state and its jobs; a finished,
                                          unregistered job starts its registration
@@ -330,6 +331,21 @@ def route_conflicts_for(scenario: dict) -> list[dict]:
     except StudioError:
         return []
     return route_check.route_conflicts(points, buildings)
+
+
+def check_route(world_id: str, body: object) -> dict:
+    """Blocked segments of unsaved route points on a World (the live check while editing)."""
+    import route_check
+
+    points = body.get("points") if isinstance(body, dict) else None
+    if not isinstance(points, list) or any(
+        not isinstance(point, dict) or not all(isinstance(point.get(key), (int, float)) for key in ("east_m", "north_m"))
+        for point in points
+    ):
+        raise StudioError("the request body must be {points: [{east_m, north_m}, ...]}")
+    # An unknown World is a 404; a plain World has no building walls.
+    buildings = world_footprints(world_id)["buildings"]
+    return {"conflicts": route_check.route_conflicts(points, buildings)}
 
 
 def list_scenarios() -> list[dict]:
@@ -991,6 +1007,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(list_compositions())
             if method == "GET" and len(parts) == 2 and parts[0] == "worlds":
                 return self._json(world_info(parts[1]))
+            if method == "POST" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "route-check":
+                return self._json(check_route(parts[1], self._body()))
             if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "footprints":
                 return self._json(world_footprints(parts[1]))
             if method == "GET" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "glb":

@@ -1003,7 +1003,8 @@ async function openRoute(id) {
 function newRoute() {
   const world = state.current?.composition.world
     || (usableWorlds().find((item) => item.kind === "city") || usableWorlds()[0])?.id;
-  state.route = { id: "", editable: true, scenario: newRouteScenario(world), conflicts: [], checked: false };
+  // No points yet, so nothing to check.
+  state.route = { id: "", editable: true, scenario: newRouteScenario(world), conflicts: [], checked: true };
   state.routePoint = -1;
   setStatus($("#route-list-status"), "");
   renderRouteList();
@@ -1055,8 +1056,34 @@ function routeNumber(value, fallback) {
 }
 
 // A point edit makes the last building check stale until the next save.
+const ROUTE_CHECK_DELAY_MS = 400;
+
+// Points changed: check the route against the World's walls once editing pauses.
 function routeEdited() {
-  if (state.route) { state.route.conflicts = []; state.route.checked = false; }
+  const route = state.route;
+  if (!route) return;
+  route.checked = false;
+  clearTimeout(state.routeCheckTimer);
+  state.routeCheckTimer = setTimeout(() => checkRouteNow(route), ROUTE_CHECK_DELAY_MS);
+}
+
+async function checkRouteNow(route) {
+  const world = route.scenario.meta.world;
+  const points = route.scenario.route.points;
+  const version = (route.checkVersion = (route.checkVersion || 0) + 1);
+  let conflicts = [];
+  if (world && points.length >= 3) {
+    try {
+      ({ conflicts } = await api("POST", `worlds/${world}/route-check`, { points }));
+    } catch {
+      return; // leave it unchecked; saving checks again
+    }
+  }
+  // A newer edit (or another route) supersedes this answer.
+  if (state.route !== route || route.checkVersion !== version) return;
+  route.conflicts = conflicts;
+  route.checked = true;
+  renderRoute();
 }
 
 function addRoutePoint(east, north) {
@@ -1128,7 +1155,7 @@ function renderRoute() {
     ? conflicts.map((conflict) => el("li", {},
       `点${conflict.from}→点${conflict.to}：${conflict.reason === "inside" ? "建物の中に入ります" : "建物の壁に近すぎます（車の幅を考えると通れません）"}`
       + `（${conflict.at[0]}E, ${conflict.at[1]}N）`))
-    : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりは、保存すると再チェックします")]));
+    : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりをチェックしています…")]));
   if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts);
 }
 
@@ -1150,6 +1177,7 @@ async function saveRoute() {
     route.editable = true;
     route.savedId = route.id;
     state.routeData = {}; // Compose re-reads the saved route for its route starts
+    state.routeChecks = {};
     route.conflicts = saved.conflicts || [];
     route.checked = true;
     await loadScenarios();
@@ -1174,6 +1202,7 @@ async function deleteRoute() {
     await api("DELETE", `scenarios/${route.savedId}`);
     state.route = null;
     state.routeData = {};
+    state.routeChecks = {};
     await loadScenarios();
     renderEditor(); // Compose selectors drop the route
     renderRoute();
@@ -1222,7 +1251,11 @@ async function initRoute() {
   });
   bind("#route-id", (route, input) => { route.id = input.value.trim(); });
   bind("#route-name", (route, input) => { route.scenario.name = input.value.trim(); });
-  bind("#route-world", (route, input) => { route.scenario.meta.world = input.value || undefined; loadRouteWorld(); });
+  bind("#route-world", (route, input) => {
+    route.scenario.meta.world = input.value || undefined;
+    loadRouteWorld();
+    routeEdited();
+  });
   bind("#route-speed", (route, input) => {
     route.scenario.control = { ...DEFAULT_ROUTE_CONTROL, ...route.scenario.control, speed_m_s: routeNumber(input.value, 1.0) };
   });
@@ -1263,6 +1296,10 @@ function routeParamField(vehicle, name, definition) {
   const warning = chosen && chosen.world && chosen.world !== composition.world
     ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
     : null;
+  const conflicts = value ? composedRouteConflicts(value, composition.world) : null;
+  const blocked = conflicts?.length
+    ? el("span", { class: "hint error" }, `このルートは ${conflicts.length} 区間がこの World の建物の壁にぶつかります（車が止まります）。「ルートを編集」で直してください。`)
+    : null;
   // The route decides where the Car starts; its placed spawn is not used.
   const note = value
     ? el("span", { class: "hint" }, "初期位置はルートの開始点です（同じルートの2台目以降は、ルートで決めた間隔だけ後ろ）。配置の east / north / yaw は使いません。")
@@ -1270,7 +1307,23 @@ function routeParamField(vehicle, name, definition) {
   return el("label", { class: "field grow" }, `ルート${definition.required ? " *" : ""}`,
     el("div", { class: "row" }, select,
       el("button", { class: "secondary", onclick: (event) => { event.preventDefault(); editRouteFor(value); } }, "ルートを編集")),
-    warning, note);
+    warning, blocked, note);
+}
+
+// Blocked segments of a Composition's route on its World, checked once per
+// (route, World) and cached; null until known.
+function composedRouteConflicts(reference, world) {
+  const points = state.routeData?.[reference]?.route?.points;
+  if (!world || !points || points.length < 3) return null;
+  state.routeChecks = state.routeChecks || {};
+  const key = `${reference}|${world}`;
+  if (!(key in state.routeChecks)) {
+    state.routeChecks[key] = null;
+    api("POST", `worlds/${world}/route-check`, { points })
+      .then(({ conflicts }) => { state.routeChecks[key] = conflicts; renderEditor(); })
+      .catch(() => { delete state.routeChecks[key]; });
+  }
+  return state.routeChecks[key];
 }
 
 // --- Simulation ---------------------------------------------------------------------

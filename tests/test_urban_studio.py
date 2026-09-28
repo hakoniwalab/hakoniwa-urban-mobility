@@ -259,6 +259,22 @@ class StudioServerTest(StudioTestBase):
         self.assertNotIn("my-loop", [item["id"] for item in listed])
         self.assertEqual(self.call("DELETE", "/api/scenarios/my-loop")[0], 404)
 
+    def test_unsaved_route_points_are_checked_against_the_walls(self):
+        building = {"id": "bldg_a", "vertices": [[-5, -5], [5, -5], [5, 5], [-5, 5]], "holes": []}
+        points = self.route()["route"]["points"]
+        with mock.patch.object(urban_studio, "world_footprints", return_value={"buildings": [building]}):
+            status, body = self.call("POST", "/api/worlds/test-city/route-check", {"points": points})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["conflicts"][0]["building"], "bldg_a")
+            # Fewer than three points is not a loop yet.
+            self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": points[:2]})[1],
+                             {"conflicts": []})
+            self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": "x"})[0], 400)
+        # A plain World has no walls; an unknown World is a 404.
+        self.assertEqual(self.call("POST", "/api/worlds/plain-ground/route-check", {"points": points})[1],
+                         {"conflicts": []})
+        self.assertEqual(self.call("POST", "/api/worlds/no-such-world/route-check", {"points": points})[0], 404)
+
     def test_an_example_route_cannot_be_deleted(self):
         status, body = self.call("DELETE", "/api/scenarios/golf-cart-demo-convoy")
         self.assertEqual(status, 400)
