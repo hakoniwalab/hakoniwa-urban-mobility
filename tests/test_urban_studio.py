@@ -481,19 +481,21 @@ class StudioServerTest(StudioTestBase):
 
 
 class CityTestBase(StudioTestBase):
-    """Registered Cities from a fake catalog and a fake urban_assets.py; the
-    City World Web UI jobs folder older registrations came from."""
+    """Urban's export folder with City World jobs as Environment Studio writes
+    them, a fake catalog, and fake tool scripts."""
 
     def setUp(self):
         super().setUp()
+        self.exports = self.work / "studio-cities"
+        self.exports.mkdir()
         self.jobs = self.work / "city-world-web-ui/runtime/jobs"
         self.jobs.mkdir(parents=True)
         fake_tool = self.work / "fake_tool.py"
         fake_tool.write_text("import sys\nprint('ran', *sys.argv[1:], flush=True)\n", encoding="utf-8")
         self.registered = {}
-        for target, name, value in ((urban_studio, "URBAN_ASSETS", fake_tool),
-                                    (urban_studio, "ENVIRONMENT_STUDIO_PORT", 1)):
-            patch = mock.patch.object(target, name, value)
+        for name, value in (("URBAN_ASSETS", fake_tool), ("CITY_AUTHORING", fake_tool),
+                            ("STUDIO_CITY_JOBS", self.exports), ("ENVIRONMENT_STUDIO_PORT", 1)):
+            patch = mock.patch.object(urban_studio, name, value)
             patch.start()
             self.addCleanup(patch.stop)
         for name, value in (("urban_assets.catalog", mock.Mock(side_effect=lambda: self.registered)),
@@ -501,36 +503,93 @@ class CityTestBase(StudioTestBase):
             patch = mock.patch(name, value)
             patch.start()
             self.addCleanup(patch.stop)
+        self.user_assets = self.work / "user-assets"
+        patch = mock.patch("urban_assets.USER_ASSETS", self.user_assets)
+        patch.start()
+        self.addCleanup(patch.stop)
 
-    def register(self, name, receipt, title=None):
-        data = {"receipt": str(receipt), **({"title": title} if title else {})}
+    def write_job(self, name, title=None):
+        job = self.exports / name
+        (job / "build/world").mkdir(parents=True)
+        receipt = job / "build/world/city-world-receipt.json"
+        receipt.write_text("{}", encoding="utf-8")
+        (job / "job.json").write_text(json.dumps({"title": title or name}), encoding="utf-8")
+        return receipt
+
+    def register(self, name, receipt, version=None, title=None):
+        data = {"receipt": str(receipt), "version": version, **({"title": title} if title else {})}
         self.registered[name] = mock.Mock(id=name, kind="city", data=data, resolve=lambda value: Path(value))
+
+    def wait_registration(self, name):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            _, state = self.call("GET", "/api/cities")
+            job = next(job for job in state["jobs"] if job["id"] == name)
+            if job["registration"] and job["registration"]["state"] != "running":
+                return job["registration"]
+            time.sleep(0.05)
+        self.fail("registration did not finish")
 
 
 class CityPageTest(CityTestBase):
-    """GET /api/cities: the registered Cities and the Environment Studio link."""
+    """GET /api/cities and the Environment Studio commands, on a fake export folder."""
 
-    def test_the_registered_cities_are_listed_with_their_receipts(self):
-        receipt = self.work / "studio/city-worlds/sapporo/build/world/city-world-receipt.json"
-        receipt.parent.mkdir(parents=True)
-        receipt.write_text("{}", encoding="utf-8")
-        self.register("sapporo", receipt, title="札幌")
-        self.register("gone", self.work / "missing/city-world-receipt.json")
-        status, state = self.call("GET", "/api/cities")
-        self.assertEqual(status, 200)
-        cities = {city["id"]: city for city in state["cities"]}
-        self.assertEqual((cities["sapporo"]["title"], cities["sapporo"]["available"]), ("札幌", True))
-        self.assertEqual((cities["gone"]["title"], cities["gone"]["available"]), ("gone", False))
-
-    def test_the_environment_studio_link(self):
+    def test_a_job_environment_studio_wrote_is_registered_once_with_its_title(self):
+        receipt = self.write_job("sapporo", title="札幌")
+        registration = self.wait_registration("sapporo")
+        self.assertEqual(registration["state"], "succeeded")
+        self.assertIn(f"ran register-city --receipt {receipt.resolve()} --title 札幌", registration["lines"])
         _, state = self.call("GET", "/api/cities")
+        self.assertEqual(len([job for job in self.server.RequestHandlerClass.runner.jobs.values()
+                              if job.composition == "city:sapporo"]), 1)
+        self.assertEqual(state["jobs"][0]["title"], "札幌")
+
+    def test_registered_jobs_and_half_written_ones_are_left_alone(self):
+        receipt = self.write_job("osaka")
+        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns)
+        (self.exports / "nagoya.partial/build/world").mkdir(parents=True)  # being written next to its place
+        _, state = self.call("GET", "/api/cities")
+        jobs = {job["id"]: job for job in state["jobs"]}
+        self.assertTrue(jobs["osaka"]["registered"])
+        self.assertIsNone(jobs["osaka"]["registration"])
+        self.assertNotIn("nagoya.partial", jobs)
+
+    def test_a_job_written_again_is_registered_again(self):
+        receipt = self.write_job("osaka")
+        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns - 1)
+        self.assertEqual(self.wait_registration("osaka")["state"], "succeeded")
+
+    def test_a_removed_job_unregisters_its_city(self):
+        import shutil
+        import urban_assets
+
+        receipt = self.write_job("hokkaido")
+        manifest = urban_assets.register_city(receipt, directory=self.user_assets)
+        shutil.rmtree(self.exports / "hokkaido")
+        _, state = self.call("GET", "/api/cities")
+        self.assertEqual(state["unregistered"], ["hokkaido"])
+        self.assertFalse(manifest.exists())
+
+    def test_the_registered_cities_and_the_environment_studio_state(self):
+        receipt = self.write_job("sapporo")
+        self.register("sapporo", receipt.resolve(), receipt.stat().st_mtime_ns, title="札幌")
+        _, state = self.call("GET", "/api/cities")
+        [city] = state["cities"]
+        self.assertEqual((city["id"], city["title"], city["available"]), ("sapporo", "札幌", True))
         studio = state["environment_studio"]
         self.assertEqual(studio["url"], "http://127.0.0.1:1/map.html")
-        self.assertFalse(studio["running"])
-        self.assertIn("env_studio.py start", studio["start"])
+        self.assertEqual((studio["running"], studio["writes_here"]), (False, False))
+        self.assertEqual(state["export_dir"], str(self.exports))
 
-    def test_urban_studio_no_longer_starts_the_city_world_web_ui(self):
-        status, _ = self.call("POST", "/api/cities/web-ui/start")
+    def test_environment_studio_is_started_and_stopped_by_the_authoring_tool(self):
+        status, job = self.call("POST", "/api/cities/environment-studio/start")
+        self.assertEqual(status, 202)
+        self.assertEqual(self.wait(job["id"])["lines"], ["ran start"])
+        _, job = self.call("POST", "/api/cities/environment-studio/stop")
+        self.assertEqual(self.wait(job["id"])["lines"], ["ran stop"])
+        _, state = self.call("GET", "/api/cities")
+        self.assertEqual(state["environment_studio"]["job"]["command"], "stop")
+        status, _ = self.call("POST", "/api/cities/environment-studio/explode")
         self.assertEqual(status, 404)
 
 

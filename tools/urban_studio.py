@@ -40,8 +40,13 @@ API (all JSON):
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
   POST /api/worlds/<id>/route-check      segments of route points blocked by those walls
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
-  GET  /api/cities                       the registered Cities, and the Environment Studio
-                                         that makes and registers them (its URL, running?)
+  GET  /api/cities                       Environment Studio (running, its export folder), the
+                                         City World jobs it wrote to Urban's folder (a ready,
+                                         unregistered one starts its registration), the
+                                         registered Cities
+  POST /api/cities/environment-studio/start|stop
+                                         start (configure first) or stop Environment Studio
+                                         with Urban's export folder (urban_city_authoring.py)
   GET  /api/cache                        Urban cache (world-height, plain-world) and what
                                          prune-cache would remove
   POST /api/cache/prune                  run urban_assets.py prune-cache --apply
@@ -96,10 +101,12 @@ START_TIMEOUT_SEC = 30.0
 STOP_TIMEOUT_SEC = 10.0
 USER_COMPOSITIONS = urban_manifest.path("compositions.user")
 EXAMPLE_COMPOSITIONS = urban_manifest.path("compositions.repository")
-# Cities are made and registered by Environment Studio (PLATEAU, editing);
-# Urban Studio lists them and links to it.
+# Cities are made by Environment Studio (PLATEAU, editing), which Urban Studio
+# starts with Urban's export folder (tools/urban_city_authoring.py); Urban
+# Studio registers the City World jobs that appear there.
+CITY_AUTHORING = ROOT / "tools/urban_city_authoring.py"
+STUDIO_CITY_JOBS = urban_manifest.path("assets.studio_city_jobs")
 ENVIRONMENT_STUDIO_PORT = urban_manifest.port("environment-studio")
-ENVIRONMENT_STUDIO_START = "python ../hakoniwa-environment-studio/tools/env_studio.py start"
 
 
 class StudioError(RuntimeError):
@@ -833,6 +840,8 @@ class JobRunner:
         self.python = python
         self.simulation = simulation
         self.jobs: dict[str, Job] = {}
+        # City registration key -> receipt mtime_ns when that registration started.
+        self.city_receipt_versions: dict[str, int] = {}
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -916,11 +925,78 @@ def _port_open(port: int) -> bool:
         return False
 
 
-def city_state() -> dict:
-    """The City page: the registered Cities and the Environment Studio that
-    makes and registers them (urban_assets.py register-city is the contract)."""
+def _environment_studio() -> dict | None:
+    """The Environment Studio answering on its port (its /api/health), or None."""
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(f"http://127.0.0.1:{ENVIRONMENT_STUDIO_PORT}/api/health", timeout=0.5) as response:
+            data = json.loads(response.read())
+    except (OSError, URLError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("app") == "environment-studio" else None
+
+
+def studio_city_jobs() -> list[dict]:
+    """The City World jobs Environment Studio wrote to Urban's export folder,
+    newest first, and whether each is registered. The Studio moves a job in
+    only when it is complete, so a job with its receipt is ready. A
+    registered City whose receipt changed since (written again) counts as
+    unregistered, so the new World is picked up."""
     import urban_assets
 
+    registered = {
+        Path(asset.data["receipt"]).resolve(): asset.data.get("version")
+        for asset in urban_assets.catalog().values() if asset.kind == "city"
+    }
+    root = STUDIO_CITY_JOBS
+    folders = sorted((path for path in root.glob("*") if path.is_dir() and not path.name.endswith(".partial")),
+                     key=lambda path: path.stat().st_mtime, reverse=True) if root.is_dir() else []
+    jobs = []
+    for folder in folders:
+        receipt = (folder / "build/world/city-world-receipt.json").resolve()
+        ready = receipt.is_file()
+        try:
+            title = json.loads((folder / "job.json").read_text(encoding="utf-8")).get("title") or folder.name
+        except (OSError, ValueError):
+            title = folder.name
+        jobs.append({
+            "id": folder.name, "title": title, "ready": ready, "receipt": str(receipt),
+            "registered": ready and registered.get(receipt) == receipt.stat().st_mtime_ns,
+        })
+    return jobs
+
+
+def city_state(runner: "JobRunner") -> dict:
+    """The City page: Environment Studio (running, where it writes), the jobs
+    it wrote to Urban's export folder, and the registered Cities. Each ready,
+    unregistered job starts its registration (urban_assets.py register-city,
+    which checks the job first); Cities whose job was removed from the
+    folder are unregistered first."""
+    import urban_assets
+
+    unregistered = urban_assets.prune_missing_cities(STUDIO_CITY_JOBS)
+    jobs = studio_city_jobs()
+    for job in jobs:
+        key = f"city:{job['id']}"
+        previous = runner.latest(key)
+        version = Path(job["receipt"]).stat().st_mtime_ns if job["ready"] else None
+        # A failed registration is shown, not retried. A succeeded one is
+        # redone only for a new World: the receipt changed since (written
+        # again, or removed and written anew) or it was just pruned.
+        retry = (
+            previous is not None
+            and previous.state == "succeeded"
+            and (job["id"] in unregistered or runner.city_receipt_versions.get(key) != version)
+        )
+        if job["ready"] and not job["registered"] and (previous is None or retry):
+            previous = runner.launch(key, "register", [[
+                runner.python, "-u", str(URBAN_ASSETS), "register-city", "--receipt", job["receipt"],
+                "--title", job["title"],
+            ]])
+            runner.city_receipt_versions[key] = version
+        job["registration"] = previous.snapshot() if previous else None
     cities = []
     for asset in urban_assets.catalog().values():
         if asset.kind != "city":
@@ -928,14 +1004,29 @@ def city_state() -> dict:
         receipt = asset.resolve(str(asset.data["receipt"]))
         cities.append({"id": asset.id, "title": asset.data.get("title") or asset.id,
                        "receipt": str(receipt), "available": receipt.is_file()})
+    health = _environment_studio()
+    lifecycle = runner.latest("city:environment-studio")
     return {
-        "cities": cities,
         "environment_studio": {
             "url": f"http://127.0.0.1:{ENVIRONMENT_STUDIO_PORT}/map.html",
-            "running": _port_open(ENVIRONMENT_STUDIO_PORT),
-            "start": ENVIRONMENT_STUDIO_START,
+            "running": health is not None,
+            "export_dir": health.get("export_dir") if health else None,
+            # Started by hand without Urban's folder: what it writes would not come here.
+            "writes_here": bool(health) and health.get("export_dir") == str(STUDIO_CITY_JOBS.resolve()),
+            "job": lifecycle.snapshot() if lifecycle else None,
         },
+        "export_dir": str(STUDIO_CITY_JOBS),
+        "jobs": jobs,
+        "unregistered": unregistered,
+        "cities": cities,
     }
+
+
+def environment_studio(runner: "JobRunner", command: str) -> "Job":
+    """Start (configure first) or stop Environment Studio with Urban's export folder."""
+    if command not in {"start", "stop"}:
+        raise StudioError(f"unknown Environment Studio command {command!r}", HTTPStatus.NOT_FOUND)
+    return runner.launch("city:environment-studio", command, [[runner.python, "-u", str(CITY_AUTHORING), command]])
 
 
 # --- Caches ---------------------------------------------------------------------------
@@ -1046,7 +1137,9 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     raise StudioError("height needs numeric east and north") from exc
                 return self._json(world_height(parts[1], east, north))
             if method == "GET" and parts == ["cities"]:
-                return self._json(city_state())
+                return self._json(city_state(self.runner))
+            if method == "POST" and len(parts) == 3 and parts[:2] == ["cities", "environment-studio"]:
+                return self._json(environment_studio(self.runner, parts[2]).snapshot(), HTTPStatus.ACCEPTED)
             if method == "GET" and parts == ["cache"]:
                 return self._json(cache_state(self.runner))
             if method == "POST" and parts == ["cache", "prune"]:

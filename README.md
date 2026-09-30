@@ -25,6 +25,9 @@ browser visualization and safety-aware interaction.
 > avoidance between route Cars (routes that cross can collide), and Drone-Car
 > contact beyond the one-way Drone Mirror.
 
+> **Quick start (日本語):** [`docs/quickstart-ja.md`](docs/quickstart-ja.md) — open Urban Studio, fly on a
+> plain World, make a PLATEAU City with Environment Studio, and drive or fly on it.
+
 The step-by-step migration to the managed Business Pack Recipe/Foundation
 contract is tracked in
 [`docs/foundation-task.md`](docs/foundation-task.md).
@@ -76,17 +79,19 @@ and speed, sent to the Drone's `disturb` PDU when a slider is released.
 The controller does not reallocate thrust, so a failed rotor makes the Hexa
 spin and tilt (`tools/urban_fault_injection.py`).
 
-- **City**: Cities are made and registered by
+- **City**: "Environment Studio で作る" starts
   [Hakoniwa Environment Studio](https://github.com/hakoniwalab/hakoniwa-environment-studio)
-  (PLATEAU area selection and City World build, editing as parts, "urban に登録").
-  The City page lists the registered Cities and its "Environment Studio で作る"
-  button opens the Environment Studio map page (port 28097, the manifest's
-  `environment-studio`). Without it, register a City World job with
-  `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`
-  and remove one with `python tools/urban_assets.py unregister-city --id <id>`;
-  `python tools/urban_assets.py list --json` lists the catalog for tools. The City page's "キャッシュ" panel shows
-  the cache sizes, and "Urban キャッシュを整理" runs
-  `python tools/urban_assets.py prune-cache --apply` (see Cache cleanup).
+  (configured first through `recipes/usecases/urban-city-authoring.yaml`) with
+  Urban's export folder (`work/urban/studio-cities`, the manifest's
+  `assets.studio_city_jobs`) and opens its map page. The Studio does not know
+  Urban: it writes the Cities it makes (PLATEAU City Worlds, edited
+  environments) there as City World jobs, and Urban Studio checks and
+  registers each job that appears (`urban_assets.py register-city`, with the
+  one-time height model compile) and unregisters it when the job is removed.
+  From a terminal: `python tools/urban_city_authoring.py start|status|open|stop`.
+  The City page's "キャッシュ" panel shows the cache sizes, and
+  "Urban キャッシュを整理" runs `python tools/urban_assets.py prune-cache --apply`
+  (see Cache cleanup).
 - **Route**: draw a Car route (a closed loop of waypoints) on the City World
   map: click to add points, drag to move them, and set dwell, speed, loops, and
   which Cars follow it. Routes are saved under

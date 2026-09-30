@@ -1,0 +1,176 @@
+# The managed Recipe of making Cities for Urban Mobility with Environment
+# Studio: the repository it needs. tools/urban_city_authoring.py runs the
+# Business Pack `recipe.py configure` on it, then on Environment Studio's own
+# Recipe (its Python packages and hakoniwa-envsim), then starts the Studio
+# with Urban's export folder (urban.manifest.yaml `recipes.city`,
+# `assets.studio_city_jobs`).
+id: urban-city-authoring
+title: Make Cities for Urban Mobility with Environment Studio
+recipe_version: 0.1
+goal:
+  user_request: PLATEAU の範囲を選んで街（City）を作り、必要なら部品として編集して、Urban Mobility の World として車やドローンで走らせたい
+  description: >
+    Urban Mobility starts Environment Studio with its own export folder.
+    The Studio builds PLATEAU City Worlds through hakoniwa-envsim, edits
+    environments as parts, and writes City World jobs to that folder; Urban
+    checks and registers each job that appears there as a City Asset and
+    unregisters it when it disappears. The Studio does not call Urban: the
+    dependency points one way, Urban -> Environment Studio.
+feasibility:
+  status: feasible
+  confidence: high
+  rationale:
+    - Environment Studio builds PLATEAU City Worlds through hakoniwa-envsim and writes City World jobs to the folder it is started with (env_studio.py start --export-dir).
+    - The City World job is Urban's World format (schemas/city-world-job.yaml); urban_assets.py register-city checks and registers it.
+validation:
+  status: not_tested
+  summary: >
+    The export folder hand-off is unit-tested on both sides. An end-to-end
+    run (configure, start the Studio from Urban Studio, build a PLATEAU City,
+    see it registered, compose and simulate) is not recorded yet.
+  steps:
+    - id: end_to_end
+      status: not_tested
+      notes:
+        - Start Environment Studio from Urban Studio's City page, build a PLATEAU City World, and confirm it is registered and runs with a vehicle.
+constraints:
+  - no-hakoniwa-core-process
+  - foundation-python-only
+  - environment-studio-does-not-call-urban
+  - city-world-job-contract
+target_environment:
+  required_for: interactive-city-authoring
+  status: specified
+  os: macOS | Linux | Windows
+  os_version: current-supported-host
+  architecture: host-native
+  execution_mode: native
+  runtimes:
+    - name: Python
+      required: true
+      version: '3.12'
+      path: work/foundation/install/python
+urban_mobility:
+  use_case: city-authoring
+execution_environment:
+  required_for: interactive-city-authoring
+  status: specified
+  os: macOS | Linux | Windows
+  os_version: current-supported-host
+  architecture: host-native
+  execution_mode: native
+  gui:
+    required: true
+    status: local-browser
+  shared_memory:
+    required: false
+    access: not-used
+  python:
+    environment: foundation-venv
+    path: work/foundation/install/python
+    version: '3.12'
+    hakopy_available: not-required
+foundation_contract:
+  mode: not_required
+  reason: Making Cities runs Environment Studio and hakoniwa-envsim as Python tools; it does not start Hakoniwa Core, shared memory, hako-cmd, or hakopy.
+recipe_local_requirements_schema_version: 1
+recipe_local_requirements:
+  hakoniwa-urban-mobility:
+    root:
+      default_path: .
+      override_env: HAKONIWA_URBAN_MOBILITY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: local
+    required_artifacts:
+    - path: tools/urban_city_authoring.py
+      kind: file
+    - path: tools/urban_assets.py
+      kind: file
+    - path: schemas/city-world-job.yaml
+      kind: file
+  hakoniwa-environment-studio:
+    root:
+      default_path: ../hakoniwa-environment-studio
+      override_env: HAKONIWA_ENVIRONMENT_STUDIO_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-environment-studio.git
+      revision: main
+    required_artifacts:
+    - path: tools/env_studio.py
+      kind: file
+    - path: recipes/business-pack/environment-studio.yaml
+      kind: file
+components:
+  - id: hakoniwa-urban-mobility
+    roles: [integration_boundary]
+    purpose: Start Environment Studio with Urban's export folder, and register the City World jobs that appear there as City Assets.
+  - id: hakoniwa-environment-studio
+    roles: [asset_generator, environment_model, visualizer]
+    purpose: Build PLATEAU City Worlds (hakoniwa-envsim), edit environments as parts, and write City World jobs to the export folder.
+connections:
+  - from: hakoniwa-environment-studio
+    to: hakoniwa-urban-mobility
+    interface: City World jobs in an export folder
+    contract:
+      status: partially_verified
+      requires:
+        - Urban starts the Studio with env_studio.py start --export-dir <assets.studio_city_jobs>; the Studio writes each job next to its place and moves it in when complete, with job.json (title, source).
+        - Each job follows schemas/city-world-job.yaml; Urban registers it with urban_assets.py register-city (which checks it) and unregisters it when the job folder is gone.
+      validation_notes:
+        - Unit-tested on both sides; the Studio's tests run urban's tools/city_world_job.py check on what it writes.
+data_flow:
+  - Urban Studio City page -> tools/urban_city_authoring.py start -> recipe.py configure (this Recipe, then Environment Studio's) -> env_studio.py start --export-dir work/urban/studio-cities
+  - Browser -> Environment Studio map page -> hakoniwa-envsim PLATEAU City World build -> City World job in work/urban/studio-cities/<id>
+  - Urban Studio City page -> urban_assets.py register-city (each new or changed job) / unregister-city (each removed job) -> Compose World
+time_model:
+  mode: wall-clock
+  notes:
+    - Authoring and City World builds are interactive; simulation time is not used.
+artifact_sets:
+  studio_city_jobs:
+    status: partially_verified
+    description: City World jobs Environment Studio writes for Urban.
+    artifacts: [work/urban/studio-cities]
+artifacts:
+  - id: studio_city_jobs
+    kind: generated-directory
+    path: work/urban/studio-cities
+missing_pieces:
+  - Record an end-to-end run (Studio started from Urban Studio, a PLATEAU City built, registered, and simulated).
+demo:
+  prerequisites:
+    - id: enter_workspace
+      command: python tools/workspace.py enter
+      expected: Start the managed Workspace shell (the prompt shows (hako)) in hakoniwa-business-pack.
+  steps:
+    - id: start_studio
+      command: python ../hakoniwa-urban-mobility/tools/urban_city_authoring.py start --open-browser
+      expected: Configure this Recipe and Environment Studio's, then start the Studio at http://127.0.0.1:28097/ with Urban's export folder and open its map page.
+    - id: status
+      command: python ../hakoniwa-urban-mobility/tools/urban_city_authoring.py status
+      expected: Report whether the Studio runs and where it writes.
+  cleanup:
+    expected_behavior:
+      - Run python ../hakoniwa-urban-mobility/tools/urban_city_authoring.py stop before leaving the Workspace.
+    verification_checks:
+      - Port 28097 is free.
+    cautions:
+      - exit leaves the Workspace shell but does not stop a background Studio.
+expected_result: >
+  Cities made in Environment Studio appear in Urban Studio as Worlds without
+  the Studio knowing Urban, and disappear when removed from the export folder.
+source_catalogs:
+  - component_id: hakoniwa-urban-mobility
+  - component_id: hakoniwa-environment-studio
+source_artifacts:
+  - repository: hakoniwalab/hakoniwa-urban-mobility
+    path: tools/urban_city_authoring.py
+    revision: main
+    description: Configure and start / stop Environment Studio with Urban's export folder.
+  - repository: hakoniwalab/hakoniwa-environment-studio
+    path: tools/env_urban.py
+    revision: main
+    description: How the Studio writes City World jobs to its export folder.
