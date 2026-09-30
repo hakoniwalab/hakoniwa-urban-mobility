@@ -30,6 +30,16 @@ assets:
   user: "${work}/urban/assets"               # registered Cities (cities/) and Worlds (worlds/)
   city_world_jobs: "${work}/recipes/city-world-web-ui/runtime/jobs"   # the City World Web UI's jobs
 
+# --- Example Compositions (section 5.7) ----------------------------------------------
+# Urban Studio lists an example only while every Asset it names (its World,
+# vehicles, fleets) is in the catalog, so examples appear as the workspace
+# gains what they need (a City registered, a repository checked out).
+compositions:
+  repository: recipes/compositions           # this repository's examples (*.yaml)
+  workspace: "${workspace}/*/assets"         # other repositories' examples (top level only)
+  suffix: .composition.yaml                  # the file suffix of those
+  user: "${work}/urban/compositions"         # Compositions saved in Urban Studio
+
 # --- Worlds (section 6) --------------------------------------------------------------
 worlds:
   default: plain-ground                      # the World of a Composition that selects none
