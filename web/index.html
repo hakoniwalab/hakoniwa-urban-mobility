@@ -35,21 +35,15 @@
         <div class="row between">
           <h2>City</h2>
           <div class="row">
-            <button id="city-new">新規作成</button>
-            <button id="city-stop" class="secondary" hidden>City World Web UI を停止</button>
+            <button id="city-new">Environment Studio で作る</button>
           </div>
         </div>
-        <p class="hint">「新規作成」で City World Web UI（PLATEAU の範囲選択と生成）を起動し、別タブで開きます。生成が終わった City は自動で登録され、Compose の World に並びます。登録時に高さ計算用のモデルを一度だけコンパイルします（大きな City は数分）。</p>
+        <p class="hint">City は Environment Studio で作ります（PLATEAU の範囲を選んで City World を作る、部品として編集する）。Environment Studio が urban に登録した City が、下の一覧と Compose の World に並びます。</p>
         <div id="city-web-status" class="status" role="status"></div>
-        <pre id="city-web-log" class="log log-small" hidden></pre>
-      </div>
-      <div class="panel">
-        <h2>City World のジョブ</h2>
-        <table class="grid" id="city-job-table"><thead><tr><th>ジョブ</th><th>状態</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h2>登録済みの City</h2>
-        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>Asset</th><th>状態</th></tr></thead><tbody></tbody></table>
+        <table class="grid" id="city-table"><thead><tr><th>ID</th><th>名前</th><th>状態</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <div class="row between">
@@ -59,7 +53,7 @@
             <button id="cache-prune">Urban キャッシュを整理</button>
           </div>
         </div>
-        <p class="hint">「Urban キャッシュを整理」は、別の MuJoCo 版で置き換え済みのもの、登録されていない・削除された City のもの、再生成前の World の高さモデルを削除します。登録済み City の World は削除しません。City World の PLATEAU ダウンロードは Business Pack のコマンドで整理します。</p>
+        <p class="hint">「Urban キャッシュを整理」は、別の MuJoCo 版で置き換え済みのもの、登録されていない・削除された City のもの、再生成前の World の高さモデルを削除します。登録済み City の World は削除しません。PLATEAU のダウンロードは、City を作った Environment Studio 側で整理します。</p>
         <table class="grid" id="cache-table"><thead><tr><th>対象</th><th>サイズ</th><th>削除可能</th></tr></thead><tbody></tbody></table>
         <div id="cache-status" class="status" role="status"></div>
         <details id="cache-details" hidden><summary>高さモデルの内訳</summary><table class="grid" id="cache-entry-table"><tbody></tbody></table></details>

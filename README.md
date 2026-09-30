@@ -76,15 +76,15 @@ and speed, sent to the Drone's `disturb` PDU when a slider is released.
 The controller does not reallocate thrust, so a failed rotor makes the Hexa
 spin and tilt (`tools/urban_fault_injection.py`).
 
-- **City**: "新規作成" starts the Business Pack City World Web UI
-  (`tools/recipe/city_world_web_ui.py`, configured on first use) and opens it
-  in a new tab. Each finished City World job is registered automatically,
-  including the one-time height model compile. Without the Studio, register
-  a City with
-  `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
-  Deleting a job in the City World Web UI unregisters its City on the next
-  City page refresh; `python tools/urban_assets.py unregister-city --id <id>`
-  removes a registration by hand. The City page's "キャッシュ" panel shows
+- **City**: Cities are made and registered by
+  [Hakoniwa Environment Studio](https://github.com/hakoniwalab/hakoniwa-environment-studio)
+  (PLATEAU area selection and City World build, editing as parts, "urban に登録").
+  The City page lists the registered Cities and its "Environment Studio で作る"
+  button opens the Environment Studio map page (port 28097, the manifest's
+  `environment-studio`). Without it, register a City World job with
+  `python tools/urban_assets.py register-city --receipt <city-world-receipt.json>`
+  and remove one with `python tools/urban_assets.py unregister-city --id <id>`;
+  `python tools/urban_assets.py list --json` lists the catalog for tools. The City page's "キャッシュ" panel shows
   the cache sizes, and "Urban キャッシュを整理" runs
   `python tools/urban_assets.py prune-cache --apply` (see Cache cleanup).
 - **Route**: draw a Car route (a closed loop of waypoints) on the City World

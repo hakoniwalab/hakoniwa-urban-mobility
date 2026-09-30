@@ -286,7 +286,9 @@ def register_world(world: Path, asset_id: str | None = None, directory: Path = U
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
-    commands.add_parser("list", help="list the Asset catalog")
+    listing = commands.add_parser("list", help="list the Asset catalog")
+    listing.add_argument("--json", action="store_true",
+                         help="print JSON (id, kind, category, title, manifest, and a City's receipt) for tools")
     register = commands.add_parser("register-city", help="register a City World receipt")
     register.add_argument("--receipt", type=Path, required=True)
     register.add_argument("--id", help="City Asset id (default: the City World job name)")
@@ -404,10 +406,25 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Generated plain World job: {receipt.parents[2]}")
             precompile_height(receipt)
         return 0
+    if args.json:
+        import json
+
+        print(json.dumps([listing_entry(asset) for asset in catalog().values()], ensure_ascii=False, indent=2))
+        return 0
     for asset in catalog().values():
         detail = asset.category or asset.kind
         print(f"{asset.id:40} {asset.kind:8} {detail:6} {asset.path}")
     return 0
+
+
+def listing_entry(asset: Asset) -> dict:
+    """What `list --json` tells another tool about an Asset (Environment
+    Studio reads it to show which of its City Worlds are registered)."""
+    entry = {"id": asset.id, "kind": asset.kind, "category": asset.category,
+             "title": asset.data.get("title") or asset.id, "manifest": str(asset.path)}
+    if asset.kind == "city":
+        entry["receipt"] = str(Path(str(asset.data["receipt"])).expanduser().resolve())
+    return entry
 
 
 if __name__ == "__main__":

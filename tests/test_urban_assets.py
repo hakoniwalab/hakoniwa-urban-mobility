@@ -85,5 +85,28 @@ class VehicleDimensionsTest(unittest.TestCase):
                     urban_assets.validate(asset)
 
 
+
+class ListJsonTest(unittest.TestCase):
+    def test_list_json_names_a_citys_receipt_for_tools(self):
+        import contextlib
+        import io
+        import json
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "job/build/world/city-world-receipt.json"
+            city = urban_assets.Asset("sapporo", "city", Path(directory) / "sapporo.asset.yaml",
+                                      {"title": "札幌", "receipt": str(receipt)})
+            car = urban_assets.Asset("golf-cart", "vehicle", Path(directory) / "golf-cart.asset.yaml",
+                                     {"category": "car"})
+            out = io.StringIO()
+            with mock.patch.object(urban_assets, "catalog", return_value={"sapporo": city, "golf-cart": car}), \
+                    contextlib.redirect_stdout(out):
+                self.assertEqual(urban_assets.main(["list", "--json"]), 0)
+        listed = {entry["id"]: entry for entry in json.loads(out.getvalue())}
+        self.assertEqual((listed["sapporo"]["title"], listed["sapporo"]["receipt"]), ("札幌", str(receipt.resolve())))
+        self.assertEqual((listed["golf-cart"]["category"], listed["golf-cart"]["title"]), ("car", "golf-cart"))
+        self.assertNotIn("receipt", listed["golf-cart"])
+
 if __name__ == "__main__":
     unittest.main()
