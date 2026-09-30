@@ -6,7 +6,7 @@ Urban Mobility は、街（City）や平らな地面（World）に、ゴルフ�
 City を作る（Environment Studio）→ 車両と組み合わせる（Compose）→ 走らせる（Simulation）
 ```
 
-City は、Urban Studio から起動する **Environment Studio** で作ります（地図で範囲を選び、PLATEAU か OpenStreetMap から作る。必要なら部品として編集する）。作った City は自動で Urban Mobility に登録されます。
+City は、Urban Studio から起動する **Environment Studio** で作ります（地図で範囲を選び、PLATEAU か OpenStreetMap から City World を生成する。必要なら部品として編集する）。作った City は自動で Urban Mobility に登録されます。
 
 ## 0. 準備
 
@@ -71,8 +71,10 @@ City の元になる地図データは 2 種類あり、取れる範囲と精度
 ### OpenStreetMap で作る（PLATEAU にデータがないとき）
 
 1. 診断結果の **この範囲を OpenStreetMap で作る** を押すと、範囲を保ったまま OpenStreetMap に切り替わります（トグルで切り替えても同じです）。
-2. ID と名前を入れ、**この範囲を取り込む** を押します。建物と道路が部品になった環境ができます。
-3. **Studio で開く** で Environment Studio の画面を開き、必要なら建物や道路を動かして保存し、画面上部の **書き出す** を押します。
+2. **City Worldを生成** を押します。建物と道路から、PLATEAU と同じ仕組みで City World ができます（地面は平ら）。ID は範囲の中心から自動で付きます（例：`osm-lat35_681-lon139_767`）。書き換えることもできます。
+3. できあがると、自動で urban に書き出されます。PLATEAU と同じく **生成結果** に並び、**3D Viewer** で確かめられます。
+
+車道のない範囲（歩道だけなど）は作れません。範囲を広げるか、動かしてください。
 
 OpenStreetMap で作業していて「この場所は PLATEAU にもあるかな？」と思ったら、**この範囲が PLATEAU にあるか確かめる** で、PLATEAU に切り替えて同じ範囲を診断できます。
 
@@ -80,7 +82,7 @@ OpenStreetMap で作業していて「この場所は PLATEAU にもあるかな
 
 書き出された City は、Urban Studio の City タブの **Environment Studio から届いた City** に現れ、自動で検査・登録されます（高さ計算用のモデルを一度だけ準備するので、大きな街は数分）。**登録済み** になれば使えます。
 
-PLATEAU の City を編集したいときは、生成結果で **部品として取り込む** を押し、Environment Studio の画面で建物や道路を動かして保存し、**書き出す** を押します。書き出したものも同じように自動で登録されます。
+City を編集したいときは（PLATEAU・OpenStreetMap どちらも）、生成結果で **部品として取り込む** を押します。Environment Studio の画面に移るので、建物や道路を動かして保存し、**書き出す** を押します。書き出したものも同じように自動で登録されます。
 
 ## 4. 車両と組み合わせて走らせる
 
