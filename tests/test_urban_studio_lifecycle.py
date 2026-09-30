@@ -1,0 +1,86 @@
+"""Urban Studio's lifecycle: start in the background, status, stop, the
+health endpoint they check, and a clear message when the port is taken."""
+
+import contextlib
+import io
+import json
+from pathlib import Path
+import socket
+import sys
+import tempfile
+import threading
+import unittest
+from urllib.request import urlopen
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import urban_studio  # noqa: E402
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class LifecycleTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.state = Path(directory.name) / "studio"
+
+    def run_quiet(self, function, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = function(*args)
+        return code, out.getvalue() + err.getvalue()
+
+    def test_the_health_endpoint_names_this_studio(self):
+        server = urban_studio.make_server(0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=5) as response:
+            health = json.loads(response.read())
+        self.assertEqual((health["app"], health["port"]), ("urban-studio", port))
+        self.assertEqual(urban_studio._health(port)["pid"], health["pid"])
+
+    def test_a_port_taken_by_another_program_is_explained(self):
+        with socket.socket() as other:
+            other.bind(("127.0.0.1", 0))
+            other.listen()
+            port = other.getsockname()[1]
+            code, output = self.run_quiet(urban_studio.serve, port, False)
+            self.assertEqual(code, 1)
+            self.assertIn(f"port {port} is in use by another program", output)
+            code, output = self.run_quiet(urban_studio.start, port, False, self.state)
+            self.assertEqual(code, 1)
+            self.assertIn("in use by another program", output)
+
+    def test_start_status_and_stop_in_the_background(self):
+        port = free_port()
+        code, output = self.run_quiet(urban_studio.start, port, False, self.state)
+        self.addCleanup(lambda: self.run_quiet(urban_studio.stop, self.state))
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Urban Studio started: http://127.0.0.1:{port}/", output)
+        state = json.loads((self.state / "studio.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["port"], port)
+        self.assertEqual(self.run_quiet(urban_studio.status, self.state)[0], 0)
+        # Started again: it says where the running one is.
+        code, output = self.run_quiet(urban_studio.start, port, False, self.state)
+        self.assertEqual(code, 0)
+        self.assertIn("already running", output)
+        # Run in a terminal on the same port: refused with how to stop the background one.
+        code, output = self.run_quiet(urban_studio.serve, port, False)
+        self.assertEqual(code, 1)
+        self.assertIn("urban_studio.py stop", output)
+        code, output = self.run_quiet(urban_studio.stop, self.state)
+        self.assertEqual(code, 0)
+        self.assertIsNone(urban_studio._health(port))
+        self.assertFalse((self.state / "studio.json").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
