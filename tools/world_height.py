@@ -41,6 +41,8 @@ RAY_START_M = 10000.0
 # A ray passes through at most this many non-colliding geoms before it
 # gives up; City Worlds contain none, so this only bounds a pathological model.
 MAX_PASS_THROUGH = 64
+# MuJoCo's geom groups (mjNGROUP): a ray can leave out whole groups.
+GEOM_GROUPS = 6
 # Worlds with fewer meshes compile quickly in one process.
 MESHES_PER_CHUNK_MIN = 1000
 MAX_CHUNKS = 8
@@ -253,14 +255,37 @@ class WorldHeight:
         self.datas = [mujoco.MjData(model) for model in models]
         for model, data in zip(models, self.datas):
             mujoco.mj_forward(model, data)
+        self.masks = [self._visual_only_left_out(model) for model in models]
 
-    def _hit(self, model, data, east_m: float, north_m: float) -> float | None:
+    def _visual_only_left_out(self, model):
+        """A geom group mask that leaves out the visual-only geoms, moved to a
+        group no colliding geom uses, or None when every group is taken.
+
+        Passing through a visual-only geom by starting again just below where
+        the ray met it can start the next ray inside a colliding geom under
+        it (a lane line painted on a road), which then reports that geom's
+        underside instead of its top."""
+        numpy = self._numpy
+        colliding = (model.geom_contype != 0) | (model.geom_conaffinity != 0)
+        visual = numpy.flatnonzero(~colliding)
+        if not len(visual):
+            return None
+        used = set(int(group) for group in model.geom_group[colliding])
+        free = next((group for group in range(GEOM_GROUPS - 1, -1, -1) if group not in used), None)
+        if free is None:
+            return None
+        model.geom_group[visual] = free
+        mask = numpy.ones(GEOM_GROUPS, dtype=numpy.uint8)
+        mask[free] = 0
+        return mask
+
+    def _hit(self, model, data, east_m: float, north_m: float, mask=None) -> float | None:
         numpy = self._numpy
         point = numpy.array([north_m, -east_m, RAY_START_M], dtype=numpy.float64)
         down = numpy.array([0.0, 0.0, -1.0], dtype=numpy.float64)
         geom = numpy.array([-1], dtype=numpy.int32)
         for _ in range(MAX_PASS_THROUGH):
-            distance = self._mujoco.mj_ray(model, data, point, down, None, 1, -1, geom)
+            distance = self._mujoco.mj_ray(model, data, point, down, mask, 1, -1, geom)
             if distance < 0:
                 return None
             hit = point[2] - distance
@@ -273,7 +298,8 @@ class WorldHeight:
 
     def __call__(self, east_m: float, north_m: float) -> float:
         hits = [
-            hit for hit in (self._hit(model, data, east_m, north_m) for model, data in zip(self.models, self.datas))
+            hit for hit in (self._hit(model, data, east_m, north_m, mask)
+                            for model, data, mask in zip(self.models, self.datas, self.masks))
             if hit is not None
         ]
         if not hits:

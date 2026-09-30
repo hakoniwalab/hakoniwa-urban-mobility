@@ -34,6 +34,23 @@ WORLD = """
   </worldbody>
 </mujoco>
 """
+# A road slab (a surface 2 cm thick) with a visual-only line painted on it, the
+# line's bottom exactly on the slab's top (as an authoring tool writes a lane
+# marking): the ground under the line is the slab's top.
+# Turned in a body (as an exported World stands in its frame), a ray started
+# inside the line meets the line's underside, and one started just below that
+# is inside the road and meets the road's underside.
+PAINTED_ROAD = """
+<mujoco>
+  <worldbody>
+    <geom name="ground" type="plane" size="100 100 0.1"/>
+    <body quat="0.7071067811865476 0 0 -0.7071067811865476"><body pos="-20 0 0">
+      <geom name="road" type="box" pos="0 0 0.01" size="3 3 0.01"/>
+      <geom name="line" type="box" pos="0 0 0.022" size="0.075 3 0.002" contype="0" conaffinity="0" group="2"/>
+    </body></body>
+  </worldbody>
+</mujoco>
+"""
 # The same roof with no ground below the rest of the World.
 FLOATING = """
 <mujoco>
@@ -91,6 +108,15 @@ class WorldHeightTest(unittest.TestCase):
         self.assertAlmostEqual(ground(0.0, 10.0), 5.0, places=6, msg="roof, below the visual-only banner")
         self.assertAlmostEqual(ground(0.0, 0.0), 0.0, places=6, msg="open ground")
         self.assertAlmostEqual(ground(-1.5, 10.0), 5.0, places=6, msg="east=-1.5 is MJCF y=+1.5, still on the roof")
+
+    @needs_mujoco
+    def test_a_line_painted_on_a_road_leaves_the_road_as_the_ground(self):
+        with self.quiet():
+            ground = world_height.ray_ground(self.mjcf(PAINTED_ROAD), cache_dir=self.work / "cache")
+        # MJCF y=20 is east=-20: under the line, and beside it on the road.
+        self.assertAlmostEqual(ground(-20.0, 0.0), 0.02, places=6, msg="under the visual-only line: the road's top")
+        self.assertAlmostEqual(ground(-21.0, 0.0), 0.02, places=6, msg="on the road beside the line")
+        self.assertAlmostEqual(ground(0.0, 0.0), 0.0, places=6, msg="off the road")
 
     @needs_mujoco
     def test_ray_without_geometry_below_is_an_error(self):

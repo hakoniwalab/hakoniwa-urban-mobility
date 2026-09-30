@@ -108,6 +108,10 @@ mjcf:
     the World brings its own ground, an hfield geom in worldbody: the
     vehicles' ground planes are removed when they are composed
   requires_hfield_geom: true
+  # The lighting is the vehicles': each vehicle model keeps its lights (named
+  # sun, fill_light, ...) when the World is composed in, so a World light
+  # collides with them. Envsim's and plain_world.py's Worlds have none.
+  forbidden_elements: [light]
   angles: >-
     with no compiler element, an euler is in degrees (MuJoCo's default) in
     every model it is composed into; quat or xyaxes do not depend on the

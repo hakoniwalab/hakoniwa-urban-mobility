@@ -129,12 +129,14 @@ class CityWorldJobTest(unittest.TestCase):
         mjcf = self.job / "build/world/city-world.xml"
         text = MJCF.format(hf="x.hf").replace('type="hfield" hfield="plateau_terrain"', 'type="plane" size="1 1 1"')
         text = text.replace("<asset>", '<compiler angle="radian"/><asset>').replace("building_a", "car_0_body")
+        text = text.replace("<worldbody>", '<worldbody><light name="sun" directional="true"/>')
         mjcf.write_text(text, encoding="utf-8")
         self.edit_receipt(lambda data: data["mjcf"].pop("sha256"))
         found = "\n".join(self.problems())
         self.assertIn("<compiler> is not allowed at the top level", found)
         self.assertIn("an hfield geom in worldbody", found)
         self.assertIn("names reserved for vehicles: car_0_body", found)
+        self.assertIn("no <light> in a World (the vehicles bring it): sun", found)
 
     def test_optional_building_heights_and_the_workspace_are_warnings(self):
         buildings = self.job / "build/components/buildings/buildings.xml"
