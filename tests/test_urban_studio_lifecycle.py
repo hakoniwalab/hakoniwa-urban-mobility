@@ -109,6 +109,21 @@ class LifecycleTest(unittest.TestCase):
             code, output = self.run_quiet(urban_studio.serve, port, True)
         self.assertEqual(code, 0, output)
         browser.assert_called_once_with(f"http://127.0.0.1:{port}/")
+        # open: the running one, however it was started.
+        with mock.patch.object(urban_studio.webbrowser, "open") as browser:
+            code, output = self.run_quiet(urban_studio.open_studio, self.state, port)
+        self.assertEqual(code, 0, output)
+        browser.assert_called_once_with(f"http://127.0.0.1:{port}/")
+
+    def test_open_without_a_running_one_says_how_to_start(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with mock.patch.object(urban_studio.webbrowser, "open") as browser:
+            code, output = self.run_quiet(urban_studio.open_studio, self.state, port)
+        self.assertEqual(code, 1)
+        self.assertIn("start --open-browser", output)
+        browser.assert_not_called()
 
     def test_shutdown_needs_json(self):
         from urllib.error import HTTPError

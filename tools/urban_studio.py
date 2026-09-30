@@ -11,6 +11,7 @@ inherit the Workspace environment:
 
   python tools/urban_studio.py [--port 8090] [--open-browser]   in this terminal (Ctrl+C stops it)
   python tools/urban_studio.py start [--port 8090] [--open-browser]   in the background
+  python tools/urban_studio.py open           open the running Urban Studio in the browser
   python tools/urban_studio.py status | stop   stop: the Urban Studio on its port, however it was started
 
 The port defaults to urban.manifest.yaml's urban-studio port
@@ -1252,7 +1253,7 @@ def _port_in_use(port: int) -> str:
     health = _health(port)
     if health:
         return (f"Urban Studio is already running: http://127.0.0.1:{port}/ (pid {health['pid']}). "
-                f"Open it ({command_hint('start --open-browser')}), or stop it first: {command_hint('stop')}")
+                f"Open it: {command_hint('open')}, or stop it first: {command_hint('stop')}")
     return (f"port {port} is in use by another program; stop it, or pass --port "
             "(or set HAKONIWA_URBAN_PORT_URBAN_STUDIO; see docs/urban-manifest.md)")
 
@@ -1324,7 +1325,9 @@ def start(port: int, open_browser: bool, state_dir: Path = STATE_DIR) -> int:
     state = {"app": APP_NAME, "pid": health["pid"], "port": port, "url": url, "log": str(log),
              "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     _state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    print(f"Urban Studio started: {url} (pid {health['pid']}); stop it with: {command_hint('stop')}")
+    print(f"Urban Studio started: {url} (pid {health['pid']})")
+    print(f"  open it with: {command_hint('open')}")
+    print(f"  stop it with: {command_hint('stop')}")
     if open_browser:
         webbrowser.open(url)
     return 0
@@ -1342,6 +1345,18 @@ def status(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
         return 0
     print(f"Urban Studio is not running (start it with: {command_hint('start')})")
     return 1
+
+
+def open_studio(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
+    """Open the running Urban Studio in the browser: the background one, else the one on port."""
+    running = _running(state_dir)
+    url = running["url"] if running else f"http://127.0.0.1:{port}/" if _health(port) else None
+    if not url:
+        print(f"Urban Studio is not running (start it with: {command_hint('start --open-browser')})", file=sys.stderr)
+        return 1
+    print(f"Opening Urban Studio: {url}")
+    webbrowser.open(url)
+    return 0
 
 
 def stop(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
@@ -1384,8 +1399,9 @@ def stop(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", nargs="?", default="serve", choices=("serve", "start", "status", "stop"),
-                        help="serve (default): in this terminal; start: in the background; status; stop")
+    parser.add_argument("command", nargs="?", default="serve", choices=("serve", "start", "status", "open", "stop"),
+                        help="serve (default): in this terminal; start: in the background; status; "
+                             "open: the running one in the browser; stop")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--open-browser", action="store_true")
     args = parser.parse_args(argv)
@@ -1393,6 +1409,8 @@ def main(argv: list[str] | None = None) -> int:
         return start(args.port, args.open_browser)
     if args.command == "status":
         return status(port=args.port)
+    if args.command == "open":
+        return open_studio(port=args.port)
     if args.command == "stop":
         return stop(port=args.port)
     return serve(args.port, args.open_browser)
