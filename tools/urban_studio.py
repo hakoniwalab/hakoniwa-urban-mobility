@@ -11,7 +11,8 @@ inherit the Workspace environment:
 
   python tools/urban_studio.py [--port 8090] [--open-browser]   in this terminal (Ctrl+C stops it)
   python tools/urban_studio.py start [--port 8090] [--open-browser]   in the background
-  python tools/urban_studio.py status | stop
+  python tools/urban_studio.py open           open the running Urban Studio in the browser
+  python tools/urban_studio.py status | stop   stop: the Urban Studio on its port, however it was started
 
 The port defaults to urban.manifest.yaml's urban-studio port
 (HAKONIWA_URBAN_PORT_URBAN_STUDIO or the machine's overrides file change it).
@@ -1092,6 +1093,17 @@ class StudioHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             raise StudioError(f"invalid JSON body: {exc}") from exc
 
+    def _shutdown(self) -> None:
+        """Stop this Urban Studio, as Ctrl+C would (tools/urban_studio.py stop).
+
+        JSON only: a page elsewhere cannot send it without the browser asking
+        this server first (CORS preflight), which it does not allow."""
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            raise StudioError("shutdown needs a JSON request", HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+        self._json({"stopping": True, "pid": os.getpid()})
+        # shutdown() waits for serve_forever, so it cannot run on this request's thread.
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
+
     def _api(self, method: str) -> None:
         url = urlparse(self.path)
         parts = [part for part in url.path.split("/") if part][1:]  # drop "api"
@@ -1100,6 +1112,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
             if method == "GET" and parts == ["health"]:
                 return self._json({"app": APP_NAME, "pid": os.getpid(), "port": self.server.server_address[1],
                                    "instance": os.environ.get(INSTANCE_ENV)})
+            if method == "POST" and parts == ["shutdown"]:
+                return self._shutdown()
             if method == "GET" and parts == ["assets"]:
                 return self._json(asset_catalog())
             if method == "GET" and len(parts) == 3 and parts[0] == "assets" and parts[2] == "preview":
@@ -1223,20 +1237,37 @@ def _port_free(port: int) -> bool:
     return True
 
 
+def command_hint(command: str) -> str:
+    """How to issue a lifecycle command from where the person is (in the
+    Workspace, usually hakoniwa-business-pack)."""
+    script = Path(__file__).resolve()
+    try:
+        script = Path(os.path.relpath(script, Path.cwd()))
+    except ValueError:  # another drive on Windows
+        pass
+    return f"python {script.as_posix()} {command}"
+
+
 def _port_in_use(port: int) -> str:
     """Why port cannot be used, and what to do."""
     health = _health(port)
     if health:
         return (f"Urban Studio is already running: http://127.0.0.1:{port}/ (pid {health['pid']}). "
-                "Open it, or stop it first: python tools/urban_studio.py stop"
-                + ("" if health.get("instance") else " (or Ctrl+C in the terminal that runs it)"))
+                f"Open it: {command_hint('open')}, or stop it first: {command_hint('stop')}")
     return (f"port {port} is in use by another program; stop it, or pass --port "
             "(or set HAKONIWA_URBAN_PORT_URBAN_STUDIO; see docs/urban-manifest.md)")
 
 
 def serve(port: int, open_browser: bool) -> int:
-    """Run Urban Studio in this terminal until Ctrl+C."""
+    """Run Urban Studio in this terminal until Ctrl+C (or stop)."""
     if not _port_free(port):
+        running = _health(port)
+        if running and open_browser:
+            # Asked for Urban Studio in the browser: that one is it.
+            url = f"http://127.0.0.1:{port}/"
+            print(f"Urban Studio is already running: {url} (pid {running['pid']}); opening it")
+            webbrowser.open(url)
+            return 0
         print(f"ERROR: {_port_in_use(port)}", file=sys.stderr)
         return 1
     server = make_server(port)
@@ -1294,49 +1325,69 @@ def start(port: int, open_browser: bool, state_dir: Path = STATE_DIR) -> int:
     state = {"app": APP_NAME, "pid": health["pid"], "port": port, "url": url, "log": str(log),
              "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     _state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    print(f"Urban Studio started: {url} (pid {health['pid']}); stop it with: python tools/urban_studio.py stop")
+    print(f"Urban Studio started: {url} (pid {health['pid']})")
+    print(f"  open it with: {command_hint('open')}")
+    print(f"  stop it with: {command_hint('stop')}")
     if open_browser:
         webbrowser.open(url)
     return 0
 
 
-def status(state_dir: Path = STATE_DIR) -> int:
+def status(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
     running = _running(state_dir)
     if running:
         print(f"Urban Studio is running: {running['url']} (pid {running['pid']}, since {running['started']})")
         return 0
-    port = DEFAULT_PORT
     health = _health(port)
     if health:
-        print(f"Urban Studio is running in a terminal: http://127.0.0.1:{port}/ (pid {health['pid']}; Ctrl+C there stops it)")
+        print(f"Urban Studio is running in a terminal: http://127.0.0.1:{port}/ (pid {health['pid']}); "
+              f"stop it with: {command_hint('stop')}")
         return 0
-    print("Urban Studio is not running (start it with: python tools/urban_studio.py start)")
+    print(f"Urban Studio is not running (start it with: {command_hint('start')})")
     return 1
 
 
-def stop(state_dir: Path = STATE_DIR) -> int:
-    """Stop the background Urban Studio (as Ctrl+C would)."""
+def open_studio(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
+    """Open the running Urban Studio in the browser: the background one, else the one on port."""
+    running = _running(state_dir)
+    url = running["url"] if running else f"http://127.0.0.1:{port}/" if _health(port) else None
+    if not url:
+        print(f"Urban Studio is not running (start it with: {command_hint('start --open-browser')})", file=sys.stderr)
+        return 1
+    print(f"Opening Urban Studio: {url}")
+    webbrowser.open(url)
+    return 0
+
+
+def stop(state_dir: Path = STATE_DIR, port: int = DEFAULT_PORT) -> int:
+    """Stop the Urban Studio, as Ctrl+C would: the background one this tool
+    started, else the one answering on port (started in a terminal)."""
     import signal
+    from urllib.error import URLError
+    from urllib.request import Request, urlopen
 
     running = _running(state_dir)
-    if not running:
+    port = int(running["port"]) if running else port
+    health = _health(port)
+    if not health:
         _state_file(state_dir).unlink(missing_ok=True)
-        health = _health(DEFAULT_PORT)
-        if health:
-            print(f"Urban Studio on port {DEFAULT_PORT} was started in a terminal (pid {health['pid']}): "
-                  "press Ctrl+C there to stop it")
-            return 1
         print("Urban Studio is not running")
         return 0
-    port, pid = int(running["port"]), int(running["pid"])
+    pid = int(health["pid"])
     try:
-        os.kill(pid, getattr(signal, "SIGINT") if os.name != "nt" else signal.SIGTERM)
-    except OSError:
+        urlopen(Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}", method="POST",
+                        headers={"Content-Type": "application/json"}), timeout=2).read()
+    except (OSError, URLError):
         pass
     deadline = time.monotonic() + STOP_TIMEOUT_SEC
-    while time.monotonic() < deadline and _health(port, timeout=0.3):
+    while time.monotonic() < deadline and not _port_free(port):
         time.sleep(0.2)
-    if _health(port, timeout=0.3):
+    if not _port_free(port):
+        if not running:
+            print(f"ERROR: Urban Studio on port {port} (pid {pid}) did not stop; press Ctrl+C in its terminal",
+                  file=sys.stderr)
+            return 1
+        # The background one did not stop by itself: end the process (on Windows SIGTERM terminates it).
         try:
             os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError:
@@ -1348,17 +1399,20 @@ def stop(state_dir: Path = STATE_DIR) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", nargs="?", default="serve", choices=("serve", "start", "status", "stop"),
-                        help="serve (default): in this terminal; start: in the background; status; stop")
+    parser.add_argument("command", nargs="?", default="serve", choices=("serve", "start", "status", "open", "stop"),
+                        help="serve (default): in this terminal; start: in the background; status; "
+                             "open: the running one in the browser; stop")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--open-browser", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "start":
         return start(args.port, args.open_browser)
     if args.command == "status":
-        return status()
+        return status(port=args.port)
+    if args.command == "open":
+        return open_studio(port=args.port)
     if args.command == "stop":
-        return stop()
+        return stop(port=args.port)
     return serve(args.port, args.open_browser)
 
 

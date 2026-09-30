@@ -435,10 +435,14 @@ root manifest's `urban-studio` port) with a JSON API over the tools of this
 contract. Start it from the Business Pack Workspace shell so the simulations
 it runs inherit the Workspace environment: `urban_studio.py` runs it in that
 terminal (Ctrl+C stops it); `urban_studio.py start` runs it in the
-background (its pid, port, and log under `work/urban/studio/`), and
-`status` / `stop` check and stop that one. Both check the port first: a
-running Urban Studio is named with how to stop it, another program with how
-to pick another port. `GET /api/health` names the Urban Studio answering. The tabs follow issue #5:
+background (its pid, port, and log under `work/urban/studio/`). `open` opens
+the running one in the browser. `status` /
+`stop` check and stop the Urban Studio on its port however it was started
+(`stop` asks it to shut down with `POST /api/shutdown`, a JSON request, as
+Ctrl+C would). Both ways of running check the port first: a running Urban
+Studio is named with how to stop it (with `--open-browser` it is opened
+instead), another program with how to pick another port. `GET /api/health`
+names the Urban Studio answering. The tabs follow issue #5:
 
 | Tab | Does | API |
 |---|---|---|
