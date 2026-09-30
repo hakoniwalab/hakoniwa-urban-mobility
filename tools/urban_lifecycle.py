@@ -27,7 +27,7 @@ class LifecycleSpec:
     viewer_url: str
     websocket_port: int = urban_manifest.port("web-bridge")
     ports: tuple[int, ...] = (
-        urban_manifest.port("viewer-http"), urban_manifest.port("web-bridge"), urban_manifest.port("launcher-control"))
+        urban_manifest.port("viewer-http"), urban_manifest.port("web-bridge"))
 
 
 def read_session(spec: LifecycleSpec) -> dict | None:

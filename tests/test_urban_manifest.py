@@ -24,23 +24,23 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=False), \
                 mock.patch.object(urban_manifest, "_overrides", return_value=({}, None)):
             self.assertEqual({port_id: urban_manifest.port(port_id) for port_id in urban_manifest.load()["ports"]}, {
-                "urban-studio": 8090, "city-world-web-ui": 8008, "viewer-http": 8000, "web-bridge": 8765,
-                "web-bridge-car": 18765, "web-bridge-fleet": 18766, "launcher-control": 54111})
+                "urban-studio": 28090, "city-world-web-ui": 28008, "viewer-http": 28100, "web-bridge": 28865,
+                "web-bridge-car": 28866, "web-bridge-fleet": 28867})
 
     def test_ports_are_changed_by_the_environment_then_the_overrides_file(self):
         with tempfile.TemporaryDirectory() as directory:
             overrides = Path(directory) / "ports.yaml"
-            overrides.write_text("ports:\n  web-bridge: 28765\n  viewer-http: 8100\n  launcher-control: 1\n",
+            overrides.write_text("ports:\n  web-bridge: 29865\n  viewer-http: 29100\n  city-world-web-ui: 1\n",
                                  encoding="utf-8")
             with mock.patch.object(urban_manifest, "resolve",
                                    side_effect=lambda value: overrides if "ports.yaml" in str(value)
                                    else urban_manifest.ROOT / value), \
-                    mock.patch.dict("os.environ", {"HAKONIWA_URBAN_PORT_VIEWER_HTTP": "8200"}):
-                self.assertEqual(urban_manifest.resolved_port("web-bridge"), (28765, f"overrides file {overrides}"))
+                    mock.patch.dict("os.environ", {"HAKONIWA_URBAN_PORT_VIEWER_HTTP": "29200"}):
+                self.assertEqual(urban_manifest.resolved_port("web-bridge"), (29865, f"overrides file {overrides}"))
                 self.assertEqual(urban_manifest.resolved_port("viewer-http"),
-                                 (8200, "environment HAKONIWA_URBAN_PORT_VIEWER_HTTP"))
+                                 (29200, "environment HAKONIWA_URBAN_PORT_VIEWER_HTTP"))
                 # A fixed port belongs to another component: it does not change here.
-                self.assertEqual(urban_manifest.port("launcher-control"), 54111)
+                self.assertEqual(urban_manifest.port("city-world-web-ui"), 28008)
             with mock.patch.dict("os.environ", {"HAKONIWA_URBAN_PORT_WEB_BRIDGE_CAR": "not-a-port"}), \
                     self.assertRaises(urban_manifest.ManifestError):
                 urban_manifest.port("web-bridge-car")
@@ -49,11 +49,11 @@ class ManifestTest(unittest.TestCase):
 
     def test_a_default_that_clashes_is_reported(self):
         data = urban_manifest.load()
-        broken = {**data, "ports": {**data["ports"], "extra": {"default": 8097}, "twin": {"default": 8000}}}
+        broken = {**data, "ports": {**data["ports"], "extra": {"default": 28097}, "twin": {"default": 28100}}}
         with mock.patch.object(urban_manifest, "load", return_value=broken):
             found = "\n".join(urban_manifest.check())
-        self.assertIn("8097 is reserved for hakoniwa-environment-studio", found)
-        self.assertIn("8000 is also ports.viewer-http", found)
+        self.assertIn("28097 is reserved for hakoniwa-environment-studio", found)
+        self.assertIn("28100 is also ports.viewer-http", found)
 
     def test_paths_resolve_from_the_repository_and_the_workspace(self):
         with tempfile.TemporaryDirectory() as directory:

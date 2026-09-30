@@ -219,7 +219,7 @@ server. `configure` prints the complete browser URL; with the checked-in ports
 it is:
 
 ```text
-http://127.0.0.1:8000/hakoniwa-map-viewer/src/client/index.html?threejsRoot=%2Fhakoniwa-threejs-drone&viewerConfigPath=%2Fhakoniwa-business-pack%2Fwork%2Frecipes%2Furban-multi-car-viewer%2Fconfig%2Fthreejs%2Fviewer-config.json&layout=three-main
+http://127.0.0.1:28100/hakoniwa-map-viewer/src/client/index.html?threejsRoot=%2Fhakoniwa-threejs-drone&viewerConfigPath=%2Fhakoniwa-business-pack%2Fwork%2Frecipes%2Furban-multi-car-viewer%2Fconfig%2Fthreejs%2Fviewer-config.json&layout=three-main
 ```
 
 The browser loads the City World GLB and each vehicle type's standard

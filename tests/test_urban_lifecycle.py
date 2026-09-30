@@ -11,6 +11,9 @@ from tools import urban_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 BUSINESS_PACK = urban_manifest.business_pack()
+# The ports a LifecycleSpec checks by default (urban.manifest.yaml).
+VIEWER_HTTP = urban_manifest.port("viewer-http")
+WEB_BRIDGE = urban_manifest.port("web-bridge")
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 from recipe.process_liveness import pid_alive as canonical_pid_alive  # noqa: E402
@@ -99,8 +102,8 @@ class UrbanLifecycleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             spec = self.spec(Path(directory))
             with (
-                mock.patch.object(lifecycle, "listening", side_effect=lambda port: port == 8000),
-                self.assertRaisesRegex(lifecycle.LifecycleError, "8000"),
+                mock.patch.object(lifecycle, "listening", side_effect=lambda port: port == VIEWER_HTTP),
+                self.assertRaisesRegex(lifecycle.LifecycleError, str(VIEWER_HTTP)),
             ):
                 lifecycle.preflight_start(spec)
 
@@ -195,8 +198,8 @@ class UrbanLifecycleTest(unittest.TestCase):
             spec = self.spec(Path(directory))
             self.write_session(spec, state="TERMINATED")
             with (
-                mock.patch.object(lifecycle, "listening", side_effect=lambda port: port == 8765),
-                self.assertRaisesRegex(lifecycle.LifecycleError, "8765"),
+                mock.patch.object(lifecycle, "listening", side_effect=lambda port: port == WEB_BRIDGE),
+                self.assertRaisesRegex(lifecycle.LifecycleError, str(WEB_BRIDGE)),
             ):
                 lifecycle.verify_stopped(spec)
 

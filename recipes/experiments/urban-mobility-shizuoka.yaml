@@ -40,8 +40,8 @@ inputs:
 
   browser_visualization:
     enabled: true
-    web_bridge_port: 8765
-    http_port: 8000
+    web_bridge_port: 28865
+    http_port: 28100
     threejs_root: ../hakoniwa-threejs-drone
 
 composition:

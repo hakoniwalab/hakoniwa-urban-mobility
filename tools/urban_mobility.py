@@ -147,7 +147,7 @@ def spec(
         session=recipe_root_path / "runtime/launcher-session.json",
         viewer_url=url,
         websocket_port=websocket_port,
-        ports=(http_port, websocket_port, urban_manifest.port("launcher-control")),
+        ports=(http_port, websocket_port),
     )
 
 

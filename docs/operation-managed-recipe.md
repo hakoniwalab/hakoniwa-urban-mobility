@@ -98,8 +98,9 @@ urban_mobility:
       required: true
 ```
 
-The Car RC template uses WebBridge port `18765` by default so it does not
-collide with Windows IP Helper configurations that may own `8765`. Override it
+The Car RC template uses WebBridge port `28866` by default (urban.manifest.yaml
+`web-bridge-car`), clear of common services such as Windows IP Helper
+configurations that may own `8765`. Override it
 when necessary:
 
 ```powershell

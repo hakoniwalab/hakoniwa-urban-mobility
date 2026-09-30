@@ -5,7 +5,7 @@ Tools read the repository's parts (contracts, Asset locations, Worlds, managed
 Recipes) and the ports through this module instead of spelling them out:
 
     import urban_manifest
-    urban_manifest.port("viewer-http")          # 8000, or its override
+    urban_manifest.port("viewer-http")          # 28100, or its override
     urban_manifest.path("assets.user")          # $HAKONIWA_WORK_DIR/urban/assets
 
     tools/urban_manifest.py ports [--json]      # every port, where its value comes from

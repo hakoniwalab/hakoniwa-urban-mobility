@@ -100,7 +100,7 @@ Launcherは以下をバックグラウンドで起動します。
 - ViewerなしのMuJoCo Car plant
 - Car-1用PS5 RC sender
 - Three.js用WebBridge
-- `127.0.0.1:8000`のHTTP server
+- `127.0.0.1:28100`のHTTP server
 
 ## 6. 起動状態を確認する
 
