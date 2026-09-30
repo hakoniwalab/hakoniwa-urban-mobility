@@ -167,14 +167,31 @@ def plan(composition_path: Path) -> Plan:
     return Plan(composition, route, ROOT / recipe, _recipe_root(recipe_id))
 
 
+COLLIDER_VIEWER_CONFIG = (
+    "web/map-viewer/thirdparty/hakoniwa-threejs-drone/"
+    "config/viewer-config-fleets-colliders.json"
+)
+
+
 def collider_viewer_url(selected: Plan) -> str | None:
     """The Viewer URL that overlays the collision geometry, when the route writes one."""
-    if selected.route not in {"car", "integrated"}:
-        return None
-    contract = selected.workspace / "config/viewer-url.json"
-    if not contract.is_file():
-        return None
-    return json.loads(contract.read_text(encoding="utf-8")).get("collider_url")
+    if selected.route in {"car", "integrated"}:
+        contract = selected.workspace / "config/viewer-url.json"
+        if not contract.is_file():
+            return None
+        return json.loads(contract.read_text(encoding="utf-8")).get("collider_url")
+    if selected.route == "drone":
+        # As tools/drone_one.py open-viewer --colliders.
+        if not (selected.workspace / COLLIDER_VIEWER_CONFIG).is_file():
+            return None
+        url = viewer_url(selected)
+        if url is None:
+            return None
+        return url.replace(
+            "viewerConfigName=viewer-config-fleets.json",
+            "viewerConfigName=viewer-config-fleets-colliders.json",
+        )
+    return None
 
 
 def viewer_url(selected: Plan) -> str | None:

@@ -1450,6 +1450,21 @@ class FleetCompositionTest(Fixture):
         # The fixture Composition sets viewer.web_bridge_port.
         self.assertEqual(recipe["web_bridge_port"], 18765)
 
+    def test_drone_route_offers_the_collider_viewer_once_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            selected = urban_simulation.Plan(
+                composition=mock.Mock(), route="drone", managed_recipe=None, workspace=workspace)
+            self.assertIsNone(urban_simulation.collider_viewer_url(selected))
+            (workspace / "config").mkdir()
+            (workspace / "config" / urban_simulation.DRONE_RECIPE_FILE).write_text("{}", encoding="utf-8")
+            colliders = workspace / urban_simulation.COLLIDER_VIEWER_CONFIG
+            colliders.parent.mkdir(parents=True)
+            colliders.write_text("{}", encoding="utf-8")
+            url = urban_simulation.collider_viewer_url(selected)
+            self.assertIn("viewerConfigName=viewer-config-fleets-colliders.json", url)
+            self.assertEqual(url.replace("-colliders.json", ".json"), urban_simulation.viewer_url(selected))
+
     def test_fleet_viewer_and_bridge_use_the_composition_port(self):
         import drone_fleet
 

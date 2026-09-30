@@ -425,7 +425,10 @@ viewer:
             self.assertEqual(params["ANGLE_CONTROL_ENABLE"], "0")
             self.assertEqual(params["ANGLE_RATE_CONTROL_ENABLE"], "0")
             self.assertEqual(params["ALT_SPD_CONTROL_ENABLE"], "0")
-            self.assertEqual(params["CTRLMODE_START_IN_HOVERING"], "0")
+            # Hovering start holds the spawn altitude on any World; the
+            # v4.1.1 takeoff sequence targets a world altitude and stays on
+            # the ground when the City terrain is above it.
+            self.assertEqual(params["CTRLMODE_START_IN_HOVERING"], "1")
             self.assertEqual(
                 params["CTRLMODE_TAKEOFF_TRIGGER_THROTTLE_VALUE"], "0.1"
             )
