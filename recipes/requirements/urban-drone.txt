@@ -1,0 +1,7 @@
+# Urban Drone routes (drone, fleet, fpv) managed Recipe runtime dependencies.
+# Composition and scenario YAML parsing.
+PyYAML>=6.0,<7
+# Spawn heights and composed-model checks; the same version as the Drone Core MuJoCo.
+mujoco==3.13.0
+# The local RC controller the Drone RC reads.
+pygame==2.6.1

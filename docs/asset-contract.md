@@ -73,6 +73,16 @@ Launcher config, Three.js config, Recipe workspace
   `run(command, composition)` executes a lifecycle command on that route.
   The Car and integrated routes run the managed Recipe lifecycle in
   `tools/urban_mobility.py --recipe <managed> --composition <file>`.
+- Every route has a managed Recipe (the root manifest's `recipes`). The
+  Drone (`recipes/usecases/urban-drone-rc.yaml`), fleet
+  (`urban-drone-fleet.yaml`) and FPV (`urban-fpv-rc.yaml`) routes configure
+  with their own tools (`drone_one.py`, `drone_fleet.py`, hakoniwa-fpv-drone's
+  `tools/fpv.py`), so their Recipes only declare what those use: `configure`
+  (and `doctor`) first run the Business Pack `recipe.py` on the route's Recipe,
+  which clones missing repositories, checks the Foundation, and installs the
+  Python packages, then run the tool. The FPV Recipe declares
+  hakoniwa-fpv-drone itself; the dependencies of `tools/fpv.py` are declared
+  by hakoniwa-fpv-drone's own Recipe.
 - A Car-only Composition materializes only the Car dependencies; the Recipe
   never requires the union of all Assets.
 - The Recipes in `recipes/experiments/` retire once their Composition

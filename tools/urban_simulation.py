@@ -116,6 +116,26 @@ class Plan:
         }
 
 
+def route_recipe(route: str) -> Path:
+    """The managed Recipe that declares what a route needs (urban.manifest.yaml recipes)."""
+    return ROOT / MANAGED_RECIPES[route][0]
+
+
+def prepare_route(selected: "Plan", command: str) -> int:
+    """For a route whose own tool configures (drone, fleet, fpv): run the
+    Business Pack Recipe lifecycle on its managed Recipe first, so configure
+    materializes every repository, the Foundation, and the Python packages it
+    declares (and doctor checks them), as the car and integrated routes do
+    through tools/urban_mobility.py."""
+    operation = {"configure": "configure", "doctor": "doctor"}.get(command)
+    if operation is None or selected.managed_recipe is None:
+        return 0
+    return subprocess.run(
+        [sys.executable, str(BUSINESS_PACK / "tools/recipe.py"), operation, "--recipe", str(selected.managed_recipe)],
+        cwd=BUSINESS_PACK, check=False,
+    ).returncode
+
+
 def plan(composition_path: Path) -> Plan:
     """Validate a Composition and decide the route that runs it."""
     import urban_composition
@@ -127,18 +147,18 @@ def plan(composition_path: Path) -> Plan:
             urban_composition.to_fleet_recipe(composition)
         except urban_composition.CompositionError as exc:
             raise SimulationError(str(exc)) from exc
-        return Plan(composition, "fleet", None, _recipe_root(FLEET_WORKSPACE_ID))
+        return Plan(composition, "fleet", route_recipe("fleet"), _recipe_root(FLEET_WORKSPACE_ID))
     fpv = [vehicle for vehicle in composition.vehicles if urban_composition.is_fpv(vehicle)]
     if fpv:
         try:
             urban_composition.fpv_vehicle(composition)
         except urban_composition.CompositionError as exc:
             raise SimulationError(str(exc)) from exc
-        return Plan(composition, "fpv", None, FPV_OUTPUT_ROOT / composition.id)
+        return Plan(composition, "fpv", route_recipe("fpv"), FPV_OUTPUT_ROOT / composition.id)
     # Other vehicles run on a plain World through its City World job
     # (tools/plain_world.py) on the same routes as on a City.
     if simulators == DRONE:
-        return Plan(composition, "drone", None, _recipe_root(DRONE_WORKSPACE_ID))
+        return Plan(composition, "drone", route_recipe("drone"), _recipe_root(DRONE_WORKSPACE_ID))
     route = {CAR: "car", CAR_AND_DRONE: "integrated"}.get(simulators)
     if route is None:
         raise SimulationError(f"no route runs a Composition with simulators {sorted(simulators)}")
@@ -201,6 +221,10 @@ def run(command: str, composition_path: Path) -> int:
     if command == "plan":
         print(json.dumps(selected.to_json(), indent=2))
         return 0
+    if selected.route in {"fpv", "drone", "fleet"}:
+        prepared = prepare_route(selected, command)
+        if prepared != 0:
+            return prepared
     if selected.route == "fpv":
         return fpv_command(command, composition_path)
     if selected.route == "drone":
