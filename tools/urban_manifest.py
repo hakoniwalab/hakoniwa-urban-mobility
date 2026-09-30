@@ -6,10 +6,16 @@ Recipes) and the ports through this module instead of spelling them out:
 
     import urban_manifest
     urban_manifest.port("viewer-http")          # 8000, or its override
-    urban_manifest.path("assets.user")          # <workspace>/hakoniwa-business-pack/work/urban/assets
+    urban_manifest.path("assets.user")          # $HAKONIWA_WORK_DIR/urban/assets
 
     tools/urban_manifest.py ports [--json]      # every port, where its value comes from
     tools/urban_manifest.py check               # the manifest is consistent
+
+The tools run in the Hakoniwa Business Pack Workspace (hakoniwa-business-pack
+docs/hakoniwa-workspace-environment-ja.md): `python tools/workspace.py enter`, or
+`python tools/workspace.py run -- <command>`. ${business_pack} is its
+$HAKONIWA_WORKSPACE_ROOT and ${work} its $HAKONIWA_WORK_DIR; outside the
+Workspace they stop with the command that enters it.
 """
 
 from __future__ import annotations
@@ -31,8 +37,19 @@ SCHEMA = "hakoniwa.urban-manifest/v1"
 PLACEHOLDER = re.compile(r"\$\{([a-z_]+)\}")
 
 
+ENTER = "python tools/workspace.py enter"
+
+
 class ManifestError(RuntimeError):
     pass
+
+
+class WorkspaceError(SystemExit):
+    """Run outside the Workspace: a message and a non-zero exit, not a traceback."""
+
+    def __init__(self, message: str):
+        super().__init__(f"{message}\nIn hakoniwa-business-pack: {ENTER} "
+                         "(or python tools/workspace.py run -- <command>)")
 
 
 @functools.lru_cache(maxsize=1)
@@ -43,10 +60,28 @@ def load(path: Path = MANIFEST_PATH) -> dict:
     return data
 
 
-def placeholders() -> dict[str, Path]:
-    workspace = ROOT.parent
-    business_pack = workspace / "hakoniwa-business-pack"
-    return {"repo": ROOT, "workspace": workspace, "business_pack": business_pack, "work": business_pack / "work"}
+def _workspace_variable(name: str) -> Path:
+    if os.environ.get("HAKONIWA_WORKSPACE_ACTIVE") != "1":
+        raise WorkspaceError("Urban Mobility runs in the Hakoniwa Business Pack Workspace, which is not active.")
+    configured = os.environ.get(name, "").strip()
+    if not configured:
+        raise WorkspaceError(f"The Hakoniwa Business Pack Workspace is active but ${name} is not set.")
+    return Path(configured).expanduser().resolve()
+
+
+def business_pack() -> Path:
+    """The Business Pack root ($HAKONIWA_WORKSPACE_ROOT)."""
+    return _workspace_variable("HAKONIWA_WORKSPACE_ROOT")
+
+
+def work_dir() -> Path:
+    """The Business Pack work directory ($HAKONIWA_WORK_DIR, which can be relocated)."""
+    return _workspace_variable("HAKONIWA_WORK_DIR")
+
+
+def placeholders() -> dict:
+    """Each placeholder and how to find it (the Workspace ones only when a path uses them)."""
+    return {"repo": lambda: ROOT, "workspace": lambda: ROOT.parent, "business_pack": business_pack, "work": work_dir}
 
 
 def resolve(value: str) -> Path:
@@ -56,7 +91,7 @@ def resolve(value: str) -> Path:
     def replace(match):
         if match.group(1) not in known:
             raise ManifestError(f"unknown placeholder ${{{match.group(1)}}} in {value!r}")
-        return str(known[match.group(1)])
+        return str(known[match.group(1)]())
 
     text = PLACEHOLDER.sub(replace, str(value))
     candidate = Path(text)

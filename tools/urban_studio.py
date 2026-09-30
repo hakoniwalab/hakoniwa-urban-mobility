@@ -68,12 +68,14 @@ import time
 from urllib.parse import parse_qs, urlparse
 import webbrowser
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
+BUSINESS_PACK = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 WEB_ROOT = ROOT / "web"
-USER_SCENARIOS = BUSINESS_PACK / "work/urban/scenarios"
+USER_SCENARIOS = urban_manifest.work_dir() / "urban/scenarios"
 EXAMPLE_SCENARIOS = ROOT / "recipes/scenarios"
 SIMULATION = ROOT / "tools/urban_simulation.py"
 COMMANDS = ("plan", "configure", "start", "stop", "status")
@@ -81,7 +83,7 @@ COMPOSITION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 PROGRESS_MARKER = "[HAKO_PROGRESS] "
 # The Business Pack City World Web UI (tools/recipe/city_world_web_ui.py).
 CITY_WEB_UI = BUSINESS_PACK / "tools/recipe/city_world_web_ui.py"
-CITY_RECIPE_ROOT = BUSINESS_PACK / "work/recipes/city-world-web-ui"
+CITY_RECIPE_ROOT = urban_manifest.work_dir() / "recipes/city-world-web-ui"
 URBAN_ASSETS = ROOT / "tools/urban_assets.py"
 CACHE_KEY = "cache:urban"
 
@@ -89,7 +91,6 @@ for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import urban_manifest  # noqa: E402
 
 DEFAULT_PORT = urban_manifest.port("urban-studio")
 APP_NAME = "urban-studio"

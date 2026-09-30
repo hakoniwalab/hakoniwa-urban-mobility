@@ -7,12 +7,14 @@ import time
 import unittest
 from unittest import mock
 
+from tools import urban_manifest
+
 ROOT = Path(__file__).resolve().parents[1]
-BUSINESS_PACK = ROOT.parent / "hakoniwa-business-pack"
+BUSINESS_PACK = urban_manifest.business_pack()
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
-from recipe.process_liveness import pid_alive as canonical_pid_alive
-from tools import urban_lifecycle as lifecycle
+from recipe.process_liveness import pid_alive as canonical_pid_alive  # noqa: E402
+from tools import urban_lifecycle as lifecycle  # noqa: E402
 
 
 class UrbanLifecycleTest(unittest.TestCase):

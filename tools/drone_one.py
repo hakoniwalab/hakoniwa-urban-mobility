@@ -18,10 +18,12 @@ import sys
 import xml.etree.ElementTree as ET
 from typing import Any
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
+BUSINESS_PACK_ROOT = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
 URBAN_DRONE_RECIPE_ID = "urban-drone-one"

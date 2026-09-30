@@ -33,12 +33,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).absolute().parents[1]
-BUSINESS_PACK_ROOT = Path(
-    os.environ.get(
-        "HAKONIWA_BUSINESS_PACK_ROOT",
-        str(ROOT.parent / "hakoniwa-business-pack"),
-    )
-).expanduser().resolve()
+sys.path.insert(0, str(ROOT / "tools"))
+import urban_manifest  # noqa: E402
+
+BUSINESS_PACK_ROOT = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 BUSINESS_PACK_TOOLS = BUSINESS_PACK_ROOT / "tools"
 BUSINESS_PACK_RECIPE_TOOLS = BUSINESS_PACK_TOOLS / "recipe"
 for search_path in (BUSINESS_PACK_RECIPE_TOOLS, BUSINESS_PACK_TOOLS):
@@ -70,8 +68,7 @@ city_drone = _load_business_pack_city_drone()
 
 DEFAULT_DRONE_ROOT = ROOT.parent / "hakoniwa-drone-core"
 DEFAULT_OUTPUT = (
-    BUSINESS_PACK_ROOT
-    / "work"
+    urban_manifest.work_dir()
     / "recipes"
     / "drone-fleet-single-host"
     / "config"
@@ -81,7 +78,7 @@ DEFAULT_OUTPUT = (
 # Compiled process models, keyed by their MJCF and the MuJoCo library: a
 # configure that produces the same model reuses the MJB instead of spending
 # minutes on the City again.
-MJB_CACHE_DIR = BUSINESS_PACK_ROOT / "work" / "cache" / "mujoco-fleet-mjb"
+MJB_CACHE_DIR = urban_manifest.work_dir() / "cache" / "mujoco-fleet-mjb"
 # Process models compile concurrently (MuJoCo releases the GIL); each City
 # compile needs gigabytes, so only a few at a time.
 MAX_PARALLEL_COMPILES = 4

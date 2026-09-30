@@ -3,9 +3,14 @@
 # tools/urban_manifest.py; docs/urban-manifest.md explains every field.
 #
 # Paths are relative to this repository unless they start with a placeholder:
-#   ${workspace}      the folder holding this repository and its siblings
-#   ${business_pack}  ${workspace}/hakoniwa-business-pack
-#   ${work}           ${business_pack}/work (the Business Pack work directory)
+#   ${workspace}      the folder holding this repository and its sibling repositories
+#   ${business_pack}  $HAKONIWA_WORKSPACE_ROOT, the Business Pack root
+#   ${work}           $HAKONIWA_WORK_DIR, the Business Pack work directory (it can be relocated)
+# ${business_pack} and ${work} come from the Hakoniwa Business Pack Workspace
+# (hakoniwa-business-pack docs/hakoniwa-workspace-environment-ja.md); they are
+# never guessed from the folder layout. Outside the Workspace a tool that needs
+# them stops and names the command that enters it: in hakoniwa-business-pack,
+# `python tools/workspace.py enter` (or `python tools/workspace.py run -- <command>`).
 schema: hakoniwa.urban-manifest/v1
 id: hakoniwa-urban-mobility
 title: Hakoniwa Urban Mobility

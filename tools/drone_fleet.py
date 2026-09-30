@@ -23,10 +23,12 @@ from pathlib import Path
 import shutil
 import sys
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK_ROOT = WORKSPACE / "hakoniwa-business-pack"
+BUSINESS_PACK_ROOT = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 DEFAULT_DRONE_ROOT = WORKSPACE / "hakoniwa-drone-core"
 DEFAULT_VIEWER_ROOT = WORKSPACE / "hakoniwa-threejs-drone"
 RECIPE_ID = "urban-drone-fleet"
@@ -66,7 +68,6 @@ import drone_fleet_single_host as base  # noqa: E402
 import drone_fleet_city as city  # noqa: E402
 import urban_controls  # noqa: E402
 import urban_lifecycle  # noqa: E402
-import urban_manifest  # noqa: E402
 
 
 class FleetError(RuntimeError):

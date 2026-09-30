@@ -148,6 +148,7 @@ def prepare() -> int:
     foundation = business_pack / "work/foundation"
     environment.update(
         {
+            "HAKONIWA_WORKSPACE_ACTIVE": "1",
             "HAKONIWA_WORKSPACE_ROOT": str(business_pack),
             "HAKONIWA_WORK_DIR": str(business_pack / "work"),
             "HAKONIWA_HOME": str(foundation / "install"),

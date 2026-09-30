@@ -117,7 +117,7 @@ class ControlModeTest(unittest.TestCase):
         self.assertFalse(resolved["native_mujoco_viewer"])
         self.assertEqual(
             resolved["work"],
-            ROOT.parent / "hakoniwa-business-pack/work/recipes/urban-car-one",
+            multi_car.urban_manifest.work_dir() / "recipes/urban-car-one",
         )
 
     def test_headless_launcher_disables_native_mujoco_viewer(self):

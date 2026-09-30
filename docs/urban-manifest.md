@@ -15,9 +15,33 @@ tools/urban_manifest.py check            the manifest's files exist, ports are u
 ## 1. Paths
 
 Paths are relative to this repository unless they start with a placeholder:
-`${workspace}` (the folder holding this repository and its siblings),
-`${business_pack}` (`${workspace}/hakoniwa-business-pack`) and `${work}`
-(`${business_pack}/work`).
+
+| Placeholder | Resolves to |
+|---|---|
+| `${repo}` | this repository |
+| `${workspace}` | the folder holding this repository and its sibling repositories |
+| `${business_pack}` | `$HAKONIWA_WORKSPACE_ROOT`, the Business Pack root |
+| `${work}` | `$HAKONIWA_WORK_DIR`, the Business Pack work directory |
+
+Urban's tools run in the Hakoniwa Business Pack Workspace
+(hakoniwa-business-pack `docs/hakoniwa-workspace-environment-ja.md`). Entering
+it (`python tools/workspace.py enter`) or running a command in it
+(`python tools/workspace.py run -- <command>`) exports
+`HAKONIWA_WORKSPACE_ACTIVE=1`, `HAKONIWA_WORKSPACE_ROOT` and
+`HAKONIWA_WORK_DIR`. `${business_pack}` and `${work}` come only from those
+variables. They are never guessed from the folder layout, so a relocated work
+directory (`workspace.py enter --workdir ...`) is followed as it is.
+`${work}` is `$HAKONIWA_WORK_DIR`, not `${business_pack}/work`.
+
+Outside the Workspace (`HAKONIWA_WORKSPACE_ACTIVE` is not `1`, or the variable
+is empty), resolving `${business_pack}` or `${work}` stops the tool with a
+message that names `python tools/workspace.py enter` and a non-zero exit, not
+a traceback (`urban_manifest.WorkspaceError`). Paths that use only `${repo}`
+or `${workspace}` resolve without the Workspace.
+Tools that need the Business Pack root or its work directory in code use
+`urban_manifest.business_pack()` and `urban_manifest.work_dir()`, which follow
+the same rule. A portable Urban package (`tools/portable_urban_car.py`) sets
+the same three variables from its own layout.
 
 ## 2. Parts
 
