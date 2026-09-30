@@ -6,7 +6,7 @@ Urban Mobility は、街（City）や平らな地面（World）に、ゴルフ�
 City を作る（Environment Studio）→ 車両と組み合わせる（Compose）→ 走らせる（Simulation）
 ```
 
-City は、Urban Studio から起動する **Environment Studio** で作ります（PLATEAU の範囲を選んで City World を作る、必要なら部品として編集する）。作った City は自動で Urban Mobility に登録されます。
+City は、Urban Studio から起動する **Environment Studio** で作ります（地図で範囲を選び、PLATEAU か OpenStreetMap から作る。必要なら部品として編集する）。作った City は自動で Urban Mobility に登録されます。
 
 ## 0. 準備
 
