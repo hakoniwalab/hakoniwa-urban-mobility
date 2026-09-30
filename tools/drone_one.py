@@ -654,7 +654,15 @@ def materialize_eams_controller_params(
             "ANGLE_CONTROL_ENABLE": "0",
             "ANGLE_RATE_CONTROL_ENABLE": "0",
             "ALT_SPD_CONTROL_ENABLE": "0",
-            "CTRLMODE_START_IN_HOVERING": "0",
+            # Start in Hovering, as the Hexa tuning file
+            # (config/drone/hexa/controller-tuning.txt) already selects. The
+            # public Drone Core v4.1.1 takeoff sequence (START_IN_HOVERING 0)
+            # targets CTRLMODE_TAKEOFF_ACTION_TARGET_ALTITUDE_M as a WORLD
+            # altitude, so on a City whose ground is above z=0 (Sapporo:
+            # 2.5 m) the drone is already "above" the 0.23 m target and
+            # never lifts (stays in [STATE] Ascending with no thrust).
+            # Hovering holds the current altitude wherever the spawn is.
+            "CTRLMODE_START_IN_HOVERING": "1",
             "CTRLMODE_STARTUP_SETTLE_TIME_SEC": "0.5",
             "CTRLMODE_TAKEOFF_IDLE_THROTTLE_RATE": "0.2",
             "CTRLMODE_TAKEOFF_TRIGGER_THROTTLE_VALUE": "0.1",

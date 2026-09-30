@@ -37,8 +37,11 @@ import urban_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = urban_manifest.work_dir() / "urban/cache/world-height"
-# Rays start above any City geometry; MJCF Z is up in metres.
-RAY_START_M = 10000.0
+# Rays start this far above the World's highest geom (MJCF Z is up in
+# metres). Not from a fixed far height: MuJoCo's ray-mesh test misses a thin
+# mesh (a 2 cm road slab) from a few hundred metres away, and the height
+# would then be the terrain under the slab.
+RAY_START_MARGIN_M = 1.0
 # A ray passes through at most this many non-colliding geoms before it
 # gives up; City Worlds contain none, so this only bounds a pathological model.
 MAX_PASS_THROUGH = 64
@@ -257,6 +260,26 @@ class WorldHeight:
         for model, data in zip(models, self.datas):
             mujoco.mj_forward(model, data)
         self.masks = [self._visual_only_left_out(model) for model in models]
+        self.ray_starts = [self._ray_start(model, data) for model, data in zip(models, self.datas)]
+
+    def _ray_start(self, model, data) -> float:
+        """Just above the highest point of the model's geoms: each geom's
+        local bounding box (geom_aabb: centre, half sizes) turned into the
+        world. A bounding sphere is not tight enough: a large terrain's
+        radius would put the start hundreds of metres up again."""
+        numpy = self._numpy
+        if model.ngeom == 0:
+            return RAY_START_MARGIN_M
+        centre = model.geom_aabb[:, :3]
+        half = model.geom_aabb[:, 3:]
+        rotation = data.geom_xmat.reshape(-1, 3, 3)
+        top = (data.geom_xpos[:, 2] + numpy.einsum("gj,gj->g", rotation[:, 2, :], centre)
+               + numpy.einsum("gj,gj->g", numpy.abs(rotation[:, 2, :]), half))
+        # A plane's bounding box is unbounded in its own plane; its height is
+        # its position.
+        planes = model.geom_type == self._mujoco.mjtGeom.mjGEOM_PLANE
+        top[planes] = data.geom_xpos[planes, 2]
+        return float(numpy.max(top)) + RAY_START_MARGIN_M
 
     def _visual_only_left_out(self, model):
         """A geom group mask that leaves out the visual-only geoms, moved to a
@@ -280,9 +303,9 @@ class WorldHeight:
         mask[free] = 0
         return mask
 
-    def _hit(self, model, data, east_m: float, north_m: float, mask=None) -> float | None:
+    def _hit(self, model, data, east_m: float, north_m: float, mask=None, start_m: float = 0.0) -> float | None:
         numpy = self._numpy
-        point = numpy.array([north_m, -east_m, RAY_START_M], dtype=numpy.float64)
+        point = numpy.array([north_m, -east_m, start_m], dtype=numpy.float64)
         down = numpy.array([0.0, 0.0, -1.0], dtype=numpy.float64)
         geom = numpy.array([-1], dtype=numpy.int32)
         for _ in range(MAX_PASS_THROUGH):
@@ -299,8 +322,8 @@ class WorldHeight:
 
     def __call__(self, east_m: float, north_m: float) -> float:
         hits = [
-            hit for hit in (self._hit(model, data, east_m, north_m, mask)
-                            for model, data, mask in zip(self.models, self.datas, self.masks))
+            hit for hit in (self._hit(model, data, east_m, north_m, mask, start)
+                            for model, data, mask, start in zip(self.models, self.datas, self.masks, self.ray_starts))
             if hit is not None
         ]
         if not hits:

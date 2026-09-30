@@ -1078,17 +1078,23 @@ class PlanTest(IntegratedFixture):
 
     def test_a_drone_route_materializes_its_recipe_before_its_tool_configures(self):
         composition = self.drone()
-        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
-                                               return_value=mock.Mock(returncode=0)) as run:
+        # The tool recipe and controls go to a test directory, not the real
+        # urban-drone-one Recipe workspace.
+        recipe_path = self.work / "drone-workspace/config" / urban_simulation.DRONE_RECIPE_FILE
+        with self.catalog(), mock.patch.object(urban_simulation, "drone_recipe_path", return_value=recipe_path), \
+                mock.patch.object(urban_simulation.subprocess, "run",
+                                  return_value=mock.Mock(returncode=0)) as run:
             self.assertEqual(urban_simulation.run("configure", composition), 0)
+        self.assertTrue(recipe_path.is_file())
         first, *rest = [call.args[0] for call in run.call_args_list]
         self.assertEqual(first[1:], [str(urban_simulation.BUSINESS_PACK / "tools/recipe.py"), "configure",
                                      "--recipe", str(ROOT / "recipes/usecases/urban-drone-rc.yaml")])
         self.assertTrue(any(Path(arguments[1]) == urban_simulation.DRONE_ONE and "configure" in arguments
                             for arguments in rest))
         # A Recipe that cannot be materialized stops the route before its tool runs.
-        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
-                                               return_value=mock.Mock(returncode=3)) as run:
+        with self.catalog(), mock.patch.object(urban_simulation, "drone_recipe_path", return_value=recipe_path), \
+                mock.patch.object(urban_simulation.subprocess, "run",
+                                  return_value=mock.Mock(returncode=3)) as run:
             self.assertEqual(urban_simulation.run("configure", composition), 3)
         self.assertEqual(run.call_count, 1)
 
@@ -1449,6 +1455,21 @@ class FleetCompositionTest(Fixture):
         self.assertEqual((recipe["spacing_m"], recipe["ground_clearance_m"]), (1.5, 0.5))
         # The fixture Composition sets viewer.web_bridge_port.
         self.assertEqual(recipe["web_bridge_port"], 18765)
+
+    def test_drone_route_offers_the_collider_viewer_once_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            selected = urban_simulation.Plan(
+                composition=mock.Mock(), route="drone", managed_recipe=None, workspace=workspace)
+            self.assertIsNone(urban_simulation.collider_viewer_url(selected))
+            (workspace / "config").mkdir()
+            (workspace / "config" / urban_simulation.DRONE_RECIPE_FILE).write_text("{}", encoding="utf-8")
+            colliders = workspace / urban_simulation.COLLIDER_VIEWER_CONFIG
+            colliders.parent.mkdir(parents=True)
+            colliders.write_text("{}", encoding="utf-8")
+            url = urban_simulation.collider_viewer_url(selected)
+            self.assertIn("viewerConfigName=viewer-config-fleets-colliders.json", url)
+            self.assertEqual(url.replace("-colliders.json", ".json"), urban_simulation.viewer_url(selected))
 
     def test_fleet_viewer_and_bridge_use_the_composition_port(self):
         import drone_fleet
