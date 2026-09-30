@@ -155,6 +155,10 @@ def _check_mjcf(path: Path, schema: dict, problems: list[Problem]) -> None:
     if rules.get("requires_hfield_geom") and (
             worldbody is None or not any(geom.get("type") == "hfield" for geom in worldbody.iter("geom"))):
         problems.append(Problem("error", where, "the World brings its own ground: an hfield geom in worldbody"))
+    for tag in rules.get("forbidden_elements", []):
+        found = sorted({element.get("name") or f"<{tag}>" for element in root.iter(tag)})
+        if found:
+            problems.append(Problem("error", where, f"no <{tag}> in a World (the vehicles bring it): {', '.join(found[:5])}"))
     reserved = [re.compile(pattern) for pattern in rules.get("reserved_names", [])]
     clashes = sorted({element.get("name") for element in root.iter() if element.get("name")
                       and any(pattern.search(element.get("name")) for pattern in reserved)})

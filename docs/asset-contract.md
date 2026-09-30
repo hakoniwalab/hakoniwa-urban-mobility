@@ -334,7 +334,11 @@ Ground height is the top of the compiled World collision geometry at that
 point, found by a downward MuJoCo ray: terrain and buildings for a City,
 ground and obstacles for a plain World. A vehicle dropped on a rooftop starts
 just above the roof. Visual-only geoms (no `contype` / `conaffinity`) are
-passed through. The same rule applies to Cars and Drones; the builders
+left out of the ray: they are moved to a geom group no colliding geom uses,
+which the ray does not see (starting again just below a visual-only geom
+could start inside a colliding one under it, such as a line painted on a
+road, and report that geom's underside); a model with every group taken
+falls back to passing through them. The same rule applies to Cars and Drones; the builders
 receive the result as an absolute height.
 
 `tools/world_height.py` implements the ray on the City World MJCF named by
@@ -567,7 +571,7 @@ machine-readable contract, written from what the builders read:
 | Frames | the receipt's `coordinate_frame.coordinate_systems` are exactly `X=North,Y=-East,Z=Up` (MJCF) and `X=East,Y=Up,Z=-North` (GLB), both centred on `coordinate_frame.origin` |
 | Receipt | `schema_version` 1, origin (latitude, longitude, altitude offset), half extents, `mjcf.path`, `glb.path`, `components.terrain_xml`; paths absolute; `kind` `city` (default) or `plain`; hashes checked when given |
 | Terrain | `terrain-receipt.json` beside `components.terrain_xml` names the hfield: little-endian `int32 nrow, int32 ncol`, then `nrow x ncol` float32 altitudes (MJCF z = altitude - altitude offset) |
-| World MJCF | only `size`, `asset`, `worldbody` at the top level (no `compiler`: an euler stays in degrees in every model it is composed into); the World brings its own ground as an hfield geom; no names the builders reserve for vehicles (`car_<n>_`, `vehicle_type_<n>_`, `mirror_drone_<n>_`) |
+| World MJCF | only `size`, `asset`, `worldbody` at the top level (no `compiler`: an euler stays in degrees in every model it is composed into); the World brings its own ground as an hfield geom and no lights (each vehicle model keeps its own, named `sun`, `fill_light`, ...); no names the builders reserve for vehicles (`car_<n>_`, `vehicle_type_<n>_`, `mirror_drone_<n>_`) |
 | Serving | the job lies under the workspace root the viewers serve |
 
 `tools/city_world_job.py check <job folder | receipt> [--json]` checks a job

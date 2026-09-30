@@ -104,7 +104,8 @@ class StudioServerTest(StudioTestBase):
 
     def test_a_fleet_composition_counts_its_drones_and_saves_as_the_fleet_route(self):
         _, listed = self.call("GET", "/api/compositions")
-        self.assertEqual(next(item for item in listed if item["id"] == "city-drone-fleet")["vehicles"], 30)
+        # An example every workspace can run (a City example is listed only once that City is registered).
+        self.assertEqual(next(item for item in listed if item["id"] == "plain-drone-fleet")["vehicles"], 10)
         # As Compose saves it: an empty vehicles list next to the fleet.
         composition = {"world": "plain-ground", "vehicles": [], "fleets": [{
             "name": "Fleet", "asset": "drone-core-quad", "control": "api", "count": 12,
