@@ -48,15 +48,27 @@ python tools/urban_mobility.py start --composition recipes/compositions/plain-he
 ```
 
 Urban Studio is the browser UI over the same API (Assets, Compose,
-Simulation). Start it from the Business Pack Workspace shell, so the
+Simulation). Start it from the Business Pack Workspace shell
+(`python tools/workspace.py enter`, then in `hakoniwa-business-pack`), so the
 simulations it runs inherit the Workspace environment:
 
 ```bash
-python tools/urban_studio.py --open-browser
+python ../hakoniwa-urban-mobility/tools/urban_studio.py start --open-browser   # in the background
+python ../hakoniwa-urban-mobility/tools/urban_studio.py open                   # open the running one in the browser
+python ../hakoniwa-urban-mobility/tools/urban_studio.py status
+python ../hakoniwa-urban-mobility/tools/urban_studio.py stop                   # before leaving the Workspace
 ```
 
-It serves `http://127.0.0.1:8090/` and saves Compositions under
-`hakoniwa-business-pack/work/urban/compositions/`.
+Without `start`, `urban_studio.py` runs it in that terminal (Ctrl+C or
+`stop` ends it). It serves `http://127.0.0.1:8090/` and saves Compositions
+under `hakoniwa-business-pack/work/urban/compositions/`.
+
+A World can also come from
+[Hakoniwa Environment Studio](https://github.com/hakoniwalab/hakoniwa-environment-studio):
+its "urban-mobility へ" button exports an environment as a City World job
+(`schemas/city-world-job.yaml`) and registers it as a City Asset, which
+Compose then offers as a World. Its README walks through the whole flow
+(make an environment, register it, compose it with a car here, simulate).
 
 With an EAMS Hexa, the Viewer's left panel has a Fault Injection box: one
 thrust-scale slider per rotor (1.0 nominal, 0.0 failed) plus wind direction
