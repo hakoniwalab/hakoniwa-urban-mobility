@@ -40,6 +40,10 @@ compositions:
   suffix: .composition.yaml                  # the file suffix of those
   user: "${work}/urban/compositions"         # Compositions saved in Urban Studio
 
+# --- Urban Studio (section 5.7) --------------------------------------------------------
+studio:
+  state: "${work}/urban/studio"              # a background Urban Studio's pid, port, and log
+
 # --- Worlds (section 6) --------------------------------------------------------------
 worlds:
   default: plain-ground                      # the World of a Composition that selects none

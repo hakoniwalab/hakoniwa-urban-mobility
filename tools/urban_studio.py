@@ -9,9 +9,15 @@ the browser polls.
 Run it from the Business Pack Workspace shell so the simulations it starts
 inherit the Workspace environment:
 
-  python tools/urban_studio.py [--port 8090] [--open-browser]
+  python tools/urban_studio.py [--port 8090] [--open-browser]   in this terminal (Ctrl+C stops it)
+  python tools/urban_studio.py start [--port 8090] [--open-browser]   in the background
+  python tools/urban_studio.py status | stop
+
+The port defaults to urban.manifest.yaml's urban-studio port
+(HAKONIWA_URBAN_PORT_URBAN_STUDIO or the machine's overrides file change it).
 
 API (all JSON):
+  GET  /api/health                       this Urban Studio (app, pid, port): what start/status/stop check
   GET  /api/assets                       Asset catalog
   GET  /api/assets/<id>/preview          a vehicle's preview parts (GLB URL and pose in its frame)
   GET  /api/assets/<id>/preview/<n>      one preview GLB
@@ -86,6 +92,12 @@ for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
 import urban_manifest  # noqa: E402
 
 DEFAULT_PORT = urban_manifest.port("urban-studio")
+APP_NAME = "urban-studio"
+STATE_DIR = urban_manifest.path("studio.state")
+# Set in a background Urban Studio's environment: start knows it answers and not another.
+INSTANCE_ENV = "HAKONIWA_URBAN_STUDIO_INSTANCE"
+START_TIMEOUT_SEC = 30.0
+STOP_TIMEOUT_SEC = 10.0
 USER_COMPOSITIONS = urban_manifest.path("compositions.user")
 EXAMPLE_COMPOSITIONS = urban_manifest.path("compositions.repository")
 CITY_WEB_PORT = urban_manifest.port("city-world-web-ui")
@@ -1052,7 +1064,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - http.server signature
-        if not self.path.startswith("/api/jobs/"):
+        if not self.path.startswith(("/api/jobs/", "/api/health")):  # polled
             super().log_message(format, *args)
 
     def _json(self, value, status: HTTPStatus = HTTPStatus.OK) -> None:
@@ -1084,6 +1096,9 @@ class StudioHandler(SimpleHTTPRequestHandler):
         parts = [part for part in url.path.split("/") if part][1:]  # drop "api"
         query = parse_qs(url.query)
         try:
+            if method == "GET" and parts == ["health"]:
+                return self._json({"app": APP_NAME, "pid": os.getpid(), "port": self.server.server_address[1],
+                                   "instance": os.environ.get(INSTANCE_ENV)})
             if method == "GET" and parts == ["assets"]:
                 return self._json(asset_catalog())
             if method == "GET" and len(parts) == 3 and parts[0] == "assets" and parts[2] == "preview":
@@ -1168,15 +1183,65 @@ def make_server(port: int = DEFAULT_PORT, runner: JobRunner | None = None) -> Th
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--open-browser", action="store_true")
-    args = parser.parse_args(argv)
-    server = make_server(args.port)
-    url = f"http://127.0.0.1:{args.port}/"
+# --- Lifecycle (start / status / stop) ---------------------------------------------------
+
+def _health(port: int, timeout: float = 1.0) -> dict | None:
+    """The Urban Studio answering on port, or None (nothing, or something else)."""
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=timeout) as response:
+            data = json.loads(response.read())
+    except (OSError, URLError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("app") == APP_NAME else None
+
+
+def _state_file(state_dir: Path) -> Path:
+    return state_dir / "studio.json"
+
+
+def _running(state_dir: Path) -> dict | None:
+    """The recorded background Urban Studio, if it is still the one answering on its port."""
+    try:
+        state = json.loads(_state_file(state_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    health = _health(int(state.get("port", 0)))
+    return state if health and health.get("pid") == state.get("pid") else None
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def _port_in_use(port: int) -> str:
+    """Why port cannot be used, and what to do."""
+    health = _health(port)
+    if health:
+        return (f"Urban Studio is already running: http://127.0.0.1:{port}/ (pid {health['pid']}). "
+                "Open it, or stop it first: python tools/urban_studio.py stop"
+                + ("" if health.get("instance") else " (or Ctrl+C in the terminal that runs it)"))
+    return (f"port {port} is in use by another program; stop it, or pass --port "
+            "(or set HAKONIWA_URBAN_PORT_URBAN_STUDIO; see docs/urban-manifest.md)")
+
+
+def serve(port: int, open_browser: bool) -> int:
+    """Run Urban Studio in this terminal until Ctrl+C."""
+    if not _port_free(port):
+        print(f"ERROR: {_port_in_use(port)}", file=sys.stderr)
+        return 1
+    server = make_server(port)
+    url = f"http://127.0.0.1:{port}/"
     print(f"Urban Studio: {url}", flush=True)
-    if args.open_browser:
+    if open_browser:
         webbrowser.open(url)
     try:
         server.serve_forever()
@@ -1185,6 +1250,115 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         server.server_close()
     return 0
+
+
+def start(port: int, open_browser: bool, state_dir: Path = STATE_DIR) -> int:
+    """Run Urban Studio in the background (its pid, port, and log under state_dir)."""
+    import secrets
+
+    running = _running(state_dir)
+    if running:
+        print(f"Urban Studio is already running: {running['url']} (pid {running['pid']})")
+        if open_browser:
+            webbrowser.open(running["url"])
+        return 0
+    if not _port_free(port):
+        print(f"ERROR: {_port_in_use(port)}", file=sys.stderr)
+        return 1
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log = state_dir / "studio.log"
+    instance = secrets.token_hex(16)
+    options: dict = {"cwd": ROOT, "stdin": subprocess.DEVNULL, "env": {**os.environ, INSTANCE_ENV: instance}}
+    if os.name == "nt":
+        options["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    with log.open("ab") as output:
+        process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "serve", "--port", str(port)],
+                                   stdout=output, stderr=subprocess.STDOUT, **options)
+    deadline = time.monotonic() + START_TIMEOUT_SEC
+    while True:
+        health = _health(port, timeout=0.5)
+        if health and health.get("instance") == instance:
+            break
+        if process.poll() is not None:
+            print(f"ERROR: Urban Studio exited at start (exit {process.returncode}); see {log}", file=sys.stderr)
+            return 1
+        if time.monotonic() > deadline:
+            process.kill()
+            print(f"ERROR: Urban Studio did not answer within {START_TIMEOUT_SEC:.0f} s; see {log}", file=sys.stderr)
+            return 1
+        time.sleep(0.2)
+    url = f"http://127.0.0.1:{port}/"
+    state = {"app": APP_NAME, "pid": health["pid"], "port": port, "url": url, "log": str(log),
+             "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    _state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    print(f"Urban Studio started: {url} (pid {health['pid']}); stop it with: python tools/urban_studio.py stop")
+    if open_browser:
+        webbrowser.open(url)
+    return 0
+
+
+def status(state_dir: Path = STATE_DIR) -> int:
+    running = _running(state_dir)
+    if running:
+        print(f"Urban Studio is running: {running['url']} (pid {running['pid']}, since {running['started']})")
+        return 0
+    port = DEFAULT_PORT
+    health = _health(port)
+    if health:
+        print(f"Urban Studio is running in a terminal: http://127.0.0.1:{port}/ (pid {health['pid']}; Ctrl+C there stops it)")
+        return 0
+    print("Urban Studio is not running (start it with: python tools/urban_studio.py start)")
+    return 1
+
+
+def stop(state_dir: Path = STATE_DIR) -> int:
+    """Stop the background Urban Studio (as Ctrl+C would)."""
+    import signal
+
+    running = _running(state_dir)
+    if not running:
+        _state_file(state_dir).unlink(missing_ok=True)
+        health = _health(DEFAULT_PORT)
+        if health:
+            print(f"Urban Studio on port {DEFAULT_PORT} was started in a terminal (pid {health['pid']}): "
+                  "press Ctrl+C there to stop it")
+            return 1
+        print("Urban Studio is not running")
+        return 0
+    port, pid = int(running["port"]), int(running["pid"])
+    try:
+        os.kill(pid, getattr(signal, "SIGINT") if os.name != "nt" else signal.SIGTERM)
+    except OSError:
+        pass
+    deadline = time.monotonic() + STOP_TIMEOUT_SEC
+    while time.monotonic() < deadline and _health(port, timeout=0.3):
+        time.sleep(0.2)
+    if _health(port, timeout=0.3):
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    _state_file(state_dir).unlink(missing_ok=True)
+    print(f"Urban Studio stopped (pid {pid})")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("command", nargs="?", default="serve", choices=("serve", "start", "status", "stop"),
+                        help="serve (default): in this terminal; start: in the background; status; stop")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--open-browser", action="store_true")
+    args = parser.parse_args(argv)
+    if args.command == "start":
+        return start(args.port, args.open_browser)
+    if args.command == "status":
+        return status()
+    if args.command == "stop":
+        return stop()
+    return serve(args.port, args.open_browser)
 
 
 if __name__ == "__main__":

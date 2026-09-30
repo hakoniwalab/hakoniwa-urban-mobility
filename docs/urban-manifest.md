@@ -26,6 +26,7 @@ Paths are relative to this repository unless they start with a placeholder:
 | `contracts` | the contracts this repository publishes and their schema ids: the Asset / Composition contract, the City World job contract, this manifest | people and other tools |
 | `assets` | where the Asset catalog is read (asset-contract section 3.1): this repository's `assets/` (recursive), other repositories' top-level `assets/`, the user Assets (registered Cities and Worlds), the City World Web UI's jobs; the manifest file suffix | `tools/urban_assets.py` |
 | `compositions` | where example Compositions are read: this repository's `recipes/compositions/`, other repositories' top-level `assets/*.composition.yaml`; where Urban Studio saves Compositions. An example is listed only while every Asset it names is in the catalog | `tools/urban_studio.py` |
+| `studio` | where a background Urban Studio (`urban_studio.py start`) keeps its pid, port, and log | `tools/urban_studio.py` |
 | `worlds` | the default World Asset of a Composition that selects none (asset-contract section 6.2; `check` finds it in the catalog) and the plain ground's World YAML | `tools/urban_simulation.py` (the plain ground) |
 | `recipes` | the managed Recipe each route (car, integrated, drone, fleet, fpv) prepares its environment with (asset-contract section 2.1): path, Recipe id, use case | `tools/urban_simulation.py` |
 
