@@ -198,13 +198,46 @@ function renderAssets() {
 
 // --- Cities (made by Environment Studio) -----------------------------------------------
 
+function registrationText(job) {
+  const registration = job.registration;
+  if (!job.ready) return ["書き出し中", ""];
+  if (job.registered && (!registration || registration.state === "succeeded")) return ["登録済み", "ok"];
+  if (!registration) return ["未登録", ""];
+  if (registration.state === "running") {
+    const progress = registration.progress;
+    const detail = progress?.percent !== undefined ? ` ${Math.round(progress.percent)}%`
+      : progress?.elapsed_sec !== undefined ? ` ${progress.elapsed_sec} 秒経過` : "";
+    return [`登録中（高さモデルを準備中${detail}）`, ""];
+  }
+  return registration.state === "succeeded" ? ["登録済み", "ok"] : [`登録できませんでした（終了コード ${registration.exit_code}）`, "error"];
+}
+
 function renderCities() {
   const cities = state.cities;
   if (!cities) return;
+  $("#city-job-table tbody").replaceChildren(...(cities.jobs.length ? cities.jobs.map((job) => {
+    const [text, kind] = registrationText(job);
+    const cell = el("td", { class: `city-state ${kind}` }, text);
+    if (kind === "error") {
+      cell.append(el("details", {}, el("summary", {}, "出力"), el("pre", {}, job.registration.lines.slice(-20).join("\n"))));
+    }
+    return el("tr", {}, el("td", {}, el("code", {}, job.id)), el("td", {}, job.title), cell);
+  }) : [el("tr", {}, el("td", { colspan: 3, class: "hint" }, "Environment Studio から届いた City はまだありません"))]));
+
   const studio = cities.environment_studio;
+  const busy = studio.job?.state === "running";
+  $("#city-new").disabled = busy;
+  $("#city-new").textContent = studio.running ? "Environment Studio を開く" : "Environment Studio で作る";
+  $("#city-stop").hidden = !studio.running;
   const status = $("#city-web-status");
-  if (studio.running) setStatus(status, `Environment Studio は起動中です: ${studio.url}`, "ok");
-  else setStatus(status, `Environment Studio は起動していません。Business Pack の Workspace で「${studio.start}」を実行してください。`);
+  if (busy) setStatus(status, studio.job.command === "start" ? "Environment Studio を準備・起動しています…" : "Environment Studio を停止しています…");
+  else if (studio.running && !studio.writes_here) setStatus(status, `Environment Studio は起動していますが、書き出し先が urban の受け取りフォルダではありません（${studio.export_dir || "なし"}）。停止してから「Environment Studio で作る」で起動し直してください。`, "error");
+  else if (studio.running) setStatus(status, `Environment Studio は起動中です: ${studio.url}`, "ok");
+  else if (studio.job?.state === "failed") setStatus(status, `Environment Studio の${studio.job.command === "start" ? "起動" : "停止"}に失敗しました（終了コード ${studio.job.exit_code}）`, "error");
+  else setStatus(status, "");
+  const log = $("#city-web-log");
+  log.hidden = !studio.job || (studio.job.state === "succeeded" && !busy);
+  if (studio.job) log.textContent = studio.job.lines.join("\n");
 }
 
 async function pollCities() {
@@ -212,7 +245,7 @@ async function pollCities() {
   try {
     const previous = state.cities;
     state.cities = await api("GET", "cities");
-    // Environment Studio registered or unregistered a City: reload the catalog.
+    // A registration that finished, or a City unregistered because its job was removed: reload the catalog.
     const ids = (value) => (value?.cities || []).map((city) => `${city.id}:${city.receipt}`).join("|");
     if (previous && ids(previous) !== ids(state.cities)) {
       state.assets = await api("GET", "assets");
@@ -222,17 +255,48 @@ async function pollCities() {
   } catch (error) {
     setStatus($("#city-web-status"), error.message, "error");
   }
+  const busy = state.cities?.environment_studio.job?.state === "running"
+    || state.cities?.jobs.some((job) => job.registration?.state === "running");
   const visible = !$("#tab-city").hidden;
-  state.cityTimer = setTimeout(pollCities, visible ? 3000 : 15000);
+  state.cityTimer = setTimeout(pollCities, busy || visible ? 2000 : 10000);
 }
 
-function newCity() {
+async function newCity() {
   const studio = state.cities?.environment_studio;
-  if (studio?.running) {
+  if (studio?.running && studio.writes_here) {
     window.open(studio.url, "_blank");
     return;
   }
-  setStatus($("#city-web-status"), `Environment Studio は起動していません。Business Pack の Workspace で「${studio?.start || "env_studio.py start"}」を実行してから、もう一度押してください。`, "error");
+  // Open the tab now, inside the click, so a popup blocker allows it.
+  const tab = window.open("", "_blank");
+  tab?.document.write("<p style='font-family: sans-serif'>Environment Studio を準備・起動しています（初回は数分）…</p>");
+  try {
+    const job = await api("POST", "cities/environment-studio/start");
+    pollCities();
+    const finished = await waitForJob(job.id);
+    await pollCities();
+    const url = state.cities.environment_studio.url;
+    if (finished.state === "succeeded" && state.cities.environment_studio.running) {
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+    } else {
+      tab?.close();
+    }
+  } catch (error) {
+    tab?.close();
+    setStatus($("#city-web-status"), error.message, "error");
+  }
+}
+
+async function stopEnvironmentStudio() {
+  try {
+    const job = await api("POST", "cities/environment-studio/stop");
+    pollCities();
+    await waitForJob(job.id);
+  } catch (error) {
+    setStatus($("#city-web-status"), error.message, "error");
+  }
+  pollCities();
 }
 
 // --- Caches ------------------------------------------------------------------------------
@@ -1497,6 +1561,7 @@ async function main() {
   $("#yaw-right").addEventListener("click", () => turnSelected(-15));
   $("#add-vehicle").addEventListener("click", addVehicle);
   $("#city-new").addEventListener("click", newCity);
+  $("#city-stop").addEventListener("click", stopEnvironmentStudio);
   $("#cache-refresh").addEventListener("click", loadCache);
   $("#cache-prune").addEventListener("click", pruneCache);
   $("#save-composition").addEventListener("click", saveComposition);
@@ -1522,7 +1587,7 @@ async function main() {
   let tab = "compose";
   try { tab = localStorage.getItem("urban-studio-tab") || tab; } catch { /* storage may be unavailable */ }
   showTab(tab);
-  if (tab !== "city") pollCities(); // follows Cities Environment Studio registers while another tab is open
+  if (tab !== "city") pollCities(); // keeps registering the Cities Environment Studio writes while another tab is open
   pollRtf();
 }
 

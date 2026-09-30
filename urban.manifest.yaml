@@ -33,6 +33,7 @@ assets:
   repository: assets                         # this repository's manifests (searched recursively)
   workspace: "${workspace}/*/assets"         # other repositories' manifests (top level only)
   user: "${work}/urban/assets"               # registered Cities (cities/) and Worlds (worlds/)
+  studio_city_jobs: "${work}/urban/studio-cities"   # the export folder Environment Studio writes its City World jobs to (registered by Urban Studio)
   city_world_jobs: "${work}/recipes/city-world-web-ui/runtime/jobs"   # the Business Pack City World Web UI jobs Cities were registered from before Environment Studio made them (prune-cities, the cache)
 
 # --- Example Compositions (section 5.7) ----------------------------------------------
@@ -80,6 +81,11 @@ recipes:
     path: recipes/usecases/urban-fpv-rc.yaml
     recipe_id: urban-fpv-rc
     use_case: fpv-rc
+  # Not a route: making Cities with Environment Studio (tools/urban_city_authoring.py).
+  city:
+    path: recipes/usecases/urban-city-authoring.yaml
+    recipe_id: urban-city-authoring
+    use_case: city-authoring
 
 # --- Ports -----------------------------------------------------------------------------
 # Every TCP port Urban listens on or connects to, with its default. A port is

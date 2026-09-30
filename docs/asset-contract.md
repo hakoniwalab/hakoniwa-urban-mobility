@@ -106,10 +106,13 @@ The target placement is the Asset's source repository. For v1:
   The id defaults to the City World job name; `--title` gives the name shown
   for it (default: the id). Registration first checks the
   job against its contract (section 6.3) and refuses one that breaks it
-  (`--no-check` registers anyway). Environment Studio registers and
-  unregisters its Cities through these commands and reads the catalog with
-  `tools/urban_assets.py list --json` (id, kind, category, title, manifest,
-  and a City's resolved receipt).
+  (`--no-check` registers anyway). Cities made with Environment Studio
+  arrive as City World jobs in Urban's export folder
+  (`assets.studio_city_jobs`, `work/urban/studio-cities`; each with
+  `job.json` giving its title); Urban Studio registers each one that appears
+  and unregisters it when it is removed (section 5.7). Tools read the catalog
+  with `tools/urban_assets.py list --json` (id, kind, category, title,
+  manifest, and a City's resolved receipt).
   `tools/urban_assets.py unregister-city --id <id>` removes a registration
   (the City World job is kept). `tools/urban_assets.py prune-cities`
   unregisters Cities whose City World Web UI job was deleted (Cities
@@ -449,7 +452,7 @@ names the Urban Studio answering. The tabs follow issue #5:
 
 | Tab | Does | API |
 |---|---|---|
-| City | lists the registered Cities; Cities are made and registered by Environment Studio (PLATEAU City World builds, editing, `urban_assets.py register-city` / `unregister-city`), whose map page "Environment Studio で作る" opens (the manifest's `environment-studio` port). The "キャッシュ" panel shows the Urban cache and what `prune-cache` would remove, and runs `urban_assets.py prune-cache --apply` (refused while another Studio command runs) | `GET /api/cities`, `GET /api/cache`, `POST /api/cache/prune` |
+| City | "Environment Studio で作る" starts Environment Studio through `tools/urban_city_authoring.py` (configure of `recipes/usecases/urban-city-authoring.yaml`, then of the Studio's own Recipe, then `env_studio.py start --export-dir <assets.studio_city_jobs>`) and opens its map page; "Environment Studio を停止" stops it. The Studio does not call Urban: every City World job it writes to the export folder (moved in when complete) is registered once (`urban_assets.py register-city --title <job.json title>`, which checks it, with the height model precompile), a job written again is registered again, and a City whose job was removed is unregistered. The page lists those jobs and the registered Cities, and warns when a running Studio writes elsewhere. The "キャッシュ" panel shows the Urban cache and what `prune-cache` would remove, and runs `urban_assets.py prune-cache --apply` (refused while another Studio command runs) | `GET /api/cities`, `POST /api/cities/environment-studio/start\|stop`, `GET /api/cache`, `POST /api/cache/prune` |
 | Assets | lists World and vehicle Assets with their controls | `GET /api/assets` |
 | Compose | edits a Composition: World, vehicles, control and params, placement (section 5.5) | `GET/PUT /api/compositions/<id>`, `GET /api/worlds/<id>[/glb\|/height]` |
 | Route | edits Car route scenarios (waypoint loops) on the City World map, or by number for a plain World: points, dwell, speed, loops, and the Cars with their offsets. Saved under `work/urban/scenarios/<id>.yaml` with `meta.world`; examples in `recipes/scenarios/` are read-only and saving one writes a copy. In Compose an API Car picks its route from a selector (routes of the same World first) and warns when the route names no such Car or belongs to another World | `GET /api/scenarios`, `GET/PUT /api/scenarios/<id>` |

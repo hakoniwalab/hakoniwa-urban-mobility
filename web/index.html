@@ -36,10 +36,16 @@
           <h2>City</h2>
           <div class="row">
             <button id="city-new">Environment Studio で作る</button>
+            <button id="city-stop" class="secondary" hidden>Environment Studio を停止</button>
           </div>
         </div>
-        <p class="hint">City は Environment Studio で作ります（PLATEAU の範囲を選んで City World を作る、部品として編集する）。Environment Studio が urban に登録した City が、下の一覧と Compose の World に並びます。</p>
+        <p class="hint">「Environment Studio で作る」で Environment Studio を起動し（初回は必要なものを configure するので数分かかります）、地図ページを開きます。PLATEAU の範囲を選んで City World を作ると、書き出された City を自動で検査・登録し、Compose の World に並べます。Environment Studio の「書き出しを消す」で消した City は、登録も外れます。</p>
         <div id="city-web-status" class="status" role="status"></div>
+        <pre id="city-web-log" class="log log-small" hidden></pre>
+      </div>
+      <div class="panel">
+        <h2>Environment Studio から届いた City</h2>
+        <table class="grid" id="city-job-table"><thead><tr><th>ID</th><th>名前</th><th>状態</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h2>登録済みの City</h2>
