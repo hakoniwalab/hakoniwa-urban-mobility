@@ -22,6 +22,8 @@ from urllib.parse import urlencode
 import webbrowser
 import xml.etree.ElementTree as ET
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
@@ -372,8 +374,8 @@ def resolve_config(config_path: Path) -> dict:
         visualization = config["inputs"].get("browser_visualization", {})
         visualization_enabled = bool(visualization.get("enabled", False))
         front_camera = visualization.get("front_camera")
-        web_bridge_port = int(visualization.get("web_bridge_port", 8765))
-        http_port = int(visualization.get("http_port", 8000))
+        web_bridge_port = int(visualization.get("web_bridge_port", urban_manifest.port("web-bridge")))
+        http_port = int(visualization.get("http_port", urban_manifest.port("viewer-http")))
         threejs_root = resolve_path(
             visualization.get("threejs_root", "../hakoniwa-threejs-drone"),
             "Three.js root",
@@ -2159,7 +2161,7 @@ def lifecycle_spec(resolved: dict, *, viewer_url: str | None = None):
         session=session_path(resolved["work"]),
         viewer_url=viewer_url or map_viewer_url(resolved, default_viewer),
         websocket_port=visualization["web_bridge_port"],
-        ports=(visualization["http_port"], visualization["web_bridge_port"], 54111),
+        ports=(visualization["http_port"], visualization["web_bridge_port"], urban_manifest.port("launcher-control")),
     )
 
 

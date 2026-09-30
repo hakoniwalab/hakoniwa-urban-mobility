@@ -107,6 +107,9 @@ The target placement is the Asset's source repository. For v1:
 - `tools/urban_assets.py prune-cache` removes derived caches that no City or
   World uses any more (section 5.4); it is a dry run unless `--apply`.
 
+The locations below are named in the root manifest
+([`urban.manifest.yaml`](../urban.manifest.yaml), `assets`; see
+[urban-manifest.md](urban-manifest.md)), with the managed Recipes and ports.
 The catalog reads this repository's `assets/` (recursively), the top level of
 every workspace repository's `assets/` (`<repo>/assets/*.asset.yaml`; those
 directories also hold models, so they are not searched recursively), and the

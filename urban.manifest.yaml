@@ -1,0 +1,107 @@
+# The root manifest of hakoniwa-urban-mobility: what this repository is made
+# of and the ports it uses, in one place. Tools read it through
+# tools/urban_manifest.py; docs/urban-manifest.md explains every field.
+#
+# Paths are relative to this repository unless they start with a placeholder:
+#   ${workspace}      the folder holding this repository and its siblings
+#   ${business_pack}  ${workspace}/hakoniwa-business-pack
+#   ${work}           ${business_pack}/work (the Business Pack work directory)
+schema: hakoniwa.urban-manifest/v1
+id: hakoniwa-urban-mobility
+title: Hakoniwa Urban Mobility
+
+# --- Contracts this repository publishes --------------------------------------------
+contracts:
+  asset:
+    path: docs/asset-contract.md
+    schemas: [hakoniwa.asset/v1, hakoniwa.composition/v1]
+  city_world_job:
+    path: schemas/city-world-job.yaml
+    schemas: [hakoniwa.city-world-job/v1]
+  manifest:
+    path: docs/urban-manifest.md
+    schemas: [hakoniwa.urban-manifest/v1]
+
+# --- Assets (docs/asset-contract.md section 3.1) ------------------------------------
+assets:
+  suffix: .asset.yaml
+  repository: assets                         # this repository's manifests (searched recursively)
+  workspace: "${workspace}/*/assets"         # other repositories' manifests (top level only)
+  user: "${work}/urban/assets"               # registered Cities (cities/) and Worlds (worlds/)
+  city_world_jobs: "${work}/recipes/city-world-web-ui/runtime/jobs"   # the City World Web UI's jobs
+
+# --- Worlds (section 6) --------------------------------------------------------------
+worlds:
+  default: plain-ground                      # the World of a Composition that selects none
+  plain_ground: worlds/plain-ground.yaml
+
+# --- Managed Recipes: the environment each route prepares (section 2.1) --------------
+recipes:
+  car:
+    path: recipes/usecases/urban-car-rc.yaml
+    recipe_id: urban-car-rc
+    use_case: car-rc
+  integrated:
+    path: recipes/experiments/urban-mobility-rc.yaml
+    recipe_id: urban-mobility-rc
+    use_case: drone-car-distributed
+
+# --- Ports -----------------------------------------------------------------------------
+# Every TCP port Urban listens on or connects to, with its default. A port is
+# changed, highest first, by: the Composition or command-line value named in
+# `set_by` (one run), the environment variable HAKONIWA_URBAN_PORT_<ID> (the id
+# upper-cased, - as _), then the machine's overrides file below (for example
+# where 8765 is taken by a WSL port proxy). A `fixed` port belongs to another
+# component that does not take a new one yet; it is listed so nothing else
+# takes it.
+ports:
+  urban-studio:
+    default: 8090
+    protocol: http
+    purpose: the Urban Studio browser backend
+    served_by: tools/urban_studio.py
+    set_by: [--port]
+  city-world-web-ui:
+    default: 8008
+    protocol: http
+    purpose: the Business Pack City World Web UI that Urban Studio links to and checks
+    served_by: hakoniwa-business-pack tools/recipe/city_world_web_ui.py
+    fixed: true
+  viewer-http:
+    default: 8000
+    protocol: http
+    purpose: the workspace file server of the Three.js and Map viewers of a running simulation
+    served_by: tools/workspace_http_server.py
+    set_by: [composition viewer.http_port, --port]
+  web-bridge:
+    default: 8765
+    protocol: websocket
+    purpose: the standard WebBridge (integrated Car + Drone viewer, the Business Pack fleet bridge)
+    served_by: hakoniwa-pdu-bridge-core WebBridge
+    set_by: [composition viewer.web_bridge_port, --web-bridge-port]
+  web-bridge-car:
+    default: 18765
+    protocol: websocket
+    purpose: the WebBridge of a Car-only Composition
+    served_by: hakoniwa-pdu-bridge-core WebBridge
+    set_by: [composition viewer.web_bridge_port, --web-bridge-port]
+  web-bridge-fleet:
+    default: 18766
+    protocol: websocket
+    purpose: the WebBridge of a Drone fleet Composition
+    served_by: hakoniwa-pdu-bridge-core WebBridge
+    set_by: [composition viewer.web_bridge_port]
+  launcher-control:
+    default: 54111
+    protocol: tcp
+    purpose: the Launcher's control port of a running simulation
+    served_by: hakoniwa-business-pack Launcher
+    fixed: true
+
+# Defaults of other tools that run in the same workspace: Urban's defaults stay clear of them.
+reserved:
+  - {port: 8096, owner: hakoniwa-booth-studio, purpose: Booth Studio}
+  - {port: 8097, owner: hakoniwa-environment-studio, purpose: Environment Studio}
+
+# Machine-specific port changes: {ports: {<id>: <port>}}; missing is fine.
+port_overrides: "${work}/urban/ports.yaml"

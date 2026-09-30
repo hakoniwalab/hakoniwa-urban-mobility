@@ -75,17 +75,20 @@ SIMULATION = ROOT / "tools/urban_simulation.py"
 COMMANDS = ("plan", "configure", "start", "stop", "status")
 COMPOSITION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 PROGRESS_MARKER = "[HAKO_PROGRESS] "
-DEFAULT_PORT = 8090
 # The Business Pack City World Web UI (tools/recipe/city_world_web_ui.py).
 CITY_WEB_UI = BUSINESS_PACK / "tools/recipe/city_world_web_ui.py"
 CITY_RECIPE_ROOT = BUSINESS_PACK / "work/recipes/city-world-web-ui"
-CITY_WEB_PORT = 8008
 URBAN_ASSETS = ROOT / "tools/urban_assets.py"
 CACHE_KEY = "cache:urban"
 
 for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+
+import urban_manifest  # noqa: E402
+
+DEFAULT_PORT = urban_manifest.port("urban-studio")
+CITY_WEB_PORT = urban_manifest.port("city-world-web-ui")
 
 
 class StudioError(RuntimeError):

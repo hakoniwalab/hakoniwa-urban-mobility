@@ -39,7 +39,7 @@ RECIPE_KEYS = {
 # The Business Pack fleet WebBridge configuration and its fixed port.
 BRIDGE_ASSET = "web-bridge-fleets"
 BRIDGE_SERVER_CONFIG = "comm/visual-state-websocket-server.json"
-BUSINESS_PACK_BRIDGE_URI = "ws://127.0.0.1:8765"
+BUSINESS_PACK_BRIDGE_URI = "ws://127.0.0.1:8765"  # as the Business Pack writes it (not a port Urban sets)
 # The Viewer the Business Pack Launcher writer materializes for a City fleet.
 VIEWER_CONFIG = Path("web/map-viewer/thirdparty/hakoniwa-threejs-drone/config/viewer-config-fleets.json")
 # The Business Pack scenario the show runner flies (letters sampled to the
@@ -66,6 +66,7 @@ import drone_fleet_single_host as base  # noqa: E402
 import drone_fleet_city as city  # noqa: E402
 import urban_controls  # noqa: E402
 import urban_lifecycle  # noqa: E402
+import urban_manifest  # noqa: E402
 
 
 class FleetError(RuntimeError):
@@ -219,7 +220,7 @@ def lifecycle_spec(paths, recipe: dict) -> urban_lifecycle.LifecycleSpec:
         session=paths.recipe_root / "runtime/launcher-session.json",
         viewer_url=viewer_url(recipe),
         websocket_port=recipe["web_bridge_port"],
-        ports=(8000, recipe["web_bridge_port"], 54111),
+        ports=(urban_manifest.port("viewer-http"), recipe["web_bridge_port"], urban_manifest.port("launcher-control")),
     )
 
 

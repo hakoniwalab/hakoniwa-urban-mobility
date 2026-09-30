@@ -39,6 +39,8 @@ for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+import urban_manifest  # noqa: E402
+
 URBAN_MOBILITY = ROOT / "tools/urban_mobility.py"
 DRONE_ONE = ROOT / "tools/drone_one.py"
 DRONE_FLEET = ROOT / "tools/drone_fleet.py"
@@ -48,7 +50,7 @@ FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
 FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
 FPV_SELECTION_FILE = "urban-composition.json"
 # The open ground an FPV vehicle is generated on before it is composed into a City.
-FPV_CITY_GROUND = ROOT / "worlds/plain-ground.yaml"
+FPV_CITY_GROUND = urban_manifest.path("worlds.plain_ground")
 MBODY_COMPOSE = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
 DRONE_CORE = WORKSPACE / "hakoniwa-drone-core"
 DRONE_RECIPE_FILE = "urban-composition-drone.yaml"
@@ -59,8 +61,8 @@ DRONE = frozenset({"drone-core"})
 CAR_AND_DRONE = CAR | DRONE
 # Managed Recipes that prepare the environment of a route, and their ids.
 MANAGED_RECIPES = {
-    "car": ("recipes/usecases/urban-car-rc.yaml", "urban-car-rc", "car-rc"),
-    "integrated": ("recipes/experiments/urban-mobility-rc.yaml", "urban-mobility-rc", "drone-car-distributed"),
+    route: (entry["path"], entry["recipe_id"], entry["use_case"])
+    for route, entry in urban_manifest.value("recipes").items()
 }
 COMMANDS = ("plan", "configure", "start", "status", "stop", "open-viewer")
 

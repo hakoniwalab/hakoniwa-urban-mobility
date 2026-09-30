@@ -11,18 +11,20 @@ import sys
 
 import yaml
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 
 ASSET_SCHEMA = "hakoniwa.asset/v1"
-MANIFEST_SUFFIX = ".asset.yaml"
+MANIFEST_SUFFIX = urban_manifest.value("assets.suffix")
 # Tracked vehicle and plain-World manifests, then user-generated City Assets.
-REPOSITORY_ASSETS = ROOT / "assets"
-USER_ASSETS = BUSINESS_PACK / "work/urban/assets"
+REPOSITORY_ASSETS = urban_manifest.path("assets.repository")
+USER_ASSETS = urban_manifest.path("assets.user")
 # Jobs of the Business Pack City World Web UI; Urban Studio registers these.
-CITY_WORLD_JOBS = BUSINESS_PACK / "work/recipes/city-world-web-ui/runtime/jobs"
+CITY_WORLD_JOBS = urban_manifest.path("assets.city_world_jobs")
 
 KINDS = {"vehicle", "city", "plain"}
 CATEGORIES = {"car", "drone"}
@@ -157,7 +159,8 @@ def source_repository_manifests() -> list[Path]:
     hold models and textures.
     """
     return sorted(
-        path for path in WORKSPACE.glob(f"*/assets/*{MANIFEST_SUFFIX}")
+        path for path in WORKSPACE.glob(
+            f"{urban_manifest.path('assets.workspace').relative_to(WORKSPACE).as_posix()}/*{MANIFEST_SUFFIX}")
         if path.parent.resolve() != REPOSITORY_ASSETS.resolve()
     )
 
