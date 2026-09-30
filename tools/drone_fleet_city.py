@@ -16,7 +16,6 @@ drone-show tools.
 from __future__ import annotations
 
 import argparse
-import ctypes
 import hashlib
 import importlib.util
 import json
@@ -35,6 +34,7 @@ from typing import Any
 ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import urban_manifest  # noqa: E402
+import world_height  # noqa: E402
 
 BUSINESS_PACK_ROOT = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 BUSINESS_PACK_TOOLS = BUSINESS_PACK_ROOT / "tools"
@@ -203,94 +203,53 @@ def _city_visual_max_height(city_receipt_path: Path) -> tuple[float, Path]:
 
 
 class _MujocoRayScene:
-    """Query the highest collision surface without depending on mujoco-python."""
+    """Query the highest collision surface of a World with the MuJoCo Python
+    API (recipes/requirements/urban-drone.txt pins the Drone Core's MuJoCo
+    version). Only this geometric query uses it; the MJB the Drone service
+    loads is still compiled with the Drone Core's own library.
 
-    def __init__(self, xml_path: Path, library_path: Path):
+    Rays start just above the World's highest geom (world_height.ray_start):
+    MuJoCo's ray-mesh test misses a thin mesh, such as a 2 cm road slab, from
+    a few hundred metres away."""
+
+    def __init__(self, xml_path: Path):
         self.xml_path = xml_path.resolve()
-        self.library = ctypes.CDLL(str(library_path.resolve()))
-        self.model: int | None = None
-        self.data: int | None = None
+        self.model = None
+        self.data = None
+        self.ray_origin_z = 0.0
 
     def __enter__(self) -> "_MujocoRayScene":
-        lib = self.library
-        lib.mj_loadXML.argtypes = [
-            ctypes.c_char_p,
-            ctypes.c_void_p,
-            ctypes.c_char_p,
-            ctypes.c_int,
-        ]
-        lib.mj_loadXML.restype = ctypes.c_void_p
-        lib.mj_makeData.argtypes = [ctypes.c_void_p]
-        lib.mj_makeData.restype = ctypes.c_void_p
-        lib.mj_forward.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        # MuJoCo 3.13 (the Drone Core runtime) adds a trailing normal[3]
-        # output. Passing NULL for it is required there: without it the
-        # callee writes through an undefined pointer (the process dies on
-        # Windows). Older MuJoCo ignores the extra argument.
-        lib.mj_ray.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_void_p,
-            ctypes.c_ubyte,
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_int),
-            ctypes.c_void_p,
-        ]
-        lib.mj_ray.restype = ctypes.c_double
-        lib.mj_deleteData.argtypes = [ctypes.c_void_p]
-        lib.mj_deleteModel.argtypes = [ctypes.c_void_p]
-        error = ctypes.create_string_buffer(4096)
-        self.model = lib.mj_loadXML(
-            os.fsencode(self.xml_path), None, error, len(error)
-        )
-        if not self.model:
-            detail = error.value.decode("utf-8", errors="replace")
-            raise FleetMujocoError(
-                f"MuJoCo could not load ray-query model {self.xml_path}: {detail}"
-            )
-        self.data = lib.mj_makeData(self.model)
-        if not self.data:
-            lib.mj_deleteModel(self.model)
-            self.model = None
-            raise FleetMujocoError(
-                f"MuJoCo could not allocate ray-query data for {self.xml_path}"
-            )
-        lib.mj_forward(self.model, self.data)
+        import mujoco
+
+        try:
+            self.model = mujoco.MjModel.from_xml_path(str(self.xml_path))
+        except ValueError as exc:
+            raise FleetMujocoError(f"MuJoCo could not load ray-query model {self.xml_path}: {exc}") from exc
+        self.data = mujoco.MjData(self.model)
+        mujoco.mj_forward(self.model, self.data)
+        self.ray_origin_z = world_height.ray_start(self.model, self.data, mujoco)
         return self
 
     def __exit__(self, *_args: object) -> None:
-        if self.data:
-            self.library.mj_deleteData(self.data)
-            self.data = None
-        if self.model:
-            self.library.mj_deleteModel(self.model)
-            self.model = None
+        self.model = None
+        self.data = None
 
     def height(self, x_m: float, y_m: float) -> float:
-        if not self.model or not self.data:
+        import mujoco
+        import numpy
+
+        if self.model is None or self.data is None:
             raise FleetMujocoError("MuJoCo ray-query scene is not open")
-        ray_origin_z = 10_000.0
-        point = (ctypes.c_double * 3)(x_m, y_m, ray_origin_z)
-        direction = (ctypes.c_double * 3)(0.0, 0.0, -1.0)
-        geom_id = ctypes.c_int(-1)
-        distance = self.library.mj_ray(
-            self.model,
-            self.data,
-            point,
-            direction,
-            None,
-            1,
-            -1,
-            ctypes.byref(geom_id),
-            None,
+        geom_id = numpy.array([-1], dtype=numpy.int32)
+        distance = mujoco.mj_ray(
+            self.model, self.data,
+            numpy.array([x_m, y_m, self.ray_origin_z], dtype=numpy.float64),
+            numpy.array([0.0, 0.0, -1.0], dtype=numpy.float64),
+            None, 1, -1, geom_id,
         )
-        if distance < 0.0 or geom_id.value < 0:
-            raise FleetMujocoError(
-                f"no collision surface below local point ({x_m:.3f}, {y_m:.3f})"
-            )
-        return ray_origin_z - float(distance)
+        if distance < 0.0 or geom_id[0] < 0:
+            raise FleetMujocoError(f"no collision surface below local point ({x_m:.3f}, {y_m:.3f})")
+        return self.ray_origin_z - float(distance)
 
 
 def _sha256(path: Path) -> str:
@@ -1376,10 +1335,7 @@ def materialize_fleet_config(
     if requested_agl_m < 0.5:
         raise FleetMujocoError("scenario altitude must be at least 0.5 m AGL")
 
-    library_path = find_mujoco_library(drone_root)
-    with _MujocoRayScene(terrain_xml, library_path) as terrain_scene, _MujocoRayScene(
-        city_xml, library_path
-    ) as city_scene:
+    with _MujocoRayScene(terrain_xml) as terrain_scene, _MujocoRayScene(city_xml) as city_scene:
         spawn_args = {
             "drone_count": drone_count,
             "half_extent_m": half_extent,

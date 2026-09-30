@@ -56,6 +56,30 @@ CACHE_LAYOUT = 2
 FILE_REFERENCE = re.compile(r'\bfile="([^"]+)"')
 
 
+def ray_start(model, data, mujoco=None) -> float:
+    """Where a downward ray starts: RAY_START_MARGIN_M above the highest
+    point of the model's geoms (each geom's local bounding box, geom_aabb:
+    centre and half sizes, turned into the world by its pose; a plane counts
+    at its position). A bounding sphere is not tight enough: a large
+    terrain's radius would put the start hundreds of metres up again, where
+    MuJoCo's ray-mesh test misses thin meshes. Needs mj_forward first.
+    tools/drone_fleet_city.py uses it too."""
+    if mujoco is None:
+        import mujoco
+    import numpy
+
+    if model.ngeom == 0:
+        return RAY_START_MARGIN_M
+    centre = model.geom_aabb[:, :3]
+    half = model.geom_aabb[:, 3:]
+    rotation = data.geom_xmat.reshape(-1, 3, 3)
+    top = (data.geom_xpos[:, 2] + numpy.einsum("gj,gj->g", rotation[:, 2, :], centre)
+           + numpy.einsum("gj,gj->g", numpy.abs(rotation[:, 2, :]), half))
+    planes = model.geom_type == mujoco.mjtGeom.mjGEOM_PLANE
+    top[planes] = data.geom_xpos[planes, 2]
+    return float(numpy.max(top)) + RAY_START_MARGIN_M
+
+
 class WorldHeightError(RuntimeError):
     pass
 
@@ -263,23 +287,7 @@ class WorldHeight:
         self.ray_starts = [self._ray_start(model, data) for model, data in zip(models, self.datas)]
 
     def _ray_start(self, model, data) -> float:
-        """Just above the highest point of the model's geoms: each geom's
-        local bounding box (geom_aabb: centre, half sizes) turned into the
-        world. A bounding sphere is not tight enough: a large terrain's
-        radius would put the start hundreds of metres up again."""
-        numpy = self._numpy
-        if model.ngeom == 0:
-            return RAY_START_MARGIN_M
-        centre = model.geom_aabb[:, :3]
-        half = model.geom_aabb[:, 3:]
-        rotation = data.geom_xmat.reshape(-1, 3, 3)
-        top = (data.geom_xpos[:, 2] + numpy.einsum("gj,gj->g", rotation[:, 2, :], centre)
-               + numpy.einsum("gj,gj->g", numpy.abs(rotation[:, 2, :]), half))
-        # A plane's bounding box is unbounded in its own plane; its height is
-        # its position.
-        planes = model.geom_type == self._mujoco.mjtGeom.mjGEOM_PLANE
-        top[planes] = data.geom_xpos[planes, 2]
-        return float(numpy.max(top)) + RAY_START_MARGIN_M
+        return ray_start(model, data, self._mujoco)
 
     def _visual_only_left_out(self, model):
         """A geom group mask that leaves out the visual-only geoms, moved to a

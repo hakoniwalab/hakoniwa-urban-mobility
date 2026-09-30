@@ -17,43 +17,61 @@ recipe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(recipe)
 
 
-DRONE_CORE = Path(__file__).resolve().parents[2] / "hakoniwa-drone-core"
-
-
-def _drone_core_mujoco() -> Path | None:
-    try:
-        return recipe.find_mujoco_library(DRONE_CORE)
-    except Exception:  # noqa: BLE001 - the runtime is optional for this test
-        return None
-
 
 class MujocoRaySceneTest(unittest.TestCase):
-    @unittest.skipIf(_drone_core_mujoco() is None, "Drone Core MuJoCo runtime is not installed")
-    def test_ray_query_runs_on_the_drone_core_mujoco(self) -> None:
-        # MuJoCo 3.13 mj_ray takes a trailing normal[3]; calling it without
-        # that argument killed the process on Windows. Run the query in a
-        # child process so such a crash fails the test instead of the run.
-        with tempfile.TemporaryDirectory() as directory:
-            world = Path(directory) / "world.xml"
-            world.write_text(
-                '<mujoco><worldbody><geom type="plane" size="10 10 0.1"/>'
-                '<geom type="box" pos="2 0 1.5" size="1 1 1.5"/></worldbody></mujoco>',
-                encoding="utf-8",
-            )
-            script = (
-                "import importlib.util, sys\n"
-                "from pathlib import Path\n"
-                f"spec = importlib.util.spec_from_file_location('m', r'{SCRIPT}')\n"
-                "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
-                f"with m._MujocoRayScene(Path(r'{world}'), Path(r'{_drone_core_mujoco()}')) as s:\n"
-                "    print(round(s.height(2.0, 0.0), 6), round(s.height(-5.0, 0.0), 6))\n"
-            )
-            import subprocess
-            import sys
+    """The World height queries of the fleet route (MuJoCo Python API)."""
 
-            result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.split(), ["3.0", "0.0"])
+    def scene(self, directory: str, text: str):
+        world = Path(directory) / "world.xml"
+        world.write_text(text, encoding="utf-8")
+        return recipe._MujocoRayScene(world)
+
+    def test_the_top_colliding_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, self.scene(
+            directory,
+            '<mujoco><worldbody><geom type="plane" size="10 10 0.1"/>'
+            '<geom type="box" pos="2 0 1.5" size="1 1 1.5"/></worldbody></mujoco>',
+        ) as scene:
+            self.assertAlmostEqual(scene.height(2.0, 0.0), 3.0, places=9)
+            self.assertAlmostEqual(scene.height(-5.0, 0.0), 0.0, places=9)
+
+    def test_a_thin_mesh_road_slab_above_the_terrain_is_the_surface(self) -> None:
+        # A 2 cm road slab as a vertex-only mesh, as Environment Studio exports
+        # it, 11 cm above a flat terrain. MuJoCo's ray-mesh test misses it from
+        # a few hundred metres away, so a ray from far above found the terrain
+        # and launch validation and the flight altitude ignored the road.
+        slab = ("5 5 -0.01 -5 5 -0.01 -5 -5 -0.01 5 -5 -0.01 "
+                "5 5 0.01 -5 5 0.01 -5 -5 0.01 5 -5 0.01")
+        with tempfile.TemporaryDirectory() as directory, self.scene(
+            directory,
+            f'<mujoco><asset><mesh name="slab" vertex="{slab}"/></asset><worldbody>'
+            '<geom name="terrain" type="box" size="100 100 1" pos="0 0 1.455"/>'
+            '<body name="road" pos="-55 55 2.571" euler="0 0 30">'
+            '<geom type="mesh" mesh="slab" pos="0 0 0.01"/></body>'
+            "</worldbody></mujoco>",
+        ) as scene:
+            self.assertAlmostEqual(scene.height(-55.0, 55.0), 2.591, places=6, msg="on the slab")
+            self.assertAlmostEqual(scene.height(0.0, 0.0), 2.455, places=6, msg="on the terrain")
+
+    def test_rays_start_just_above_the_highest_geom(self) -> None:
+        # A rotated box's top is its bounding box turned into the world; a
+        # plane's is its position. The ray start is 1 m above the highest.
+        with tempfile.TemporaryDirectory() as directory:
+            with self.scene(
+                directory,
+                '<mujoco><worldbody><geom type="plane" pos="0 0 50" size="10 10 0.1"/>'
+                '<body pos="3 0 10" euler="90 0 0"><geom type="box" size="1 2 0.5"/></body>'
+                "</worldbody></mujoco>",
+            ) as scene:
+                self.assertAlmostEqual(scene.ray_origin_z, 51.0, places=9)
+            with self.scene(
+                directory,
+                '<mujoco><worldbody><geom type="plane" size="10 10 0.1"/>'
+                '<body pos="3 0 10" euler="90 0 0"><geom type="box" size="1 2 0.5"/></body>'
+                "</worldbody></mujoco>",
+            ) as scene:
+                self.assertAlmostEqual(scene.ray_origin_z, 13.0, places=9)
+                self.assertAlmostEqual(scene.height(3.0, 0.0), 12.0, places=9)
 
 
 class FleetMujocoCityTest(unittest.TestCase):
