@@ -56,11 +56,38 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("8000 is also ports.viewer-http", found)
 
     def test_paths_resolve_from_the_repository_and_the_workspace(self):
-        workspace = urban_manifest.ROOT.parent
-        self.assertEqual(urban_manifest.path("assets.repository"), urban_manifest.ROOT / "assets")
-        self.assertEqual(urban_manifest.path("assets.user"), workspace / "hakoniwa-business-pack/work/urban/assets")
+        with tempfile.TemporaryDirectory() as directory:
+            business_pack, work = Path(directory) / "pack", Path(directory) / "relocated-work"
+            with mock.patch.dict("os.environ", {"HAKONIWA_WORKSPACE_ACTIVE": "1",
+                                                "HAKONIWA_WORKSPACE_ROOT": str(business_pack),
+                                                "HAKONIWA_WORK_DIR": str(work)}):
+                self.assertEqual(urban_manifest.path("assets.repository"), urban_manifest.ROOT / "assets")
+                self.assertEqual(urban_manifest.resolve("${workspace}/x"), urban_manifest.ROOT.parent / "x")
+                self.assertEqual(urban_manifest.resolve("${business_pack}/tools"), business_pack.resolve() / "tools")
+                # ${work} is $HAKONIWA_WORK_DIR, wherever it was relocated, not ${business_pack}/work.
+                self.assertEqual(urban_manifest.path("assets.user"), work.resolve() / "urban/assets")
         with self.assertRaises(urban_manifest.ManifestError):
             urban_manifest.resolve("${nowhere}/x")
+
+    def test_outside_the_workspace_the_business_pack_paths_stop_with_the_enter_command(self):
+        for environment in ({"HAKONIWA_WORKSPACE_ACTIVE": ""},
+                            {"HAKONIWA_WORKSPACE_ACTIVE": "1", "HAKONIWA_WORK_DIR": "", "HAKONIWA_WORKSPACE_ROOT": ""}):
+            with mock.patch.dict("os.environ", environment):
+                for placeholder in ("${work}/urban/assets", "${business_pack}/tools"):
+                    with self.assertRaises(urban_manifest.WorkspaceError) as raised:
+                        urban_manifest.resolve(placeholder)
+                    self.assertIn("python tools/workspace.py enter", str(raised.exception.code))
+                    self.assertNotEqual(raised.exception.code, 0)
+                # Paths of this repository and its siblings do not need the Workspace.
+                self.assertEqual(urban_manifest.path("assets.repository"), urban_manifest.ROOT / "assets")
+
+    def test_no_tool_guesses_the_business_pack_next_to_this_repository(self):
+        # portable_urban_car builds a portable package's Workspace variables from its own layout.
+        allowed = {"tools/portable_urban_car.py"}
+        guesses = [path.relative_to(ROOT).as_posix() for folder in ("tools", "apps") for path in (ROOT / folder).rglob("*.py")
+                   if "hakoniwa-business-pack/work" in path.read_text(encoding="utf-8")
+                   or '/ "hakoniwa-business-pack"' in path.read_text(encoding="utf-8")]
+        self.assertEqual(sorted(set(guesses) - allowed), [])
 
 
 class ToolsFollowTheManifestTest(unittest.TestCase):

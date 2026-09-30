@@ -14,16 +14,17 @@ import subprocess
 import sys
 import webbrowser
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
+BUSINESS_PACK = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
-import urban_manifest  # noqa: E402
 import urban_simulation  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402

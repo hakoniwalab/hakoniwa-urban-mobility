@@ -32,10 +32,11 @@ import time
 from typing import Callable
 import xml.etree.ElementTree as ET
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
-BUSINESS_PACK = ROOT.parent / "hakoniwa-business-pack"
-CACHE_DIR = BUSINESS_PACK / "work/urban/cache/world-height"
+CACHE_DIR = urban_manifest.work_dir() / "urban/cache/world-height"
 # Rays start above any City geometry; MJCF Z is up in metres.
 RAY_START_M = 10000.0
 # A ray passes through at most this many non-colliding geoms before it

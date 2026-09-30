@@ -14,20 +14,21 @@ import tempfile
 from urllib.request import urlopen
 import webbrowser
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 ENVSIM = WORKSPACE / "hakoniwa-envsim"
 DEFAULT_SCENARIO = ROOT / "recipes/scenarios/shizuoka-five-car-formation-loop.yaml"
 DEFAULT_RECEIPT = (
-    BUSINESS_PACK
-    / "work/remote-operation/city-world-worker/jobs/"
+    urban_manifest.work_dir()
+    / "remote-operation/city-world-worker/jobs/"
     "shizuoka-22203-lat35.099-lon138.859/build/world/city-world-receipt.json"
 )
 DEFAULT_CITY_PYTHON = (
-    BUSINESS_PACK
-    / "work/recipes/plateau-citygml-mujoco-walls/python/bin/python3"
+    urban_manifest.work_dir()
+    / "recipes/plateau-citygml-mujoco-walls/python/bin/python3"
 )
 
 

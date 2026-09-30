@@ -34,10 +34,11 @@ from pathlib import Path
 import sys
 
 import urban_assets
+import urban_manifest
 
 FORMATS = {"drone-type", "view-model", "fpv-assembly"}
 FPV_ROOT = urban_assets.WORKSPACE / "hakoniwa-fpv-drone"
-CACHE_ROOT = urban_assets.BUSINESS_PACK / "work/urban/cache/preview"
+CACHE_ROOT = urban_manifest.work_dir() / "urban/cache/preview"
 
 
 class PreviewError(RuntimeError):

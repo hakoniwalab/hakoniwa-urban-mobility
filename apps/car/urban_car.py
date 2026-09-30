@@ -27,6 +27,16 @@ from pdu.python.sensor_msgs.pdu_conv_MultiDOFJointState import (  # noqa: E402
 )
 
 
+def _foundation_install() -> Path:
+    """The Foundation install the Workspace exports ($HAKONIWA_HOME)."""
+    if os.environ.get("HAKONIWA_HOME"):
+        return Path(os.environ["HAKONIWA_HOME"])
+    sys.path.insert(0, str(ROOT / "tools"))
+    import urban_manifest  # stops with the Workspace enter command outside it
+
+    return urban_manifest.work_dir() / "foundation/install"
+
+
 class AckermannClientError(RuntimeError):
     """The external PDU client could not initialize or publish a command."""
 
@@ -54,12 +64,7 @@ class HakoniwaPollingTransport:
         self.pdu_def = pdu_def
         self.runtime_asset = runtime_asset.encode("utf-8")
         self._channels = PduChannelConfig(str(pdu_def))
-        install = Path(
-            os.environ.get(
-                "HAKONIWA_CORE_ROOT",
-                WORKSPACE / "hakoniwa-business-pack/work/foundation/install",
-            )
-        ).expanduser().resolve()
+        install = Path(os.environ.get("HAKONIWA_CORE_ROOT") or _foundation_install()).expanduser().resolve()
         core_config = install.parent / "config/cpp_core_config.json"
         os.environ.setdefault("HAKO_CONFIG_PATH", str(core_config))
         system = platform.system()

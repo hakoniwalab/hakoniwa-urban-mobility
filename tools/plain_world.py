@@ -29,11 +29,12 @@ import struct
 import sys
 import xml.etree.ElementTree as ET
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
-JOBS_DIR = BUSINESS_PACK / "work/urban/worlds"
+JOBS_DIR = urban_manifest.work_dir() / "urban/worlds"
 FPV_GENERATOR_SRC = WORKSPACE / "hakoniwa-fpv-drone/src"
 MJCF_FRAME = "X=North,Y=-East,Z=Up"
 GLB_FRAME = "X=East,Y=Up,Z=-North"

@@ -30,16 +30,17 @@ from pathlib import Path
 import subprocess
 import sys
 
+import urban_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
+BUSINESS_PACK = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
 
 for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import urban_manifest  # noqa: E402
 
 URBAN_MOBILITY = ROOT / "tools/urban_mobility.py"
 DRONE_ONE = ROOT / "tools/drone_one.py"
@@ -47,7 +48,7 @@ DRONE_FLEET = ROOT / "tools/drone_fleet.py"
 FLEET_WORKSPACE_ID = "urban-drone-fleet"
 FLEET_RECIPE_FILE = "urban-composition-fleet.json"
 FPV_TOOL = WORKSPACE / "hakoniwa-fpv-drone/tools/fpv.py"
-FPV_OUTPUT_ROOT = BUSINESS_PACK / "work/urban/fpv"
+FPV_OUTPUT_ROOT = urban_manifest.work_dir() / "urban/fpv"
 FPV_SELECTION_FILE = "urban-composition.json"
 # The open ground an FPV vehicle is generated on before it is composed into a City.
 FPV_CITY_GROUND = urban_manifest.path("worlds.plain_ground")

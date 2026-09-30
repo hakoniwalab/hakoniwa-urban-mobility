@@ -31,10 +31,11 @@ import shutil
 import time
 
 import urban_assets
+import urban_manifest
 import world_height
 
 
-CACHE_ROOT = urban_assets.BUSINESS_PACK / "work/urban/cache"
+CACHE_ROOT = urban_manifest.work_dir() / "urban/cache"
 PARTIAL_GRACE_SEC = 3600.0
 ENTRY_NAME = re.compile(r"^(?P<fingerprint>[0-9a-f]{64})-mujoco-(?P<version>.+)$")
 

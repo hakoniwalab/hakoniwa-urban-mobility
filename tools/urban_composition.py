@@ -51,7 +51,7 @@ DRONE_MIRROR_PARAMS = {
     "relative_normal_speed_threshold_mps": 0.2,
     "cooldown_sec": 0.1,
 }
-PLAIN_WORLD_CACHE = urban_assets.BUSINESS_PACK / "work/urban/cache/plain-world"
+PLAIN_WORLD_CACHE = urban_manifest.work_dir() / "urban/cache/plain-world"
 FPV_GENERATOR_SRC = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/src"
 # Vehicles whose manifest names this generator run through tools/fpv.py.
 FPV_TOOL = "tools/fpv.py"
@@ -287,7 +287,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     )
 
 
-ROUTE_CACHE = urban_assets.BUSINESS_PACK / "work/urban/cache/routes"
+ROUTE_CACHE = urban_manifest.work_dir() / "urban/cache/routes"
 # Gap between a Car added to a route and the Car ahead of it.
 ADDED_CAR_SPACING_M = 6.0
 
