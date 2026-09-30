@@ -111,7 +111,7 @@ execution_environment:
     hako_cmd_access: required
   notes:
     - The Recipe exclusively owns the shared Foundation mmap runtime while running.
-    - HTTP 8000, WebSocket 8765, and Launcher control 54111 must be available before start.
+    - HTTP 28100 and WebSocket 28865 (urban.manifest.yaml viewer-http, web-bridge) must be available before start.
     - A human operator connects and operates the PS4 controller after Demo Ready.
 
 runtime_dependencies:

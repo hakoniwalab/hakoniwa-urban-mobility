@@ -43,8 +43,7 @@ AREA_KEYS = {"east_m", "north_m"}
 # is the effective minimum) and the drones one Drone service process runs.
 FLEET_SPACING_RANGE_M = (0.75, 5.0)
 FLEET_DRONES_PER_PROCESS = 50
-# The Business Pack fleet WebBridge listens on 8765; a Composition sets its own
-# with viewer.web_bridge_port (8765 is often taken, e.g. by a WSL port proxy).
+# A fleet Composition's WebBridge (viewer.web_bridge_port overrides it).
 DEFAULT_FLEET_WEB_BRIDGE_PORT = urban_manifest.port("web-bridge-fleet")
 DRONE_MIRROR_PARAMS = {
     "restitution_coefficient": 0.3,

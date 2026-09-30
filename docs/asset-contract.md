@@ -430,7 +430,7 @@ steps or typed.
 
 ### 5.7 Browser UI (Urban Studio)
 
-`tools/urban_studio.py` serves `web/` on `127.0.0.1` (default port 8090, the
+`tools/urban_studio.py` serves `web/` on `127.0.0.1` (default port 28090, the
 root manifest's `urban-studio` port) with a JSON API over the tools of this
 contract. Start it from the Business Pack Workspace shell so the simulations
 it runs inherit the Workspace environment: `urban_studio.py` runs it in that

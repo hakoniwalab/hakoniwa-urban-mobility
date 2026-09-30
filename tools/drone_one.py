@@ -37,6 +37,9 @@ EAMS_CONTACT_PRIORITY = "1"
 EAMS_LANDING_COLLIDER_NAME = "landing_gear_support_contact"
 EAMS_LANDING_COLLIDER_POSITION = "0 0 -0.44"
 EAMS_LANDING_COLLIDER_SIZE = "0.31 0.29 0.04"
+# The viewer's HTTP server and WebBridge (urban.manifest.yaml ports).
+VIEWER_HTTP_PORT = urban_manifest.port("viewer-http")
+WEB_BRIDGE_PORT = urban_manifest.port("web-bridge")
 
 for path in (
     ROOT / "tools",
@@ -500,7 +503,7 @@ def open_viewer(
         raise base.RecipeError(
             "Collider viewer is not configured; run configure before open-viewer"
         )
-    url = base.viewer_url(1, map_viewer=True)
+    url = base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT)
     if map_layout == "bottom-left":
         url += "&layout=three-main"
     if show_colliders:
@@ -527,7 +530,8 @@ def urban_launcher_writer(
 
     def write(paths, drone_root, viewer_root, experiment, system_name):
         path = base.write_launcher(
-            paths, drone_root, viewer_root, experiment, system_name
+            paths, drone_root, viewer_root, experiment, system_name,
+            http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT,
         )
         patch_eams_city_viewer(paths)
         if recipe.control_mode == "ps4-rc":
@@ -1106,7 +1110,7 @@ def main() -> int:
                 recipe_root=paths.recipe_root,
                 launcher=paths.recipe_config / "launcher.json",
                 session=paths.recipe_root / "runtime/launcher-session.json",
-                viewer_url=base.viewer_url(1, map_viewer=True),
+                viewer_url=base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT),
             )
         )
         fleet_path = refresh_runtime_spawn(paths, recipe)
@@ -1150,7 +1154,7 @@ def main() -> int:
                     recipe_root=paths.recipe_root,
                     launcher=paths.recipe_config / "launcher.json",
                     session=paths.recipe_root / "runtime/launcher-session.json",
-                    viewer_url=base.viewer_url(1, map_viewer=True),
+                    viewer_url=base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT),
                 )
             )
         return rc

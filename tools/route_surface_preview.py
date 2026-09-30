@@ -434,7 +434,7 @@ def _worker(request_path: Path) -> int:
         },
         "pdu": {
             "pduDefPath": _path_url(output / "pdu.json", workspace),
-            "wsUri": "ws://127.0.0.1:8765",
+            "wsUri": f"ws://127.0.0.1:{urban_manifest.port('web-bridge')}",
             "wireVersion": "v2",
         },
         "ui": {"enableAttachedCameras": False, "enableMainCameraMouseControl": True},
@@ -444,7 +444,7 @@ def _worker(request_path: Path) -> int:
         json.dumps(viewer_config, indent=2) + "\n", encoding="utf-8"
     )
     viewer_url = (
-        "http://127.0.0.1:8000/hakoniwa-map-viewer/src/client/index.html"
+        f"http://127.0.0.1:{urban_manifest.port('viewer-http')}/hakoniwa-map-viewer/src/client/index.html"
         f"?threejsRoot=/hakoniwa-threejs-drone"
         f"&viewerConfigPath={_path_url(output / 'viewer-config.json', workspace)}"
         "&layout=three-main&autoConnect=false"
@@ -520,7 +520,7 @@ def open_viewer(args: argparse.Namespace) -> int:
     except OSError as exc:
         raise RoutePreviewError(
             "preview HTTP server is not running; start it with: "
-            "python3 -m http.server 8000 --bind 127.0.0.1 --directory .."
+            f"python3 -m http.server {urban_manifest.port('viewer-http')} --bind 127.0.0.1 --directory .."
         ) from exc
     print(f"Opening route preview: {url}")
     return 0 if webbrowser.open(url) else 1

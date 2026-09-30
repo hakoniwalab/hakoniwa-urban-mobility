@@ -2161,7 +2161,7 @@ def lifecycle_spec(resolved: dict, *, viewer_url: str | None = None):
         session=session_path(resolved["work"]),
         viewer_url=viewer_url or map_viewer_url(resolved, default_viewer),
         websocket_port=visualization["web_bridge_port"],
-        ports=(visualization["http_port"], visualization["web_bridge_port"], urban_manifest.port("launcher-control")),
+        ports=(visualization["http_port"], visualization["web_bridge_port"]),
     )
 
 

@@ -9,8 +9,8 @@ the browser polls.
 Run it from the Business Pack Workspace shell so the simulations it starts
 inherit the Workspace environment:
 
-  python tools/urban_studio.py [--port 8090] [--open-browser]   in this terminal (Ctrl+C stops it)
-  python tools/urban_studio.py start [--port 8090] [--open-browser]   in the background
+  python tools/urban_studio.py [--port 28090] [--open-browser]   in this terminal (Ctrl+C stops it)
+  python tools/urban_studio.py start [--port 28090] [--open-browser]   in the background
   python tools/urban_studio.py open           open the running Urban Studio in the browser
   python tools/urban_studio.py status | stop   stop: the Urban Studio on its port, however it was started
 

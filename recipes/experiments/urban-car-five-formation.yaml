@@ -27,9 +27,9 @@ inputs:
 
   browser_visualization:
     enabled: true
-    # Keep the Step 8.1 static route preview on 8000 while this runtime is tested.
-    web_bridge_port: 8766
-    http_port: 8001
+    # Next to the default viewer ports, so the static route preview (28100) can stay up.
+    web_bridge_port: 28868
+    http_port: 28101
     threejs_root: ../hakoniwa-threejs-drone
 
 composition:

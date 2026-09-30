@@ -56,33 +56,36 @@ the same three variables from its own layout.
 
 ## 3. Ports
 
-Every TCP port Urban listens on or connects to has an id and a default:
+Every TCP port Urban listens on or connects to has an id and a default. The
+defaults are uncommon ports below the OS ephemeral ranges (Linux 32768+,
+macOS/Windows 49152+), clear of common services (8000, 8080, 8765:
+development servers, Docker containers, WSL port proxies), as
+hakoniwa-fpv-drone's 28000 / 28765:
 
 | Id | Default | Protocol | Purpose |
 |---|---|---|---|
-| `urban-studio` | 8090 | http | the Urban Studio browser backend |
-| `city-world-web-ui` | 8008 | http | the Business Pack City World Web UI Urban Studio links to (fixed) |
-| `viewer-http` | 8000 | http | the workspace file server of a running simulation's viewers |
-| `web-bridge` | 8765 | websocket | the standard WebBridge (integrated Car + Drone, the Business Pack fleet bridge) |
-| `web-bridge-car` | 18765 | websocket | the WebBridge of a Car-only Composition |
-| `web-bridge-fleet` | 18766 | websocket | the WebBridge of a Drone fleet Composition |
-| `launcher-control` | 54111 | tcp | the Launcher's control port (fixed) |
+| `urban-studio` | 28090 | http | the Urban Studio browser backend |
+| `city-world-web-ui` | 28008 | http | the Business Pack City World Web UI Urban Studio links to (fixed) |
+| `viewer-http` | 28100 | http | the workspace file server of a running simulation's viewers |
+| `web-bridge` | 28865 | websocket | the standard WebBridge (integrated Car + Drone, the Business Pack fleet bridge) |
+| `web-bridge-car` | 28866 | websocket | the WebBridge of a Car-only Composition |
+| `web-bridge-fleet` | 28867 | websocket | the WebBridge of a Drone fleet Composition |
 
 A port's value is, highest first:
 
 1. the Composition field or command-line option in its `set_by` (for one run:
    `viewer.http_port`, `viewer.web_bridge_port`, `--port`, `--web-bridge-port`);
 2. the environment variable `HAKONIWA_URBAN_PORT_<ID>` (the id upper-cased,
-   `-` as `_`; for example `HAKONIWA_URBAN_PORT_WEB_BRIDGE=28765`);
+   `-` as `_`; for example `HAKONIWA_URBAN_PORT_WEB_BRIDGE=29865`);
 3. the machine's overrides file `${work}/urban/ports.yaml`
-   (`ports: {web-bridge: 28765}`), for a machine where a default is taken
-   (for example 8765 by a WSL port proxy);
+   (`ports: {web-bridge: 29865}`), for a machine where a default is taken;
 4. the manifest's `default`.
 
 A `fixed` port belongs to another component that cannot take a new one yet
-(the Business Pack Launcher and City World Web UI); it is listed so nothing
-else takes it, and overrides do not change it.
+(the Business Pack City World Web UI); it is listed so nothing else takes it,
+and overrides do not change it. The Launcher's control endpoint is not listed:
+it binds a free port itself and records it in its session.
 
 `reserved` lists the defaults of other tools that run in the same workspace
-(Booth Studio 8096, Environment Studio 8097). `check` fails when an Urban
+(the FPV viewer 28000 / 28765, Booth Studio 28096, Environment Studio 28097). `check` fails when an Urban
 default equals one of them or another Urban default.

@@ -60,7 +60,7 @@ python ../hakoniwa-urban-mobility/tools/urban_studio.py stop                   #
 ```
 
 Without `start`, `urban_studio.py` runs it in that terminal (Ctrl+C or
-`stop` ends it). It serves `http://127.0.0.1:8090/` and saves Compositions
+`stop` ends it). It serves `http://127.0.0.1:28090/` and saves Compositions
 under `hakoniwa-business-pack/work/urban/compositions/`.
 
 A World can also come from

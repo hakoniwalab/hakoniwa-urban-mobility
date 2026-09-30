@@ -203,9 +203,12 @@ Default ports are Recipe inputs with the following owners:
 
 | Port | Purpose | Runtime owner |
 | --- | --- | --- |
-| `8000` | HTTP assets and Viewer | Recipe HTTP server |
-| `8765` | Fleet WebSocket frames | Recipe WebBridge |
-| `54111` | Launcher control endpoint | PDU Python Launcher |
+| `28100` | HTTP assets and Viewer | Recipe HTTP server |
+| `28865` | Fleet WebSocket frames | Recipe WebBridge |
+
+The values are urban.manifest.yaml's `viewer-http` and `web-bridge`. The PDU
+Python Launcher's control endpoint binds a free port itself and records it in
+its session, so it is not a configured port.
 
 `start` must check all configured ports before mutating the shared runtime.
 `open-viewer` must verify the selected Recipe session and its HTTP endpoint; a
@@ -248,7 +251,7 @@ Urban does not maintain a forked copy.
 | `start` | runtime preflight, apply start-time pose and any optional PID override, clean permitted stale state, launch assets, wait for Launcher RUNNING and required readiness | recompile City models or launch another Recipe's session |
 | `status` | report selected Recipe session, asset/readiness summary, and paths | fall back to a different Recipe's session file |
 | `stop` | terminate only the selected Recipe session and verify child/port cleanup | terminate unrelated processes by broad pattern |
-| `open-viewer` | verify selected Recipe HTTP readiness and open its generated URL | open a URL merely because port 8000 responds |
+| `open-viewer` | verify selected Recipe HTTP readiness and open its generated URL | open a URL merely because the viewer port responds |
 
 The three states below remain distinct:
 
