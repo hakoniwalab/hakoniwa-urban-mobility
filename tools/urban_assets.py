@@ -290,6 +290,11 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip compiling the City model for spawn heights (otherwise done once here)",
     )
+    register.add_argument(
+        "--no-check",
+        action="store_true",
+        help="register without checking the job against schemas/city-world-job.yaml",
+    )
     unregister = commands.add_parser(
         "unregister-city", help="remove a registered City Asset (its City World job is kept)"
     )
@@ -350,6 +355,16 @@ def precompile_height(receipt: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "register-city":
+        if not args.no_check:
+            import city_world_job
+
+            _job, problems = city_world_job.check(args.receipt)
+            for problem in problems:
+                print(f"{problem.severity.upper():7} {problem.where}: {problem.message}")
+            if any(problem.severity == "error" for problem in problems):
+                print("Not registered: the City World job does not follow schemas/city-world-job.yaml "
+                      "(tools/city_world_job.py check; --no-check registers anyway).", file=sys.stderr)
+                return 1
         print(f"Registered City Asset: {register_city(args.receipt, args.id)}")
         if not args.no_precompile:
             precompile_height(args.receipt.expanduser().resolve())
