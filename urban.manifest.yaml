@@ -46,6 +46,7 @@ worlds:
   plain_ground: worlds/plain-ground.yaml
 
 # --- Managed Recipes: the environment each route prepares (section 2.1) --------------
+# Every route has one: configure first materializes what it declares.
 recipes:
   car:
     path: recipes/usecases/urban-car-rc.yaml
@@ -55,6 +56,21 @@ recipes:
     path: recipes/experiments/urban-mobility-rc.yaml
     recipe_id: urban-mobility-rc
     use_case: drone-car-distributed
+  # The routes whose own tool configures (drone_one.py, drone_fleet.py,
+  # hakoniwa-fpv-drone tools/fpv.py): their Recipe only materializes the
+  # repositories, Foundation, and Python packages first.
+  drone:
+    path: recipes/usecases/urban-drone-rc.yaml
+    recipe_id: urban-drone-rc
+    use_case: drone-rc
+  fleet:
+    path: recipes/usecases/urban-drone-fleet.yaml
+    recipe_id: urban-drone-fleet
+    use_case: drone-fleet
+  fpv:
+    path: recipes/usecases/urban-fpv-rc.yaml
+    recipe_id: urban-fpv-rc
+    use_case: fpv-rc
 
 # --- Ports -----------------------------------------------------------------------------
 # Every TCP port Urban listens on or connects to, with its default. A port is

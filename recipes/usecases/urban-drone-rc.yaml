@@ -1,0 +1,263 @@
+# The managed Recipe of the Urban 'drone-rc' route: the repositories, Foundation, and
+# Python packages it needs. tools/urban_simulation.py runs the Business Pack
+# `recipe.py configure` on it before the route's own tool configures
+# (urban.manifest.yaml `recipes`).
+id: urban-drone-rc
+title: One RC-controlled Drone in a selected World
+recipe_version: 0.1
+goal:
+  user_request: Select a World (a City or a plain World) and fly one EAMS Hexa with a local RC controller.
+  description: 'Materialize one host-native Urban Drone simulation (tools/drone_one.py): the Drone Core service,
+    one RC controller, one browser Viewer, and the Foundation runtime. The World is a Composition input.'
+constraints:
+- native-cross-platform
+- public-drone-core-v4.1.1
+- one-drone
+- one-rc-controller
+- shared-foundation-runtime-is-exclusive
+target_environment:
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  os_version: current-supported-host
+  architecture: host-native
+  execution_mode: native
+  runtimes:
+  - name: Foundation Python
+    required: true
+    version: '3.12'
+    path: work/foundation/install/python
+  - name: MuJoCo
+    required: true
+    version: 3.13.0
+    path: hakoniwa-drone-core/MUJOCO_VERSION.txt
+  hakoniwa:
+    install_prefix: work/foundation/install
+    components_built:
+    - hakoniwa-core-pro
+    - hakoniwa-pdu-python
+    - hakoniwa-pdu-endpoint
+    - hakoniwa-pdu-bridge-core
+urban_mobility:
+  use_case: drone-rc
+  route_tool: true
+execution_environment:
+  workspace:
+    mode: managed
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  architecture: host-native
+  execution_mode: native
+  gui:
+    required: true
+    status: browser-viewer-and-rc-controller
+  shared_memory:
+    required: true
+    access: local-host
+  python:
+    environment: foundation-venv
+    path: work/foundation/install/python
+    version: '3.12'
+    hakopy_available: required
+    hakoniwa_pdu_available: required
+  hakoniwa:
+    install_prefix: work/foundation/install
+    hako_cmd_access: required
+runtime_dependencies:
+  python:
+    interpreter: work/foundation/install/python
+    requirements: recipes/requirements/urban-drone.txt
+    packages:
+    - name: PyYAML
+      version: '>=6.0,<7'
+      purpose: Parse Urban composition and scenario YAML in Foundation Python.
+    - name: mujoco
+      version: 3.13.0
+      purpose: Spawn heights and composed-model checks during configure.
+    - name: pygame
+      version: 2.6.1
+      purpose: Read the local RC controller.
+native_runtime_requirements:
+  schema_version: 1
+  components:
+    hakoniwa-drone-core:
+      profile: public-v4.1.1
+      required_roles:
+      - drone_service
+      - visual_state_publisher
+      optional_roles: []
+foundation_contract:
+  mode: required
+  reason: The Drone service, Launcher, shared-memory PDU endpoint, and browser WebBridge consume installed and receipt-validated
+    Foundation components.
+foundation_requirements:
+  hakoniwa-core-pro:
+    capabilities:
+      shared_memory: true
+      hako_cmd: true
+      python_binding: true
+      callback_assets_shared: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-python:
+    version:
+      min: 1.6.5
+    capabilities:
+      hako_launcher: true
+      launcher_background_lifecycle: true
+      shm_backend: true
+      external_rpc: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-endpoint:
+    capabilities:
+      hakoniwa_core: true
+      core_callback: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-bridge-core:
+    capabilities:
+      hakoniwa_app: true
+      web_bridge: true
+      web_bridge_fleets_config_format: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+recipe_local_requirements_schema_version: 1
+recipe_local_requirements:
+  hakoniwa-urban-mobility:
+    root:
+      default_path: .
+      override_env: HAKONIWA_URBAN_MOBILITY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: local
+    required_artifacts:
+    - path: tools/urban_simulation.py
+      kind: file
+    - path: tools/drone_one.py
+      kind: file
+    - path: config/drone/hexa/drone.xml
+      kind: file
+    - path: config/drone/hexa/drone_config_0.json
+      kind: file
+    - path: config/drone/hexa/controller-params.txt
+      kind: file
+  hakoniwa-drone-core:
+    root:
+      default_path: ../hakoniwa-drone-core
+      override_env: HAKONIWA_DRONE_CORE_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/toppers/hakoniwa-drone-core.git
+    required_artifacts:
+    - path: NATIVE_RUNTIME_REQUIREMENTS.yaml
+      kind: file
+    - path: MUJOCO_VERSION.txt
+      kind: file
+    - path: config/pdudef/drone-pdutypes.json
+      kind: file
+    - path: config/drone/fleets/types/api-mujoco.json
+      kind: file
+    - path: config/controller/param-api-mixer-mujoco.txt
+      kind: file
+    - path: drone_api/rc/rc-custom.py
+      kind: file
+    - path: drone_api/rc/rc_config/ps4-control.json
+      kind: file
+    - path: tools/gen_mujoco_multidrone_xml.py
+      kind: file
+    - path: config/drone/fleets/types/mujoco-scene.xml.template
+      kind: file
+    - path: config/drone/fleets/types/mujoco-drone.xml.template
+      kind: file
+  hakoniwa-mbody-registry:
+    root:
+      default_path: ../hakoniwa-mbody-registry
+      override_env: HAKONIWA_MBODY_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mbody-registry.git
+    required_artifacts:
+    - path: tools/compose_mujoco_world.py
+      kind: file
+  hakoniwa-threejs-drone:
+    root:
+      default_path: ../hakoniwa-threejs-drone
+      override_env: HAKONIWA_THREEJS_DRONE_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-threejs-drone.git
+    required_artifacts:
+    - path: index.html
+      kind: file
+    - path: config
+      kind: directory
+  hakoniwa-map-viewer:
+    root:
+      default_path: ../hakoniwa-map-viewer
+      override_env: HAKONIWA_MAP_VIEWER_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-map-viewer.git
+    required_artifacts:
+    - path: src/client/index.html
+      kind: file
+expected_result: The drone-rc route of an Urban Composition configures with every repository it uses materialized
+  (tools/urban_simulation.py runs this Recipe's configure first).

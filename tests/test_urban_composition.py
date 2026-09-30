@@ -1036,15 +1036,17 @@ class PlanTest(IntegratedFixture):
         # Each fixture Composition overwrites the same file, so build it per case.
         cases = {
             "car": (self.composition, "recipes/usecases/urban-car-rc.yaml"),
-            "drone": (self.drone, None),
+            "drone": (self.drone, "recipes/usecases/urban-drone-rc.yaml"),
             "integrated": (self.integrated, "recipes/experiments/urban-mobility-rc.yaml"),
-            "fpv": (fpv, None),
+            "fpv": (fpv, "recipes/usecases/urban-fpv-rc.yaml"),
         }
+        # Every route has a managed Recipe declaring what it needs (#19).
         for route, (make, recipe) in cases.items():
             with self.subTest(route=route):
                 selected = self.plan(make())
                 self.assertEqual(selected.route, route)
-                self.assertEqual(selected.managed_recipe, None if recipe is None else ROOT / recipe)
+                self.assertEqual(selected.managed_recipe, ROOT / recipe)
+                self.assertTrue(selected.managed_recipe.is_file())
 
     def test_plan_json_describes_the_composition(self):
         selected = self.plan(self.integrated()).to_json()
@@ -1072,6 +1074,22 @@ class PlanTest(IntegratedFixture):
             self.assertEqual(urban_simulation.run("plan", self.composition()), 0)
         run.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["route"], "car")
+
+    def test_a_drone_route_materializes_its_recipe_before_its_tool_configures(self):
+        composition = self.drone()
+        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
+                                               return_value=mock.Mock(returncode=0)) as run:
+            self.assertEqual(urban_simulation.run("configure", composition), 0)
+        first, *rest = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(first[1:], [str(urban_simulation.BUSINESS_PACK / "tools/recipe.py"), "configure",
+                                     "--recipe", str(ROOT / "recipes/usecases/urban-drone-rc.yaml")])
+        self.assertTrue(any(Path(arguments[1]) == urban_simulation.DRONE_ONE and "configure" in arguments
+                            for arguments in rest))
+        # A Recipe that cannot be materialized stops the route before its tool runs.
+        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
+                                               return_value=mock.Mock(returncode=3)) as run:
+            self.assertEqual(urban_simulation.run("configure", composition), 3)
+        self.assertEqual(run.call_count, 1)
 
     def test_managed_routes_run_urban_mobility_with_the_recipe(self):
         composition = self.integrated()
