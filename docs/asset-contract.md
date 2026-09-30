@@ -93,7 +93,9 @@ The target placement is the Asset's source repository. For v1:
 - User-generated City Assets live in the Business Pack work directory,
   `work/urban/assets/cities/<id>.asset.yaml`, written by
   `tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
-  The id defaults to the City World job name.
+  The id defaults to the City World job name. Registration first checks the
+  job against its contract (section 6.3) and refuses one that breaks it
+  (`--no-check` registers anyway).
   `tools/urban_assets.py unregister-city --id <id>` removes a registration
   (the City World job is kept). `tools/urban_assets.py prune-cities`
   unregisters Cities whose City World Web UI job was deleted; Urban Studio
@@ -539,6 +541,28 @@ merges into the FPV vehicle model) to `work/urban/cache/plain-world/`, keyed
 by the YAML and the generator source (`prune-cache --plain-world` clears it); the ray then lands a vehicle on the
 ground or on an obstacle top. Without MuJoCo Python the height is the flat
 ground.
+
+### 6.3 City World job
+
+Both kinds reach the builders as a City World job: the folder holding the
+receipt, the World MJCF and GLB, the terrain hfield and the collider view.
+[`schemas/city-world-job.yaml`](../schemas/city-world-job.yaml) is its
+machine-readable contract, written from what the builders read:
+
+| Part | Rule |
+|---|---|
+| Layout | `<job>/build/world/city-world-receipt.json` and `<job>/viewer/city-world-colliders.glb` (the collider view, made by hakoniwa-envsim's `mjcf_colliders2glb.py`); the job folder's name is the default City Asset id |
+| Frames | the receipt's `coordinate_frame.coordinate_systems` are exactly `X=North,Y=-East,Z=Up` (MJCF) and `X=East,Y=Up,Z=-North` (GLB), both centred on `coordinate_frame.origin` |
+| Receipt | `schema_version` 1, origin (latitude, longitude, altitude offset), half extents, `mjcf.path`, `glb.path`, `components.terrain_xml`; paths absolute; `kind` `city` (default) or `plain`; hashes checked when given |
+| Terrain | `terrain-receipt.json` beside `components.terrain_xml` names the hfield: little-endian `int32 nrow, int32 ncol`, then `nrow x ncol` float32 altitudes (MJCF z = altitude - altitude offset) |
+| World MJCF | only `size`, `asset`, `worldbody` at the top level (no `compiler`: an euler stays in degrees in every model it is composed into); the World brings its own ground as an hfield geom; no names the builders reserve for vehicles (`car_<n>_`, `vehicle_type_<n>_`, `mirror_drone_<n>_`) |
+| Serving | the job lies under the workspace root the viewers serve |
+
+`tools/city_world_job.py check <job folder | receipt> [--json]` checks a job
+against the contract (errors fail; warnings, such as a missing
+`buildings-glb-receipt.json` for the Drone city-max-clearance launch height,
+pass). Any producer (the City World Web UI, `tools/plain_world.py`, an
+authoring tool exporting its own World) runs it before registering.
 
 ## 7. Mapping from the existing Recipes
 

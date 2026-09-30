@@ -1,0 +1,126 @@
+# City World job: the folder a World is handed to Urban Mobility in.
+#
+# A City Asset (docs/asset-contract.md section 6.1) points at the receipt of a
+# City World job; every builder (tools/multi_car.py, tools/drone_one.py,
+# tools/drone_fleet_city.py, tools/urban_composition.py, tools/world_height.py,
+# tools/route_surface_preview.py) reads the World through it. This file is the
+# machine-readable form of what they rely on; tools/city_world_job.py checks a
+# job against it, and `tools/urban_assets.py register-city` runs that check.
+#
+# Producers today:
+#   - hakoniwa-envsim + the Business Pack City World Web UI (PLATEAU Cities)
+#   - tools/plain_world.py (plain Worlds, "kind": "plain")
+#   - any other tool that writes this layout (for example an environment
+#     authoring tool exporting its own World)
+schema: hakoniwa.city-world-job/v1
+
+# --- Layout ------------------------------------------------------------------------
+# Paths relative to the job folder. The job folder's name is the default City
+# Asset id (tools/urban_assets.py city_id_from_receipt).
+layout:
+  receipt: build/world/city-world-receipt.json
+  files:
+    - path: build/world/city-world-receipt.json
+      required: true
+      purpose: the receipt below
+    - path: viewer/city-world-colliders.glb
+      required: true
+      purpose: >-
+        the collider view the Car and Drone viewers load (green wireframe),
+        in the GLB frame; hakoniwa-envsim's src/city_pipeline/mjcf_colliders2glb.py
+        makes it from the World MJCF
+    - path: viewer/city-world-colliders-receipt.json
+      required: false
+      purpose: how the collider view was made (source MJCF, counts, hash)
+
+# --- Frames ------------------------------------------------------------------------
+# The receipt must carry these strings exactly; configure fails otherwise.
+frames:
+  mjcf: "X=North,Y=-East,Z=Up"
+  glb: "X=East,Y=Up,Z=-North"
+  # Both are centred on coordinate_frame.origin. ENU positions (east_m,
+  # north_m, up_m) map to MJCF as (north_m, -east_m, up_m); ENU yaw (degrees,
+  # counter-clockwise from east) maps to an MJCF yaw of yaw_deg - 90.
+
+# --- Receipt (build/world/city-world-receipt.json, JSON) ---------------------------
+# Dotted names are nested keys. Paths are absolute: tools resolve a relative
+# path differently (against the working directory or the receipt), so a
+# producer writes absolute paths (tools/portable_urban_car.py rewrites them
+# when a bundle moves).
+receipt:
+  required:
+    schema_version: {type: integer, equals: 1}
+    coordinate_frame.origin.latitude: {type: number}
+    coordinate_frame.origin.longitude: {type: number}
+    coordinate_frame.origin.altitude_offset_m: {type: number}
+    coordinate_frame.half_extent_m.north_south: {type: number, minimum_exclusive: 0}
+    coordinate_frame.half_extent_m.east_west: {type: number, minimum_exclusive: 0}
+    coordinate_frame.coordinate_systems.mjcf: {type: string, equals_frame: mjcf}
+    coordinate_frame.coordinate_systems.glb: {type: string, equals_frame: glb}
+    mjcf.path: {type: path, file: true}
+    glb.path: {type: path, file: true}
+    components.terrain_xml: {type: path, file: true}
+  optional:
+    kind:
+      type: string
+      values: [city, plain]
+      default: city
+      purpose: >-
+        plain: no geographic origin (origin 0, 0); viewers open Three.js
+        instead of the Map Viewer
+    mjcf.sha256: {type: sha256, of: mjcf.path}
+    glb.sha256: {type: sha256, of: glb.path}
+    glb.bytes: {type: integer}
+    components.buildings_xml:
+      type: path
+      file: true
+      purpose: >-
+        with a sibling buildings-glb-receipt.json whose bounds.max[1] is the
+        highest building (GLB Y up); the Drone city-max-clearance launch
+        height needs it
+    components.extra_mjcf: {type: list}
+
+# --- Terrain -------------------------------------------------------------------------
+# The ground is an hfield. Spawn heights without MuJoCo Python, and the route
+# preview, read its samples through the terrain receipt.
+terrain:
+  receipt: terrain-receipt.json   # beside components.terrain_xml
+  required:
+    hfield.path: {type: path, file: true}
+  optional:
+    hfield.sha256: {type: sha256, of: hfield.path}
+  hfield_file:
+    encoding: little-endian
+    header: [int32 nrow, int32 ncol]   # both at least 2
+    samples: float32 x nrow x ncol, row-major
+    # Column c lies at MJCF x = -north_south + 2 * north_south * c / (ncol - 1)
+    # (north), row r at MJCF y = -east_west + 2 * east_west * r / (nrow - 1)
+    # (y = -east). Samples are altitudes; MJCF z = sample - altitude_offset_m.
+
+# --- World MJCF (mjcf.path) ----------------------------------------------------------
+# It is composed with the vehicles (hakoniwa-mbody-registry
+# compose_mujoco_world.py) and compiled with them; the height model compiles it
+# alone (tools/world_height.py).
+mjcf:
+  root: mujoco
+  top_level_elements: [size, asset, worldbody]   # nothing else (no compiler, option, include, default)
+  ground: >-
+    the World brings its own ground, an hfield geom in worldbody: the
+    vehicles' ground planes are removed when they are composed
+  requires_hfield_geom: true
+  angles: >-
+    with no compiler element, an euler is in degrees (MuJoCo's default) in
+    every model it is composed into; quat or xyaxes do not depend on the
+    compiler at all and are the safest
+  reserved_names:
+    # The builders prefix vehicle names this way; a World name must not collide.
+    - "^car_[0-9]+_"
+    - "^vehicle_type_[0-9]+_"
+    - "^mirror_drone_[0-9]+_"
+
+# --- Serving ---------------------------------------------------------------------------
+serving:
+  workspace_root: >-
+    the viewers load the GLBs as URLs relative to the workspace root that
+    tools/workspace_http_server.py serves (the folder holding this
+    repository); the job's files must lie under it
