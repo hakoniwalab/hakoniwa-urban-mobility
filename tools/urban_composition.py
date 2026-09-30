@@ -22,6 +22,7 @@ import yaml
 
 import urban_assets
 from urban_assets import Asset, AssetError
+import urban_manifest
 
 
 COMPOSITION_SCHEMA = "hakoniwa.composition/v1"
@@ -44,7 +45,7 @@ FLEET_SPACING_RANGE_M = (0.75, 5.0)
 FLEET_DRONES_PER_PROCESS = 50
 # The Business Pack fleet WebBridge listens on 8765; a Composition sets its own
 # with viewer.web_bridge_port (8765 is often taken, e.g. by a WSL port proxy).
-DEFAULT_FLEET_WEB_BRIDGE_PORT = 18766
+DEFAULT_FLEET_WEB_BRIDGE_PORT = urban_manifest.port("web-bridge-fleet")
 DRONE_MIRROR_PARAMS = {
     "restitution_coefficient": 0.3,
     "relative_normal_speed_threshold_mps": 0.2,
@@ -54,10 +55,10 @@ PLAIN_WORLD_CACHE = urban_assets.BUSINESS_PACK / "work/urban/cache/plain-world"
 FPV_GENERATOR_SRC = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/src"
 # Vehicles whose manifest names this generator run through tools/fpv.py.
 FPV_TOOL = "tools/fpv.py"
-DEFAULT_HTTP_PORT = 8000
-DEFAULT_CAR_WEB_BRIDGE_PORT = 18765
+DEFAULT_HTTP_PORT = urban_manifest.port("viewer-http")
+DEFAULT_CAR_WEB_BRIDGE_PORT = urban_manifest.port("web-bridge-car")
 # urban_composer.py serves the integrated viewer on the standard WebBridge port.
-DEFAULT_INTEGRATED_WEB_BRIDGE_PORT = 8765
+DEFAULT_INTEGRATED_WEB_BRIDGE_PORT = urban_manifest.port("web-bridge")
 
 
 class CompositionError(RuntimeError):

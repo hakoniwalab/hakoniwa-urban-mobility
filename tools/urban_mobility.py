@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
+import urban_manifest  # noqa: E402
 import urban_simulation  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
@@ -119,9 +120,9 @@ def spec(
 ) -> urban_lifecycle.LifecycleSpec:
     recipe_root_path = root(context)
     contract_path = recipe_root_path / "config/viewer-url.json"
-    http_port = 8000
-    websocket_port = 8765
-    url = "http://127.0.0.1:8000/"
+    http_port = urban_manifest.port("viewer-http")
+    websocket_port = urban_manifest.port("web-bridge")
+    url = f"http://127.0.0.1:{http_port}/"
     if contract_path.is_file():
         try:
             payload = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -145,7 +146,7 @@ def spec(
         session=recipe_root_path / "runtime/launcher-session.json",
         viewer_url=url,
         websocket_port=websocket_port,
-        ports=(http_port, websocket_port, 54111),
+        ports=(http_port, websocket_port, urban_manifest.port("launcher-control")),
     )
 
 

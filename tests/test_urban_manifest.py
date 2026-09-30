@@ -1,0 +1,85 @@
+"""The root manifest (urban.manifest.yaml) and tools/urban_manifest.py: the
+manifest is consistent, ports can be changed in the documented order, and the
+tools take their parts and ports from it."""
+
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import urban_manifest  # noqa: E402
+
+
+class ManifestTest(unittest.TestCase):
+    def test_the_manifest_is_consistent(self):
+        self.assertEqual(urban_manifest.check(), [])
+        data = urban_manifest.load()
+        self.assertEqual((data["schema"], data["id"]), ("hakoniwa.urban-manifest/v1", "hakoniwa-urban-mobility"))
+
+    def test_the_default_ports(self):
+        with mock.patch.dict("os.environ", {}, clear=False), \
+                mock.patch.object(urban_manifest, "_overrides", return_value=({}, None)):
+            self.assertEqual({port_id: urban_manifest.port(port_id) for port_id in urban_manifest.load()["ports"]}, {
+                "urban-studio": 8090, "city-world-web-ui": 8008, "viewer-http": 8000, "web-bridge": 8765,
+                "web-bridge-car": 18765, "web-bridge-fleet": 18766, "launcher-control": 54111})
+
+    def test_ports_are_changed_by_the_environment_then_the_overrides_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            overrides = Path(directory) / "ports.yaml"
+            overrides.write_text("ports:\n  web-bridge: 28765\n  viewer-http: 8100\n  launcher-control: 1\n",
+                                 encoding="utf-8")
+            with mock.patch.object(urban_manifest, "resolve",
+                                   side_effect=lambda value: overrides if "ports.yaml" in str(value)
+                                   else urban_manifest.ROOT / value), \
+                    mock.patch.dict("os.environ", {"HAKONIWA_URBAN_PORT_VIEWER_HTTP": "8200"}):
+                self.assertEqual(urban_manifest.resolved_port("web-bridge"), (28765, f"overrides file {overrides}"))
+                self.assertEqual(urban_manifest.resolved_port("viewer-http"),
+                                 (8200, "environment HAKONIWA_URBAN_PORT_VIEWER_HTTP"))
+                # A fixed port belongs to another component: it does not change here.
+                self.assertEqual(urban_manifest.port("launcher-control"), 54111)
+            with mock.patch.dict("os.environ", {"HAKONIWA_URBAN_PORT_WEB_BRIDGE_CAR": "not-a-port"}), \
+                    self.assertRaises(urban_manifest.ManifestError):
+                urban_manifest.port("web-bridge-car")
+        with self.assertRaises(urban_manifest.ManifestError):
+            urban_manifest.port("no-such-port")
+
+    def test_a_default_that_clashes_is_reported(self):
+        data = urban_manifest.load()
+        broken = {**data, "ports": {**data["ports"], "extra": {"default": 8097}, "twin": {"default": 8000}}}
+        with mock.patch.object(urban_manifest, "load", return_value=broken):
+            found = "\n".join(urban_manifest.check())
+        self.assertIn("8097 is reserved for hakoniwa-environment-studio", found)
+        self.assertIn("8000 is also ports.viewer-http", found)
+
+    def test_paths_resolve_from_the_repository_and_the_workspace(self):
+        workspace = urban_manifest.ROOT.parent
+        self.assertEqual(urban_manifest.path("assets.repository"), urban_manifest.ROOT / "assets")
+        self.assertEqual(urban_manifest.path("assets.user"), workspace / "hakoniwa-business-pack/work/urban/assets")
+        with self.assertRaises(urban_manifest.ManifestError):
+            urban_manifest.resolve("${nowhere}/x")
+
+
+class ToolsFollowTheManifestTest(unittest.TestCase):
+    def test_the_tools_take_their_parts_and_ports_from_it(self):
+        import urban_assets
+        import urban_composition
+        import urban_simulation
+
+        port = urban_manifest.port
+        self.assertEqual(urban_composition.DEFAULT_HTTP_PORT, port("viewer-http"))
+        self.assertEqual(urban_composition.DEFAULT_CAR_WEB_BRIDGE_PORT, port("web-bridge-car"))
+        self.assertEqual(urban_composition.DEFAULT_INTEGRATED_WEB_BRIDGE_PORT, port("web-bridge"))
+        self.assertEqual(urban_composition.DEFAULT_FLEET_WEB_BRIDGE_PORT, port("web-bridge-fleet"))
+        self.assertEqual(urban_assets.USER_ASSETS, urban_manifest.path("assets.user"))
+        self.assertEqual(urban_assets.CITY_WORLD_JOBS, urban_manifest.path("assets.city_world_jobs"))
+        self.assertEqual(urban_simulation.MANAGED_RECIPES["car"],
+                         ("recipes/usecases/urban-car-rc.yaml", "urban-car-rc", "car-rc"))
+        self.assertIn(urban_manifest.value("worlds.default"), urban_assets.catalog([urban_assets.REPOSITORY_ASSETS]))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlsplit
 
 from recipe.process_liveness import pid_alive
+import urban_manifest
 
 
 class LifecycleError(RuntimeError):
@@ -24,8 +25,9 @@ class LifecycleSpec:
     launcher: Path
     session: Path
     viewer_url: str
-    websocket_port: int = 8765
-    ports: tuple[int, ...] = (8000, 8765, 54111)
+    websocket_port: int = urban_manifest.port("web-bridge")
+    ports: tuple[int, ...] = (
+        urban_manifest.port("viewer-http"), urban_manifest.port("web-bridge"), urban_manifest.port("launcher-control"))
 
 
 def read_session(spec: LifecycleSpec) -> dict | None:

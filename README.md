@@ -37,7 +37,9 @@ A Composition selects a World (a PLATEAU City or a plain World), places
 vehicle Assets (Golf Cart, EAMS Hexa, FPV Drone), and picks each vehicle's
 control (`rc` or `api`). The contract is
 [`docs/asset-contract.md`](docs/asset-contract.md); examples are in
-`recipes/compositions/`. One entrypoint runs every combination:
+`recipes/compositions/`. The root manifest
+[`urban.manifest.yaml`](urban.manifest.yaml) names the repository's parts and
+ports ([`docs/urban-manifest.md`](docs/urban-manifest.md)). One entrypoint runs every combination:
 
 ```bash
 python tools/urban_mobility.py plan --composition recipes/compositions/plain-hexa-rc.yaml
