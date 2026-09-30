@@ -33,7 +33,7 @@ assets:
   repository: assets                         # this repository's manifests (searched recursively)
   workspace: "${workspace}/*/assets"         # other repositories' manifests (top level only)
   user: "${work}/urban/assets"               # registered Cities (cities/) and Worlds (worlds/)
-  city_world_jobs: "${work}/recipes/city-world-web-ui/runtime/jobs"   # the City World Web UI's jobs
+  city_world_jobs: "${work}/recipes/city-world-web-ui/runtime/jobs"   # the Business Pack City World Web UI jobs Cities were registered from before Environment Studio made them (prune-cities, the cache)
 
 # --- Example Compositions (section 5.7) ----------------------------------------------
 # Urban Studio lists an example only while every Asset it names (its World,
@@ -101,11 +101,11 @@ ports:
     purpose: the Urban Studio browser backend
     served_by: tools/urban_studio.py
     set_by: [--port]
-  city-world-web-ui:
-    default: 28008
+  environment-studio:
+    default: 28097
     protocol: http
-    purpose: the Business Pack City World Web UI that Urban Studio links to and checks
-    served_by: hakoniwa-business-pack tools/recipe/city_world_web_ui.py
+    purpose: the Environment Studio that makes Cities (PLATEAU, editing) and registers them; Urban Studio links to it
+    served_by: hakoniwa-environment-studio tools/env_studio.py
     fixed: true
   viewer-http:
     default: 28100
@@ -137,7 +137,6 @@ reserved:
   - {port: 28000, owner: hakoniwa-fpv-drone, purpose: FPV Three.js viewer HTTP}
   - {port: 28765, owner: hakoniwa-fpv-drone, purpose: FPV Three.js viewer WebBridge}
   - {port: 28096, owner: hakoniwa-booth-studio, purpose: Booth Studio}
-  - {port: 28097, owner: hakoniwa-environment-studio, purpose: Environment Studio}
 
 # Machine-specific port changes: {ports: {<id>: <port>}}; missing is fine.
 port_overrides: "${work}/urban/ports.yaml"

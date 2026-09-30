@@ -40,13 +40,10 @@ API (all JSON):
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
   POST /api/worlds/<id>/route-check      segments of route points blocked by those walls
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
-  GET  /api/cities                       City World Web UI state and its jobs; a finished,
-                                         unregistered job starts its registration
-  POST /api/cities/web-ui/start          start the City World Web UI (configured once)
-  POST /api/cities/web-ui/stop           stop it
+  GET  /api/cities                       the registered Cities, and the Environment Studio
+                                         that makes and registers them (its URL, running?)
   GET  /api/cache                        Urban cache (world-height, plain-world) and what
-                                         prune-cache would remove; City World download
-                                         sizes (read-only, from the Business Pack tool)
+                                         prune-cache would remove
   POST /api/cache/prune                  run urban_assets.py prune-cache --apply
 """
 
@@ -82,9 +79,6 @@ SIMULATION = ROOT / "tools/urban_simulation.py"
 COMMANDS = ("plan", "configure", "start", "stop", "status")
 COMPOSITION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 PROGRESS_MARKER = "[HAKO_PROGRESS] "
-# The Business Pack City World Web UI (tools/recipe/city_world_web_ui.py).
-CITY_WEB_UI = BUSINESS_PACK / "tools/recipe/city_world_web_ui.py"
-CITY_RECIPE_ROOT = urban_manifest.work_dir() / "recipes/city-world-web-ui"
 URBAN_ASSETS = ROOT / "tools/urban_assets.py"
 CACHE_KEY = "cache:urban"
 
@@ -102,7 +96,10 @@ START_TIMEOUT_SEC = 30.0
 STOP_TIMEOUT_SEC = 10.0
 USER_COMPOSITIONS = urban_manifest.path("compositions.user")
 EXAMPLE_COMPOSITIONS = urban_manifest.path("compositions.repository")
-CITY_WEB_PORT = urban_manifest.port("city-world-web-ui")
+# Cities are made and registered by Environment Studio (PLATEAU, editing);
+# Urban Studio lists them and links to it.
+ENVIRONMENT_STUDIO_PORT = urban_manifest.port("environment-studio")
+ENVIRONMENT_STUDIO_START = "python ../hakoniwa-environment-studio/tools/env_studio.py start"
 
 
 class StudioError(RuntimeError):
@@ -836,8 +833,6 @@ class JobRunner:
         self.python = python
         self.simulation = simulation
         self.jobs: dict[str, Job] = {}
-        # City registration key -> receipt mtime_ns when that registration started.
-        self.city_receipt_versions: dict[str, int] = {}
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -911,7 +906,7 @@ class JobRunner:
         return job
 
 
-# --- Cities (City World Web UI) ------------------------------------------------------
+# --- Cities (made by Environment Studio) -------------------------------------------------
 
 def _port_open(port: int) -> bool:
     try:
@@ -921,124 +916,37 @@ def _port_open(port: int) -> bool:
         return False
 
 
-def city_jobs() -> list[dict]:
-    """City World Web UI jobs, newest first, and whether each is registered.
-
-    A job is finished once its artifacts/result-manifest.json exists: the
-    Worker writes it last, and a regenerated job starts from an empty folder.
-    A registered City whose receipt changed since (regenerated) counts as
-    unregistered, so the new World is picked up.
-    """
+def city_state() -> dict:
+    """The City page: the registered Cities and the Environment Studio that
+    makes and registers them (urban_assets.py register-city is the contract)."""
     import urban_assets
 
-    registered = {
-        Path(asset.data["receipt"]).resolve(): asset.data.get("version")
-        for asset in urban_assets.catalog().values() if asset.kind == "city"
-    }
-    root = CITY_RECIPE_ROOT / "runtime/jobs"
-    folders = sorted(root.glob("*"), key=lambda path: path.stat().st_mtime, reverse=True) if root.is_dir() else []
-    jobs = []
-    for folder in folders:
-        receipt = (folder / "build/world/city-world-receipt.json").resolve()
-        finished = (folder / "artifacts/result-manifest.json").is_file() and receipt.is_file()
-        jobs.append({
-            "id": folder.name,
-            "finished": finished,
-            "registered": finished and registered.get(receipt) == receipt.stat().st_mtime_ns,
-            "receipt": str(receipt),
-        })
-    return jobs
-
-
-def city_state(runner: "JobRunner") -> dict:
-    """The City page state; starts registering any finished, unregistered job.
-
-    Cities registered from a City World job that was deleted in the Web UI
-    are unregistered first, so the registered list follows the job list.
-    """
-    import urban_assets
-
-    unregistered = urban_assets.prune_missing_cities(CITY_RECIPE_ROOT / "runtime/jobs")
-    jobs = city_jobs()
-    for job in jobs:
-        key = f"city:{job['id']}"
-        previous = runner.latest(key)
-        version = Path(job["receipt"]).stat().st_mtime_ns if job["finished"] else None
-        # A failed registration is shown, not retried. A succeeded one is
-        # redone only for a new World: the receipt changed since (regenerated,
-        # or deleted and recreated under the same id) or it was just pruned.
-        retry = (
-            previous is not None
-            and previous.state == "succeeded"
-            and (job["id"] in unregistered or runner.city_receipt_versions.get(key) != version)
-        )
-        if job["finished"] and not job["registered"] and (previous is None or retry):
-            previous = runner.launch(key, "register", [[
-                runner.python, "-u", str(URBAN_ASSETS), "register-city", "--receipt", job["receipt"],
-            ]])
-            runner.city_receipt_versions[key] = version
-        job["registration"] = previous.snapshot() if previous else None
-    web = runner.latest("city:web-ui")
+    cities = []
+    for asset in urban_assets.catalog().values():
+        if asset.kind != "city":
+            continue
+        receipt = asset.resolve(str(asset.data["receipt"]))
+        cities.append({"id": asset.id, "title": asset.data.get("title") or asset.id,
+                       "receipt": str(receipt), "available": receipt.is_file()})
     return {
-        "web_ui": {
-            "running": _port_open(CITY_WEB_PORT),
-            "url": f"http://127.0.0.1:{CITY_WEB_PORT}/",
-            "job": web.snapshot() if web else None,
+        "cities": cities,
+        "environment_studio": {
+            "url": f"http://127.0.0.1:{ENVIRONMENT_STUDIO_PORT}/map.html",
+            "running": _port_open(ENVIRONMENT_STUDIO_PORT),
+            "start": ENVIRONMENT_STUDIO_START,
         },
-        "jobs": jobs,
-        "unregistered": unregistered,
     }
-
-
-def city_web_ui(runner: "JobRunner", command: str) -> "Job":
-    if command not in {"start", "stop"}:
-        raise StudioError(f"unknown City World Web UI command {command!r}", HTTPStatus.NOT_FOUND)
-    steps = []
-    if command == "start" and not CITY_RECIPE_ROOT.is_dir():
-        steps.append([runner.python, "-u", str(CITY_WEB_UI), "configure"])  # first use only
-    steps.append([runner.python, "-u", str(CITY_WEB_UI), command])
-    return runner.launch("city:web-ui", command, steps)
 
 
 # --- Caches ---------------------------------------------------------------------------
-
-def city_world_cache() -> dict:
-    """City World download sizes from the Business Pack tool that owns that data.
-
-    Studio only reports them; removing them stays a Business Pack command.
-    """
-    command = "python tools/recipe/city_world_web_ui.py cache-clean --job-sources --source-cache"
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "tools.remote_operation.city_world.cache_cleanup", "status",
-             "--json", "--runtime-dir", str(CITY_RECIPE_ROOT / "runtime")],
-            cwd=BUSINESS_PACK, capture_output=True, text=True, encoding="utf-8", timeout=120,
-        )
-        report = json.loads(result.stdout) if result.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        report = None
-    if report is None:
-        return {"available": False, "command": command}
-    return {
-        "available": True,
-        "command": command,
-        "shared_cache_bytes": report["shared_cache"]["apparent_bytes"],
-        "reclaimable_bytes": report["reclaimable_bytes"],
-        "busy_reasons": report["busy_reasons"],
-    }
-
 
 def cache_state(runner: "JobRunner") -> dict:
     import urban_cache
 
     job = runner.latest(CACHE_KEY)
     return {
-        "urban": urban_cache.plan(
-            jobs_root=CITY_RECIPE_ROOT / "runtime/jobs",
-            mujoco_version=urban_cache.current_mujoco_version(),
-        ),
+        "urban": urban_cache.plan(mujoco_version=urban_cache.current_mujoco_version()),
         "prune_job": job.snapshot() if job else None,
-        "city_world": city_world_cache(),
     }
 
 
@@ -1138,9 +1046,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     raise StudioError("height needs numeric east and north") from exc
                 return self._json(world_height(parts[1], east, north))
             if method == "GET" and parts == ["cities"]:
-                return self._json(city_state(self.runner))
-            if method == "POST" and len(parts) == 3 and parts[:2] == ["cities", "web-ui"]:
-                return self._json(city_web_ui(self.runner, parts[2]).snapshot(), HTTPStatus.ACCEPTED)
+                return self._json(city_state())
             if method == "GET" and parts == ["cache"]:
                 return self._json(cache_state(self.runner))
             if method == "POST" and parts == ["cache", "prune"]:

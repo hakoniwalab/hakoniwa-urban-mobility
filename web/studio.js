@@ -182,7 +182,7 @@ function renderAssets() {
   const cityBody = $("#city-table tbody");
   const cities = state.assets.filter((asset) => asset.kind === "city");
   cityBody.replaceChildren(...(cities.length ? cities.map((city) => el("tr", {},
-    el("td", {}, el("code", {}, city.id)), el("td", {}, el("code", {}, city.path)),
+    el("td", {}, el("code", {}, city.id)), el("td", {}, city.title || city.id),
     city.available === false
       ? el("td", { class: "city-state error" }, MISSING_RECEIPT)
       : el("td", { class: "city-state ok" }, "利用可能"))) :
@@ -196,48 +196,15 @@ function renderAssets() {
   $("#add-asset").replaceChildren(...vehicles().map((vehicle) => el("option", { value: vehicle.id }, vehicle.title)));
 }
 
-// --- City World Web UI -------------------------------------------------------------------
-
-function registrationText(job) {
-  const registration = job.registration;
-  if (!job.finished) return ["生成中（または未完了）", ""];
-  if (job.registered && (!registration || registration.state === "succeeded")) return ["登録済み", "ok"];
-  if (!registration) return ["未登録", ""];
-  if (registration.state === "running") {
-    const progress = registration.progress;
-    const detail = progress?.percent !== undefined ? ` ${Math.round(progress.percent)}%`
-      : progress?.elapsed_sec !== undefined ? ` ${progress.elapsed_sec} 秒経過` : "";
-    return [`登録中（高さモデルを準備中${detail}）`, ""];
-  }
-  return registration.state === "succeeded" ? ["登録済み", "ok"] : [`登録に失敗しました（終了コード ${registration.exit_code}）`, "error"];
-}
+// --- Cities (made by Environment Studio) -----------------------------------------------
 
 function renderCities() {
   const cities = state.cities;
   if (!cities) return;
-  const body = $("#city-job-table tbody");
-  body.replaceChildren(...(cities.jobs.length ? cities.jobs.map((job) => {
-    const [text, kind] = registrationText(job);
-    const cell = el("td", { class: `city-state ${kind}` }, text);
-    if (kind === "error") {
-      cell.append(el("details", {}, el("summary", {}, "出力"), el("pre", {}, job.registration.lines.slice(-20).join("\n"))));
-    }
-    return el("tr", {}, el("td", {}, el("code", {}, job.id)), cell);
-  }) : [el("tr", {}, el("td", { colspan: 2, class: "hint" }, "City World Web UI のジョブはまだありません"))]));
-
-  const web = cities.web_ui;
-  const starting = web.job?.state === "running";
-  $("#city-new").disabled = starting;
-  $("#city-new").textContent = web.running ? "City World Web UI を開く" : "新規作成";
-  $("#city-stop").hidden = !web.running;
+  const studio = cities.environment_studio;
   const status = $("#city-web-status");
-  if (starting) setStatus(status, web.job.command === "start" ? "City World Web UI を起動しています…" : "City World Web UI を停止しています…");
-  else if (web.running) setStatus(status, `City World Web UI は起動中です: ${web.url}`, "ok");
-  else if (web.job?.state === "failed") setStatus(status, `City World Web UI の${web.job.command === "start" ? "起動" : "停止"}に失敗しました（終了コード ${web.job.exit_code}）`, "error");
-  else setStatus(status, "");
-  const log = $("#city-web-log");
-  log.hidden = !web.job || (web.job.state === "succeeded" && !starting);
-  if (web.job) log.textContent = web.job.lines.join("\n");
+  if (studio.running) setStatus(status, `Environment Studio は起動中です: ${studio.url}`, "ok");
+  else setStatus(status, `Environment Studio は起動していません。Business Pack の Workspace で「${studio.start}」を実行してください。`);
 }
 
 async function pollCities() {
@@ -245,12 +212,9 @@ async function pollCities() {
   try {
     const previous = state.cities;
     state.cities = await api("GET", "cities");
-    // A registration that finished since the last poll adds a World: reload the catalog.
-    const wasRegistering = new Set((previous?.jobs || [])
-      .filter((job) => job.registration?.state === "running").map((job) => job.id));
-    // So does a City unregistered because its City World job was deleted.
-    if (state.cities.unregistered?.length
-      || state.cities.jobs.some((job) => wasRegistering.has(job.id) && job.registration?.state === "succeeded")) {
+    // Environment Studio registered or unregistered a City: reload the catalog.
+    const ids = (value) => (value?.cities || []).map((city) => `${city.id}:${city.receipt}`).join("|");
+    if (previous && ids(previous) !== ids(state.cities)) {
       state.assets = await api("GET", "assets");
       renderAssets();
     }
@@ -258,55 +222,17 @@ async function pollCities() {
   } catch (error) {
     setStatus($("#city-web-status"), error.message, "error");
   }
-  const busy = state.cities?.web_ui.job?.state === "running"
-    || state.cities?.jobs.some((job) => job.registration?.state === "running");
   const visible = !$("#tab-city").hidden;
-  state.cityTimer = setTimeout(pollCities, busy || visible ? 2000 : 10000);
+  state.cityTimer = setTimeout(pollCities, visible ? 3000 : 15000);
 }
 
-async function waitForJob(id) {
-  for (;;) {
-    const job = await api("GET", `jobs/${id}`);
-    if (job.state !== "running") return job;
-    await new Promise((resolve) => setTimeout(resolve, 700));
-  }
-}
-
-async function newCity() {
-  const web = state.cities?.web_ui;
-  if (web?.running) {
-    window.open(web.url, "_blank");
+function newCity() {
+  const studio = state.cities?.environment_studio;
+  if (studio?.running) {
+    window.open(studio.url, "_blank");
     return;
   }
-  // Open the tab now, inside the click, so a popup blocker allows it.
-  const tab = window.open("", "_blank");
-  tab?.document.write("<p style='font-family: sans-serif'>City World Web UI を起動しています…</p>");
-  try {
-    const job = await api("POST", "cities/web-ui/start");
-    pollCities();
-    const finished = await waitForJob(job.id);
-    await pollCities();
-    if (finished.state === "succeeded" && state.cities.web_ui.running) {
-      if (tab) tab.location.href = state.cities.web_ui.url;
-      else window.open(state.cities.web_ui.url, "_blank");
-    } else {
-      tab?.close();
-    }
-  } catch (error) {
-    tab?.close();
-    setStatus($("#city-web-status"), error.message, "error");
-  }
-}
-
-async function stopCityWebUi() {
-  try {
-    const job = await api("POST", "cities/web-ui/stop");
-    pollCities();
-    await waitForJob(job.id);
-  } catch (error) {
-    setStatus($("#city-web-status"), error.message, "error");
-  }
-  pollCities();
+  setStatus($("#city-web-status"), `Environment Studio は起動していません。Business Pack の Workspace で「${studio?.start || "env_studio.py start"}」を実行してから、もう一度押してください。`, "error");
 }
 
 // --- Caches ------------------------------------------------------------------------------
@@ -326,13 +252,9 @@ function renderCache() {
   const height = urban.world_height;
   const plain = urban.plain_world;
   const sum = (entries, removable) => entries.reduce((total, entry) => total + (removable && !entry.remove ? 0 : entry.size_bytes), 0);
-  const city = cache.city_world;
   const rows = [
     ["Urban 高さモデル (world-height)", formatBytes(sum(height, false)), formatBytes(sum(height, true))],
     ["Urban プレーン World (plain-world)", formatBytes(sum(plain, false)), formatBytes(sum(plain, true))],
-    city.available
-      ? ["City World PLATEAU ダウンロード", formatBytes(city.shared_cache_bytes), `${formatBytes(city.reclaimable_bytes.both)}（Business Pack で整理）`]
-      : ["City World PLATEAU ダウンロード", "取得できません", "—"],
   ];
   $("#cache-table tbody").replaceChildren(...rows.map((cells) => el("tr", {}, ...cells.map((cell) => el("td", {}, cell)))));
   $("#cache-prune").disabled = cache.prune_job?.state === "running" || urban.reclaimable_bytes === 0;
@@ -343,10 +265,15 @@ function renderCache() {
     el("td", {}, formatBytes(entry.size_bytes)),
     el("td", {}, entry.reason),
     el("td", {}, el("code", {}, entry.mjcf || entry.path.split(/[\\/]/).pop())))));
-  const status = $("#cache-status");
-  if (!city.available) setStatus(status, `City World の容量は ${city.command} で確認・整理してください。`);
-  else if (city.reclaimable_bytes.both > 0) setStatus(status, `City World の PLATEAU ダウンロードを整理するには Business Pack で「${city.command}」を実行してください（既定は dry run、--apply で削除）。`);
-  else setStatus(status, "");
+  setStatus($("#cache-status"), "");
+}
+
+async function waitForJob(id) {
+  for (;;) {
+    const job = await api("GET", `jobs/${id}`);
+    if (job.state !== "running") return job;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
 }
 
 async function loadCache() {
@@ -362,7 +289,7 @@ async function pruneCache() {
   const urban = state.cache?.urban;
   if (!urban) return;
   const count = [...urban.world_height, ...urban.plain_world].filter((entry) => entry.remove).length;
-  if (!window.confirm(`Urban キャッシュ ${count} 件（${formatBytes(urban.reclaimable_bytes)}）を削除しますか？\n登録済み City の World と City World のジョブは削除しません。`)) return;
+  if (!window.confirm(`Urban キャッシュ ${count} 件（${formatBytes(urban.reclaimable_bytes)}）を削除しますか？\n登録済み City の World は削除しません。`)) return;
   $("#cache-prune").disabled = true;
   try {
     const job = await api("POST", "cache/prune");
@@ -1570,7 +1497,6 @@ async function main() {
   $("#yaw-right").addEventListener("click", () => turnSelected(-15));
   $("#add-vehicle").addEventListener("click", addVehicle);
   $("#city-new").addEventListener("click", newCity);
-  $("#city-stop").addEventListener("click", stopCityWebUi);
   $("#cache-refresh").addEventListener("click", loadCache);
   $("#cache-prune").addEventListener("click", pruneCache);
   $("#save-composition").addEventListener("click", saveComposition);
@@ -1596,7 +1522,7 @@ async function main() {
   let tab = "compose";
   try { tab = localStorage.getItem("urban-studio-tab") || tab; } catch { /* storage may be unavailable */ }
   showTab(tab);
-  if (tab !== "city") pollCities(); // keeps registering finished Cities while another tab is open
+  if (tab !== "city") pollCities(); // follows Cities Environment Studio registers while another tab is open
   pollRtf();
 }
 

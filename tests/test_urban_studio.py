@@ -481,134 +481,56 @@ class StudioServerTest(StudioTestBase):
 
 
 class CityTestBase(StudioTestBase):
-    """A fake City World Web UI jobs folder and fake tool scripts."""
+    """Registered Cities from a fake catalog and a fake urban_assets.py; the
+    City World Web UI jobs folder older registrations came from."""
 
     def setUp(self):
         super().setUp()
-        self.recipe = self.work / "city-world-web-ui"
-        self.jobs = self.recipe / "runtime/jobs"
+        self.jobs = self.work / "city-world-web-ui/runtime/jobs"
         self.jobs.mkdir(parents=True)
         fake_tool = self.work / "fake_tool.py"
         fake_tool.write_text("import sys\nprint('ran', *sys.argv[1:], flush=True)\n", encoding="utf-8")
         self.registered = {}
-        for name, value in {"CITY_RECIPE_ROOT": self.recipe, "URBAN_ASSETS": fake_tool,
-                            "CITY_WEB_UI": fake_tool, "CITY_WEB_PORT": 1}.items():
-            patch = mock.patch.object(urban_studio, name, value)
+        for target, name, value in ((urban_studio, "URBAN_ASSETS", fake_tool),
+                                    (urban_studio, "ENVIRONMENT_STUDIO_PORT", 1)):
+            patch = mock.patch.object(target, name, value)
             patch.start()
             self.addCleanup(patch.stop)
-        patch = mock.patch("urban_assets.catalog", side_effect=lambda: self.registered)
-        patch.start()
-        self.addCleanup(patch.stop)
-        self.user_assets = self.work / "user-assets"
-        patch = mock.patch("urban_assets.USER_ASSETS", self.user_assets)
-        patch.start()
-        self.addCleanup(patch.stop)
+        for name, value in (("urban_assets.catalog", mock.Mock(side_effect=lambda: self.registered)),
+                            ("urban_assets.CITY_WORLD_JOBS", self.jobs)):
+            patch = mock.patch(name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
 
-    def make_job(self, name, finished=True):
-        job = self.jobs / name
-        (job / "build/world").mkdir(parents=True)
-        receipt = job / "build/world/city-world-receipt.json"
-        receipt.write_text("{}", encoding="utf-8")
-        if finished:
-            (job / "artifacts").mkdir()
-            (job / "artifacts/result-manifest.json").write_text("{}", encoding="utf-8")
-        return receipt
-
-    def register(self, name, receipt, version):
-        self.registered[name] = mock.Mock(kind="city", data={"receipt": str(receipt), "version": version})
-
-    def wait_registration(self, name):
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            _, state = self.call("GET", "/api/cities")
-            job = next(job for job in state["jobs"] if job["id"] == name)
-            if job["registration"] and job["registration"]["state"] != "running":
-                return job["registration"]
-            time.sleep(0.05)
-        self.fail("registration did not finish")
+    def register(self, name, receipt, title=None):
+        data = {"receipt": str(receipt), **({"title": title} if title else {})}
+        self.registered[name] = mock.Mock(id=name, kind="city", data=data, resolve=lambda value: Path(value))
 
 
 class CityPageTest(CityTestBase):
-    """GET /api/cities and the City World Web UI commands, on a fake jobs folder."""
+    """GET /api/cities: the registered Cities and the Environment Studio link."""
 
-    def test_a_finished_unregistered_job_is_registered_once(self):
-        receipt = self.make_job("tokyo")
-        registration = self.wait_registration("tokyo")
-        self.assertEqual(registration["state"], "succeeded")
-        self.assertIn(f"ran register-city --receipt {receipt.resolve()}", registration["lines"])
+    def test_the_registered_cities_are_listed_with_their_receipts(self):
+        receipt = self.work / "studio/city-worlds/sapporo/build/world/city-world-receipt.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("{}", encoding="utf-8")
+        self.register("sapporo", receipt, title="札幌")
+        self.register("gone", self.work / "missing/city-world-receipt.json")
+        status, state = self.call("GET", "/api/cities")
+        self.assertEqual(status, 200)
+        cities = {city["id"]: city for city in state["cities"]}
+        self.assertEqual((cities["sapporo"]["title"], cities["sapporo"]["available"]), ("札幌", True))
+        self.assertEqual((cities["gone"]["title"], cities["gone"]["available"]), ("gone", False))
+
+    def test_the_environment_studio_link(self):
         _, state = self.call("GET", "/api/cities")
-        self.assertEqual(len([job for job in self.server.RequestHandlerClass.runner.jobs.values()
-                              if job.composition == "city:tokyo"]), 1)
-        self.assertTrue(state["jobs"][0]["finished"])
+        studio = state["environment_studio"]
+        self.assertEqual(studio["url"], "http://127.0.0.1:1/map.html")
+        self.assertFalse(studio["running"])
+        self.assertIn("env_studio.py start", studio["start"])
 
-    def test_registered_and_unfinished_jobs_are_left_alone(self):
-        receipt = self.make_job("osaka")
-        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns)
-        self.make_job("nagoya", finished=False)
-        _, state = self.call("GET", "/api/cities")
-        jobs = {job["id"]: job for job in state["jobs"]}
-        self.assertTrue(jobs["osaka"]["registered"])
-        self.assertIsNone(jobs["osaka"]["registration"])
-        self.assertFalse(jobs["nagoya"]["finished"])
-        self.assertIsNone(jobs["nagoya"]["registration"])
-
-    def test_a_regenerated_city_is_registered_again(self):
-        receipt = self.make_job("osaka")
-        self.register("osaka", receipt.resolve(), receipt.stat().st_mtime_ns - 1)
-        self.assertEqual(self.wait_registration("osaka")["state"], "succeeded")
-
-    def test_a_deleted_job_unregisters_its_city(self):
-        import shutil
-        import urban_assets
-
-        receipt = self.make_job("hokkaido-a")
-        manifest = urban_assets.register_city(receipt, directory=self.user_assets)
-        shutil.rmtree(self.jobs / "hokkaido-a")
-
-        _, state = self.call("GET", "/api/cities")
-
-        self.assertEqual(state["unregistered"], ["hokkaido-a"])
-        self.assertFalse(manifest.exists())
-        _, state = self.call("GET", "/api/cities")
-        self.assertEqual(state["unregistered"], [])
-
-    def test_a_city_recreated_under_the_same_id_is_registered_again(self):
-        import os
-        import shutil
-
-        self.make_job("sapporo")
-        self.assertEqual(self.wait_registration("sapporo")["state"], "succeeded")
-        runner = self.server.RequestHandlerClass.runner
-        count = lambda: len([job for job in runner.jobs.values() if job.composition == "city:sapporo"])  # noqa: E731
-        # The fake registration writes no manifest; an unchanged receipt is not re-registered.
-        self.call("GET", "/api/cities")
-        self.assertEqual(count(), 1)
-        shutil.rmtree(self.jobs / "sapporo")
-        receipt = self.make_job("sapporo")
-        stat = receipt.stat()
-        os.utime(receipt, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
-        self.assertEqual(self.wait_registration("sapporo")["state"], "succeeded")
-        self.assertEqual(count(), 2)
-
-    def test_web_ui_start_configures_first_and_reports_not_running(self):
-        self.recipe.rename(self.work / "moved")  # not configured yet
-        status, job = self.call("POST", "/api/cities/web-ui/start")
-        self.assertEqual(status, 202)
-        finished = self.wait(job["id"])
-        self.assertEqual(finished["lines"], ["ran configure", "ran start"])
-        _, state = self.call("GET", "/api/cities")
-        self.assertFalse(state["web_ui"]["running"])
-        self.assertEqual(state["web_ui"]["job"]["command"], "start")
-        self.assertEqual(state["jobs"], [])
-
-    def test_web_ui_start_skips_configure_once_configured(self):
-        _, job = self.call("POST", "/api/cities/web-ui/start")
-        self.assertEqual(self.wait(job["id"])["lines"], ["ran start"])
-        _, job = self.call("POST", "/api/cities/web-ui/stop")
-        self.assertEqual(self.wait(job["id"])["lines"], ["ran stop"])
-
-    def test_unknown_web_ui_command(self):
-        status, _ = self.call("POST", "/api/cities/web-ui/explode")
+    def test_urban_studio_no_longer_starts_the_city_world_web_ui(self):
+        status, _ = self.call("POST", "/api/cities/web-ui/start")
         self.assertEqual(status, 404)
 
 
@@ -627,11 +549,9 @@ class CachePageTest(CityTestBase):
             json.dumps({"layout": 2, "mjcf": str(self.jobs / "deleted/build/world/city-world.xml")}),
             encoding="utf-8",
         )
-        for patch in (mock.patch.object(urban_cache, "CACHE_ROOT", self.cache),
-                      mock.patch.object(urban_studio, "city_world_cache",
-                                        return_value={"available": False, "command": "x"})):
-            patch.start()
-            self.addCleanup(patch.stop)
+        patch = mock.patch.object(urban_cache, "CACHE_ROOT", self.cache)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_cache_state_reports_what_prune_would_remove(self):
         status, state = self.call("GET", "/api/cache")
@@ -641,7 +561,7 @@ class CachePageTest(CityTestBase):
         self.assertEqual(entry["reason"], "City World job deleted")
         self.assertEqual(state["urban"]["reclaimable_bytes"], entry["size_bytes"])
         self.assertIsNone(state["prune_job"])
-        self.assertFalse(state["city_world"]["available"])
+        self.assertNotIn("city_world", state)
 
     def test_prune_runs_the_urban_assets_command(self):
         status, job = self.call("POST", "/api/cache/prune")
@@ -657,15 +577,6 @@ class CachePageTest(CityTestBase):
         self.assertEqual(status, 409)
         self.assertIn("register of city:tokyo", body["error"])
         self.wait(busy.id)
-
-
-class CityWorldCacheSummaryTest(unittest.TestCase):
-    def test_missing_business_pack_tool_is_reported_not_raised(self):
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(urban_studio, "BUSINESS_PACK", Path(directory)):
-            summary = urban_studio.city_world_cache()
-        self.assertFalse(summary["available"])
-        self.assertIn("cache-clean", summary["command"])
 
 
 class ProgressParseTest(unittest.TestCase):
