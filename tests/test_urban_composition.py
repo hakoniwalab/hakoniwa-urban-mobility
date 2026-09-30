@@ -1078,17 +1078,23 @@ class PlanTest(IntegratedFixture):
 
     def test_a_drone_route_materializes_its_recipe_before_its_tool_configures(self):
         composition = self.drone()
-        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
-                                               return_value=mock.Mock(returncode=0)) as run:
+        # The tool recipe and controls go to a test directory, not the real
+        # urban-drone-one Recipe workspace.
+        recipe_path = self.work / "drone-workspace/config" / urban_simulation.DRONE_RECIPE_FILE
+        with self.catalog(), mock.patch.object(urban_simulation, "drone_recipe_path", return_value=recipe_path), \
+                mock.patch.object(urban_simulation.subprocess, "run",
+                                  return_value=mock.Mock(returncode=0)) as run:
             self.assertEqual(urban_simulation.run("configure", composition), 0)
+        self.assertTrue(recipe_path.is_file())
         first, *rest = [call.args[0] for call in run.call_args_list]
         self.assertEqual(first[1:], [str(urban_simulation.BUSINESS_PACK / "tools/recipe.py"), "configure",
                                      "--recipe", str(ROOT / "recipes/usecases/urban-drone-rc.yaml")])
         self.assertTrue(any(Path(arguments[1]) == urban_simulation.DRONE_ONE and "configure" in arguments
                             for arguments in rest))
         # A Recipe that cannot be materialized stops the route before its tool runs.
-        with self.catalog(), mock.patch.object(urban_simulation.subprocess, "run",
-                                               return_value=mock.Mock(returncode=3)) as run:
+        with self.catalog(), mock.patch.object(urban_simulation, "drone_recipe_path", return_value=recipe_path), \
+                mock.patch.object(urban_simulation.subprocess, "run",
+                                  return_value=mock.Mock(returncode=3)) as run:
             self.assertEqual(urban_simulation.run("configure", composition), 3)
         self.assertEqual(run.call_count, 1)
 

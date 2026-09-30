@@ -474,7 +474,8 @@ def write_drone_controls(composition_path: Path) -> Path:
         composition_path,
         {"drone-core": drone_runtime(paths, paths.recipe_config / "pdudef/drone-pdudef-current.json")},
     )
-    path = paths.recipe_config / urban_controls.CONTROLS_FILE
+    # Next to the tool recipe (drone_recipe_path), so both go to one place.
+    path = drone_recipe_path().parent / urban_controls.CONTROLS_FILE
     multi_car.write_json(path, {
         "processes": processes,
         "pacer": urban_realtime.pacer_asset(str(multi_car.foundation_python()), "drone-service-1"),

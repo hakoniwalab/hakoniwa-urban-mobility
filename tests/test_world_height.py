@@ -119,6 +119,25 @@ class WorldHeightTest(unittest.TestCase):
         self.assertAlmostEqual(ground(0.0, 0.0), 0.0, places=6, msg="off the road")
 
     @needs_mujoco
+    def test_a_thin_mesh_road_slab_above_the_terrain_is_the_ground(self):
+        # A 2 cm road slab as a vertex-only mesh, as Environment Studio exports
+        # it, 11 cm above a flat terrain. MuJoCo's ray-mesh test misses it from
+        # a few hundred metres away, so a ray from far above found the terrain
+        # and a drone spawned under the slab could not lift off.
+        slab = ("5 5 -0.01 -5 5 -0.01 -5 -5 -0.01 5 -5 -0.01 "
+                "5 5 0.01 -5 5 0.01 -5 -5 0.01 5 -5 0.01")
+        world = f"""<mujoco><asset><mesh name="slab" vertex="{slab}"/></asset>
+<worldbody>
+  <geom name="terrain" type="box" size="100 100 1" pos="0 0 1.455"/>
+  <body name="road" pos="-55 55 2.571"><geom type="mesh" mesh="slab" pos="0 0 0.01"/></body>
+</worldbody></mujoco>"""
+        with self.quiet():
+            ground = world_height.ray_ground(self.mjcf(world), cache_dir=self.work / "cache")
+        # MJCF (x=-51.66, y=53.05) is east=-53.05, north=-51.66.
+        self.assertAlmostEqual(ground(-53.05, -51.66), 2.591, places=6, msg="on the slab")
+        self.assertAlmostEqual(ground(0.0, 0.0), 2.455, places=6, msg="on the terrain")
+
+    @needs_mujoco
     def test_ray_without_geometry_below_is_an_error(self):
         with self.quiet():
             ground = world_height.ray_ground(self.mjcf(FLOATING), cache_dir=self.work / "cache")
