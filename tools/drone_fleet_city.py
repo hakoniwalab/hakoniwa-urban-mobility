@@ -34,6 +34,7 @@ from typing import Any
 
 ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+import mujoco_c_layout  # noqa: E402
 import urban_manifest  # noqa: E402
 
 BUSINESS_PACK_ROOT = urban_manifest.business_pack()  # $HAKONIWA_WORKSPACE_ROOT
@@ -202,14 +203,20 @@ def _city_visual_max_height(city_receipt_path: Path) -> tuple[float, Path]:
     return height_m, glb_receipt_path
 
 
+# Rays start this far above the World's highest geom (as tools/world_height.py).
+RAY_START_MARGIN_M = 1.0
+
+
 class _MujocoRayScene:
     """Query the highest collision surface without depending on mujoco-python."""
 
     def __init__(self, xml_path: Path, library_path: Path):
         self.xml_path = xml_path.resolve()
-        self.library = ctypes.CDLL(str(library_path.resolve()))
+        self.library_path = library_path.resolve()
+        self.library = ctypes.CDLL(str(self.library_path))
         self.model: int | None = None
         self.data: int | None = None
+        self.ray_origin_z = 0.0
 
     def __enter__(self) -> "_MujocoRayScene":
         lib = self.library
@@ -258,7 +265,47 @@ class _MujocoRayScene:
                 f"MuJoCo could not allocate ray-query data for {self.xml_path}"
             )
         lib.mj_forward(self.model, self.data)
+        try:
+            self.ray_origin_z = self._highest_point() + RAY_START_MARGIN_M
+        except mujoco_c_layout.MujocoLayoutError as exc:
+            self.__exit__()
+            raise FleetMujocoError(
+                f"cannot read the World's geoms from the MuJoCo library: {exc}"
+            ) from exc
         return self
+
+    def _highest_point(self) -> float:
+        """The top of the highest geom: each geom's local bounding box
+        (geom_aabb: centre, half sizes) turned into the world by its pose. A
+        plane's bounding box is unbounded in its own plane; its height is its
+        position. Rays start just above it: MuJoCo 3.13's ray-mesh test misses
+        a thin mesh (a 2 cm road slab) from a few hundred metres away."""
+        layout = mujoco_c_layout.Layout(
+            self.library,
+            self.library_path,
+            model_until="geom_aabb",
+            data_until="geom_xmat",
+        )
+        model = layout.model.from_address(self.model)
+        data = layout.data.from_address(self.data)
+        count = model.ngeom
+        if count == 0:
+            return 0.0
+        geom_type = mujoco_c_layout.array(model, "geom_type", count, ctypes.c_int)
+        aabb = mujoco_c_layout.array(model, "geom_aabb", count * 6)
+        xpos = mujoco_c_layout.array(data, "geom_xpos", count * 3)
+        xmat = mujoco_c_layout.array(data, "geom_xmat", count * 9)
+        plane = layout.constants["mjGEOM_PLANE"]
+        highest = -math.inf
+        for geom in range(count):
+            top = xpos[3 * geom + 2]
+            if geom_type[geom] != plane:
+                # Row 2 of the rotation gives the world z of a local vector.
+                row = xmat[9 * geom + 6:9 * geom + 9]
+                box = aabb[6 * geom:6 * geom + 6]
+                top += sum(row[i] * box[i] + abs(row[i]) * box[3 + i] for i in range(3))
+            highest = max(highest, top)
+        return highest
 
     def __exit__(self, *_args: object) -> None:
         if self.data:
@@ -271,7 +318,7 @@ class _MujocoRayScene:
     def height(self, x_m: float, y_m: float) -> float:
         if not self.model or not self.data:
             raise FleetMujocoError("MuJoCo ray-query scene is not open")
-        ray_origin_z = 10_000.0
+        ray_origin_z = self.ray_origin_z
         point = (ctypes.c_double * 3)(x_m, y_m, ray_origin_z)
         direction = (ctypes.c_double * 3)(0.0, 0.0, -1.0)
         geom_id = ctypes.c_int(-1)
