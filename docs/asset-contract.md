@@ -93,7 +93,8 @@ The target placement is the Asset's source repository. For v1:
 - User-generated City Assets live in the Business Pack work directory,
   `work/urban/assets/cities/<id>.asset.yaml`, written by
   `tools/urban_assets.py register-city --receipt <city-world-receipt.json>`.
-  The id defaults to the City World job name. Registration first checks the
+  The id defaults to the City World job name; `--title` gives the name shown
+  for it (default: the id). Registration first checks the
   job against its contract (section 6.3) and refuses one that breaks it
   (`--no-check` registers anyway).
   `tools/urban_assets.py unregister-city --id <id>` removes a registration
@@ -432,9 +433,17 @@ A City World job counts as finished once its
 `artifacts/result-manifest.json` exists (the Worker writes it last); a
 registered City whose receipt changed (regenerated) is registered again.
 Commands run as child processes, one at a time per Composition; their
-`[HAKO_PROGRESS]` lines drive the progress bar. Examples in
-`recipes/compositions/` are read-only; saving one writes an editable copy
-under `work/urban/compositions/`. Placement-only fields (the ground height
+`[HAKO_PROGRESS]` lines drive the progress bar. Examples come from
+`recipes/compositions/` and from other workspace repositories'
+`assets/*.composition.yaml` (the root manifest's `compositions`); an example
+is listed only while every Asset it names (its World, vehicles, fleets) is in
+the catalog, so the Shizuoka examples appear once that City is registered and
+a repository's examples once it is checked out. They are read-only; saving
+one writes an editable copy under `work/urban/compositions/`. A saved
+Composition naming something the workspace lacks stays listed and says what
+(`available`, `missing` in `GET /api/compositions`). A City whose receipt
+says `"kind": "plain"` (an environment made without a map) is shown without
+a map (`GET /api/worlds/<id>`: `map` false, no `origin`). Placement-only fields (the ground height
 under a vehicle) are never saved.
 
 Compose and Simulation share one Composition: opening or saving a

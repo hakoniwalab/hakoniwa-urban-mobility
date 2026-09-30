@@ -200,7 +200,8 @@ def city_id_from_receipt(receipt: Path) -> str:
     raise AssetError(f"cannot derive a City id from receipt path; pass --id: {receipt}")
 
 
-def register_city(receipt: Path, asset_id: str | None = None, directory: Path = USER_ASSETS) -> Path:
+def register_city(receipt: Path, asset_id: str | None = None, directory: Path = USER_ASSETS,
+                  title: str | None = None) -> Path:
     receipt = receipt.expanduser().resolve()
     if not receipt.is_file():
         raise AssetError(f"City World receipt not found: {receipt}")
@@ -211,10 +212,11 @@ def register_city(receipt: Path, asset_id: str | None = None, directory: Path = 
         "schema": ASSET_SCHEMA,
         "id": asset_id,
         "kind": "city",
+        **({"title": title} if title else {}),
         "version": receipt.stat().st_mtime_ns,
         "receipt": receipt.as_posix(),
     }
-    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return path
 
 
@@ -277,7 +279,7 @@ def register_world(world: Path, asset_id: str | None = None, directory: Path = U
         "version": world.stat().st_mtime_ns,
         "world": world.as_posix(),
     }
-    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return path
 
 
@@ -288,6 +290,7 @@ def parser() -> argparse.ArgumentParser:
     register = commands.add_parser("register-city", help="register a City World receipt")
     register.add_argument("--receipt", type=Path, required=True)
     register.add_argument("--id", help="City Asset id (default: the City World job name)")
+    register.add_argument("--title", help="the name shown for the City (default: its id)")
     register.add_argument(
         "--no-precompile",
         action="store_true",
@@ -368,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Not registered: the City World job does not follow schemas/city-world-job.yaml "
                       "(tools/city_world_job.py check; --no-check registers anyway).", file=sys.stderr)
                 return 1
-        print(f"Registered City Asset: {register_city(args.receipt, args.id)}")
+        print(f"Registered City Asset: {register_city(args.receipt, args.id, title=args.title)}")
         if not args.no_precompile:
             precompile_height(args.receipt.expanduser().resolve())
         return 0

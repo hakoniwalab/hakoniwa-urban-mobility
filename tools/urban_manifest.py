@@ -138,6 +138,8 @@ def check() -> list[str]:
         for key, entry in data.get(name, {}).items():
             if not resolve(entry["path"]).is_file():
                 problems.append(f"{name}.{key}.path: no such file: {entry['path']}")
+    if not path("compositions.repository").is_dir():
+        problems.append(f"compositions.repository: no such folder: {value('compositions.repository')}")
     if not path("assets.repository").is_dir():
         problems.append(f"assets.repository: no such folder: {value('assets.repository')}")
     if not path("worlds.plain_ground").is_file():

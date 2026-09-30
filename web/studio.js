@@ -83,7 +83,8 @@ function compositionMakeup(item) {
 const worldKindLabel = (kind) => (kind === "city" ? "City" : kind === "plain" ? "プレーン" : "未登録");
 
 function compositionLabel(item) {
-  return `${item.id} — ${item.world_title}（${worldKindLabel(item.world_kind)}）／${compositionMakeup(item)}${item.editable ? "" : "・例"}`;
+  return `${item.id} — ${item.world_title}（${worldKindLabel(item.world_kind)}）／${compositionMakeup(item)}${item.editable ? "" : "・例"}${
+    item.available === false ? `・ないもの: ${item.missing.join("、")}` : ""}`;
 }
 
 // Point the Simulation selector at a Composition when it is listed (saved).
@@ -383,7 +384,10 @@ function renderCompositionList() {
     el("button", {
       "aria-current": String(state.current?.id === item.id),
       onclick: () => { if (confirmDiscard()) openComposition(item.id); },
-    }, item.id, el("span", { class: "meta" }, `${item.vehicles} 台${item.editable ? "" : "・例"}`)))));
+      // A saved Composition naming what the workspace lacks (a City deleted, a repository missing).
+      title: item.available === false ? `このワークスペースにないもの: ${item.missing.join("、")}` : "",
+    }, item.id, el("span", { class: "meta" },
+      `${item.vehicles} 台${item.editable ? "" : "・例"}${item.available === false ? "・使えないものあり" : ""}`)))));
   const runSelect = $("#run-composition");
   const selected = runSelect.value;
   runSelect.replaceChildren(...state.compositions.map((item) => el("option", { value: item.id }, compositionLabel(item))));

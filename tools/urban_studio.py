@@ -67,8 +67,6 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
 BUSINESS_PACK = WORKSPACE / "hakoniwa-business-pack"
 WEB_ROOT = ROOT / "web"
-USER_COMPOSITIONS = BUSINESS_PACK / "work/urban/compositions"
-EXAMPLE_COMPOSITIONS = ROOT / "recipes/compositions"
 USER_SCENARIOS = BUSINESS_PACK / "work/urban/scenarios"
 EXAMPLE_SCENARIOS = ROOT / "recipes/scenarios"
 SIMULATION = ROOT / "tools/urban_simulation.py"
@@ -88,6 +86,8 @@ for _path in (ROOT / "tools", BUSINESS_PACK / "tools"):
 import urban_manifest  # noqa: E402
 
 DEFAULT_PORT = urban_manifest.port("urban-studio")
+USER_COMPOSITIONS = urban_manifest.path("compositions.user")
+EXAMPLE_COMPOSITIONS = urban_manifest.path("compositions.repository")
 CITY_WEB_PORT = urban_manifest.port("city-world-web-ui")
 
 
@@ -143,14 +143,49 @@ def _check_id(composition_id: str) -> str:
     return composition_id
 
 
+def example_compositions() -> dict[str, Path]:
+    """Example Compositions by id: this repository's, then other workspace
+    repositories' (<repo>/assets/*.composition.yaml; urban.manifest.yaml)."""
+    found = {path.stem: path for path in sorted(EXAMPLE_COMPOSITIONS.glob("*.yaml"))} if EXAMPLE_COMPOSITIONS.is_dir() else {}
+    suffix = urban_manifest.value("compositions.suffix")
+    pattern = urban_manifest.path("compositions.workspace").relative_to(WORKSPACE).as_posix()
+    for path in sorted(WORKSPACE.glob(f"{pattern}/*{suffix}")):
+        found.setdefault(path.name.removesuffix(suffix), path)
+    return found
+
+
+def example_dirs() -> list[Path]:
+    return sorted({path.parent for path in example_compositions().values()} | {EXAMPLE_COMPOSITIONS})
+
+
 def composition_path(composition_id: str) -> Path:
-    """A saved Composition, else a tracked example of that id."""
+    """A saved Composition, else an example of that id."""
     _check_id(composition_id)
-    for directory in (USER_COMPOSITIONS, EXAMPLE_COMPOSITIONS):
-        path = directory / f"{composition_id}.yaml"
-        if path.is_file():
-            return path
+    path = USER_COMPOSITIONS / f"{composition_id}.yaml"
+    if path.is_file():
+        return path
+    path = example_compositions().get(composition_id)
+    if path is not None:
+        return path
     raise StudioError(f"Composition {composition_id} not found", HTTPStatus.NOT_FOUND)
+
+
+def missing_assets(data: dict, catalog: dict) -> list[str]:
+    """What a Composition names that the workspace lacks: its World (or a City
+    whose receipt is gone) and its vehicle and fleet Assets."""
+    import urban_assets
+
+    missing = []
+    world = catalog.get(data.get("world"))
+    if world is None or world.kind not in {"city", "plain"}:
+        missing.append(f"World {data.get('world')}")
+    elif world.kind == "city" and not urban_assets.city_receipt_available(world):
+        missing.append(f"World {world.id} (its City World receipt)")
+    for group in ("vehicles", "fleets"):
+        for entry in data.get(group) or []:
+            if isinstance(entry, dict) and entry.get("asset") not in catalog:
+                missing.append(f"Asset {entry.get('asset')}")
+    return list(dict.fromkeys(missing))
 
 
 def _catalog_or_empty() -> dict:
@@ -193,12 +228,15 @@ def composition_summary(data: dict, catalog: dict) -> dict:
             "control": entry.get("control"),
             "count": entry.get("count"),
         })
+    missing = missing_assets(data, catalog)
     return {
         "world": world_id,
         "world_title": world.data.get("title", world.id) if world else world_id,
         "world_kind": world.kind if world else None,
         "vehicle_list": vehicles,
         "fleets": fleets,
+        "available": not missing,
+        "missing": missing,
     }
 
 
@@ -207,28 +245,31 @@ def list_compositions() -> list[dict]:
 
     catalog = _catalog_or_empty()
     result = {}
-    for directory, editable in ((EXAMPLE_COMPOSITIONS, False), (USER_COMPOSITIONS, True)):
-        if not directory.is_dir():
+    saved = sorted(USER_COMPOSITIONS.glob("*.yaml")) if USER_COMPOSITIONS.is_dir() else []
+    entries = [(composition_id, path, False) for composition_id, path in example_compositions().items()]
+    entries += [(path.stem, path, True) for path in saved]
+    for composition_id, path, editable in entries:
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
             continue
-        for path in sorted(directory.glob("*.yaml")):
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError:
-                continue
-            if not isinstance(data, dict):
-                continue
-            # A saved Composition hides the example of the same id.
-            result[path.stem] = {
-                "id": path.stem,
-                # Vehicles plus every drone of every fleet.
-                "vehicles": len(data.get("vehicles") or []) + sum(
-                    int(item.get("count") or 0) for item in data.get("fleets") or [] if isinstance(item, dict)
-                ),
-                "editable": editable,
-                "path": str(path),
-                "updated_at": path.stat().st_mtime,
-                **composition_summary(data, catalog),
-            }
+        if not isinstance(data, dict):
+            continue
+        summary = composition_summary(data, catalog)
+        if not editable and not summary["available"]:
+            continue  # an example appears once the workspace has what it names
+        # A saved Composition hides the example of the same id.
+        result[composition_id] = {
+            "id": composition_id,
+            # Vehicles plus every drone of every fleet.
+            "vehicles": len(data.get("vehicles") or []) + sum(
+                int(item.get("count") or 0) for item in data.get("fleets") or [] if isinstance(item, dict)
+            ),
+            "editable": editable,
+            "path": str(path),
+            "updated_at": path.stat().st_mtime,
+            **summary,
+        }
     return sorted(result.values(), key=lambda item: item["id"])
 
 
@@ -273,8 +314,9 @@ def relocate_path_params(composition: dict, catalog: dict, target_dir: Path = US
                     continue
                 if urban_assets.resolve_reference(value, target_dir).is_file():
                     continue
-                example = urban_assets.resolve_reference(value, EXAMPLE_COMPOSITIONS)
-                if not value.startswith("${") and not Path(value).is_absolute() and example.is_file():
+                examples = [urban_assets.resolve_reference(value, directory) for directory in example_dirs()]
+                example = next((path for path in examples if path.is_file()), None)
+                if not value.startswith("${") and not Path(value).is_absolute() and example is not None:
                     entry["params"][name] = _repo_reference(example)
                     continue
                 raise StudioError(f"{entry.get('name')} の {name} のファイルが見つかりません: {value}")
@@ -576,9 +618,11 @@ def world_info(world_id: str) -> dict:
         "title": asset.data.get("title", world_id),
         "half_extent_m": frame["half_extent_m"],
         "glb": f"/api/worlds/{world_id}/glb",
-        "map": asset.kind == "city",
+        # A City whose receipt says kind plain (an environment made without a
+        # map, such as one an authoring tool exported) has no place on a map.
+        "map": asset.kind == "city" and receipt.get("kind") != "plain",
     }
-    if asset.kind == "city":
+    if info["map"]:
         info["origin"] = {key: frame["origin"][key] for key in ("latitude", "longitude")}
     return info
 
