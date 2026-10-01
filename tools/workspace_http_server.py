@@ -11,6 +11,17 @@ from pathlib import Path
 import urban_manifest
 
 
+class ViewerHTTPServer(ThreadingHTTPServer):
+    """The viewer's pages load their scripts as dozens of ES modules at once,
+    from every viewer open (the one in Urban Studio, Viewer, Viewer with
+    colliders). The standard listen backlog of 5 resets the connections
+    beyond it (ERR_CONNECTION_RESET, the viewer stops with "error"): a long
+    backlog lets them wait their turn."""
+
+    request_queue_size = 128
+    daemon_threads = True
+
+
 class NoCacheHandler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -26,7 +37,7 @@ def main() -> int:
     parser.add_argument("--directory", type=Path, required=True)
     args = parser.parse_args()
     handler = partial(NoCacheHandler, directory=str(args.directory.resolve()))
-    server = ThreadingHTTPServer((args.bind, args.port), handler)
+    server = ViewerHTTPServer((args.bind, args.port), handler)
     print(f"Serving {args.directory.resolve()} on {args.bind}:{args.port} (no-cache)")
     try:
         server.serve_forever()
