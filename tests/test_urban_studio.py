@@ -387,7 +387,19 @@ class StudioServerTest(StudioTestBase):
             name="Drone-1", asset="fpv-drone-master3x"))
         with mock.patch.object(urban_studio, "USER_COMPOSITIONS", self.work / "compositions"):
             status, body = self.call("GET", "/api/compositions/never-configured/viewer")
-        self.assertEqual((status, body), (200, {"url": None, "collider_url": None}))
+        self.assertEqual((status, body), (200, {"url": None, "collider_url": None, "running": False}))
+
+    def test_a_viewer_opens_only_while_its_server_listens(self):
+        import socket
+
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        self.assertTrue(urban_studio.viewer_serving(f"http://127.0.0.1:{port}/viewer/index.html"))
+        listener.close()
+        self.assertFalse(urban_studio.viewer_serving(f"http://127.0.0.1:{port}/viewer/index.html"))
+        self.assertFalse(urban_studio.viewer_serving(None))
 
     def fake_world(self, kind="city"):
         job = self.work / "job"

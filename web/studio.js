@@ -1392,7 +1392,7 @@ async function refreshRunPlan() {
     node.replaceChildren(...(item ? renderRunSummary(item, null) : []), el("div", {}, error.message));
     node.classList.add("error");
   }
-  refreshViewer(false);
+  refreshViewer();
 }
 
 // Simulation -> Compose: look at (or edit) the selected Composition.
@@ -1406,24 +1406,26 @@ async function openRunCompositionInCompose() {
   showTab("compose");
 }
 
-async function refreshViewer(show) {
+// The Viewer links (each opens the Viewer in its own browser tab): shown once
+// the Composition is configured, usable only while the simulation runs (its
+// Viewer server listens), so a click never meets a closed server.
+async function refreshViewer() {
   const id = $("#run-composition").value;
-  const link = $("#viewer-link");
+  const links = [[$("#viewer-link"), "url"], [$("#viewer-collider-link"), "collider_url"]];
+  let answer = {};
   try {
-    const { url, collider_url: colliderUrl } = await api("GET", `compositions/${id}/viewer`);
-    link.hidden = !url;
-    if (url) link.href = url;
-    const colliderLink = $("#viewer-collider-link");
-    colliderLink.hidden = !colliderUrl;
-    if (colliderUrl) colliderLink.href = colliderUrl;
-    if (url && show) {
-      $("#viewer-panel").hidden = false;
-      $("#viewer-frame").src = url;
-    }
+    if (id) answer = await api("GET", `compositions/${id}/viewer`);
   } catch {
-    link.hidden = true;
-    $("#viewer-collider-link").hidden = true;
+    answer = {};
   }
+  for (const [link, key] of links) {
+    link.hidden = !answer[key];
+    if (answer[key]) link.href = answer[key];
+    link.classList.toggle("unavailable", !answer.running);
+    link.setAttribute("aria-disabled", String(!answer.running));
+    link.tabIndex = answer.running ? 0 : -1;
+  }
+  $("#viewer-hint").hidden = !answer.url || Boolean(answer.running);
 }
 
 function renderProgress(job) {
@@ -1467,9 +1469,7 @@ async function pollJob() {
       return;
     }
     setRunning(false);
-    if (snapshot.state === "succeeded" && ["configure", "start"].includes(snapshot.command)) {
-      refreshViewer(snapshot.command === "start");
-    }
+    if (snapshot.state === "succeeded" && ["configure", "start", "stop"].includes(snapshot.command)) refreshViewer();
   } catch (error) {
     setStatus($("#progress-text"), error.message, "error");
     setRunning(false);
@@ -1507,6 +1507,7 @@ async function pollRtf() {
       node.textContent = "";
     }
   }
+  if (id && !$("#tab-simulation").hidden) refreshViewer();  // started or stopped elsewhere too (the CLI)
   state.rtfTimer = setTimeout(pollRtf, 2000);
 }
 

@@ -759,14 +759,31 @@ def plan_json(composition_id: str) -> dict:
         raise StudioError(str(exc)) from exc
 
 
+def viewer_serving(url: str | None) -> bool:
+    """Whether the Viewer at a URL can be opened now: its HTTP server is
+    listening (it runs with the simulation)."""
+    if not url:
+        return False
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    try:
+        with socket.create_connection((parts.hostname or "127.0.0.1", parts.port or 80), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
 def viewer(composition_id: str) -> dict:
+    """The configured Viewer URLs, and whether they can be opened now (running)."""
     import urban_simulation
 
     try:
         selected = urban_simulation.plan(composition_path(composition_id))
     except urban_simulation.SimulationError as exc:
         raise StudioError(str(exc)) from exc
-    return {"url": urban_simulation.viewer_url(selected), "collider_url": urban_simulation.collider_viewer_url(selected)}
+    url = urban_simulation.viewer_url(selected)
+    return {"url": url, "collider_url": urban_simulation.collider_viewer_url(selected), "running": viewer_serving(url)}
 
 
 def realtime_factor(composition_id: str) -> dict:

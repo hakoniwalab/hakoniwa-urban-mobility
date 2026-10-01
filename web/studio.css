@@ -114,7 +114,7 @@ button.icon { background: transparent; color: var(--danger); border-color: trans
   height: 320px; overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; margin: 0;
   white-space: pre-wrap; word-break: break-all;
 }
-.viewer-panel iframe { width: 100%; height: 70vh; border: none; border-radius: 6px; background: #000; }
+.button-link.unavailable { opacity: 0.45; pointer-events: none; }
 code { font-family: ui-monospace, Consolas, monospace; }
 .placement { margin-top: 8px; }
 .placement-view { height: 460px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }

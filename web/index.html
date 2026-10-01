@@ -200,6 +200,7 @@
           <button data-command="status" class="secondary">Status</button>
           <a id="viewer-link" class="button-link" target="_blank" rel="noopener" hidden>Viewer を開く</a>
           <a id="viewer-collider-link" class="button-link" target="_blank" rel="noopener" hidden title="建物・地面の当たり判定を重ねて表示">Viewer（当たり判定）を開く</a>
+          <span id="viewer-hint" class="hint" hidden>Start すると Viewer を開けます</span>
         </div>
         <div class="progress-block">
           <div class="progress"><div id="progress-bar"></div></div>
@@ -207,9 +208,6 @@
           <div id="rtf" class="rtf" role="status" title="実時間比（シミュレーション時間 / 実時間）と余裕（ペーサーが待機していた割合。0% に近いほど限界）。ペーサーの出力から取得します。"></div>
         </div>
         <pre id="log" class="log" aria-live="polite"></pre>
-      </div>
-      <div class="panel viewer-panel" id="viewer-panel" hidden>
-        <iframe id="viewer-frame" title="Viewer"></iframe>
       </div>
     </section>
   </main>
