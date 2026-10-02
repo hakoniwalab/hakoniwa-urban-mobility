@@ -391,7 +391,7 @@ class Director:
             self.leave_queue(near[0][1], self.plans[near[0][1]])
             state["boarding"] = near[0][1]
             self.boarding[near[0][1]] = name
-            state["cap"] = now + 30.0
+            state["cap"] = now + 50.0  # a walk round the stalls takes about 40 s
             self.record("boarding", vehicle=name, person=near[0][1], distance_m=round(near[0][0], 1))
 
     def step_cars(self, now: float, poses: dict, car_poses: dict) -> None:
