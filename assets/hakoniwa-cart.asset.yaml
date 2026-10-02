@@ -22,7 +22,7 @@ preview:
 # keep half the width plus a margin off building walls (tools/route_check.py).
 dimensions:
   width_m: 1.24
-  length_m: 3.26
+  length_m: 3.09
 spawn:
   # Base-frame height above the ground at startup.
   ground_clearance_m: 0.45
