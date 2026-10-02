@@ -228,6 +228,18 @@ class CompositionTest(unittest.TestCase):
         self.assertEqual(plan.route, "car")
         self.assertIn("hakoniwa-people", plan.to_json()["simulators"])
 
+    def test_four_people_ride_the_hakoniwa_cart(self):
+        import urban_assets
+
+        cart = urban_assets.catalog()["hakoniwa-cart"]
+        seats = cart.data["seats"]
+        self.assertEqual(sorted(seats), ["driver", "passenger", "rear_left", "rear_right"])
+        self.assertGreater(seats["driver"][1], 0)  # the driver sits on the left, behind the steering wheel
+        self.assertGreater(seats["driver"][0], seats["rear_left"][0])
+        plan = self.simulation.plan(ROOT / "recipes/compositions/plain-hakoniwa-cart-people.yaml")
+        self.assertEqual(plan.route, "car")
+        self.assertIn("hakoniwa-people", plan.to_json()["simulators"])
+
     def test_people_alone_are_not_a_route(self):
         directory = Path(tempfile.mkdtemp())
         path = directory / "people-only.yaml"

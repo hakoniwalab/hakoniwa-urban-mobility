@@ -1,0 +1,78 @@
+# Asset manifest (docs/asset-contract.md). The Hakoniwa Cart: a four-seat cart
+# (two rows under a long roof) built from primitives in hakoniwa-mbody-registry;
+# this manifest only declares how Urban uses it.
+schema: hakoniwa.asset/v1
+id: hakoniwa-cart
+kind: vehicle
+category: car
+version: 0.1.0
+title: 箱庭カート（4人乗り）
+source:
+  repository: hakoniwa-mbody-registry
+simulator: ackermann-mujoco
+model:
+  physics: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_cart/generated/model.minimal_world.xml
+  contract: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_cart/config/ackermann-forge.yaml
+  visual: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_cart/generated/view-model.json
+# Urban Studio preview (tools/asset_preview.py).
+preview:
+  format: view-model
+  path: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_cart/generated/view-model.json
+# Outer size from the MJCF collision geometry (bounding box); route checks
+# keep half the width plus a margin off building walls (tools/route_check.py).
+dimensions:
+  width_m: 1.24
+  length_m: 3.26
+spawn:
+  # Base-frame height above the ground at startup.
+  ground_clearance_m: 0.45
+# Where 箱庭人間 sit (tools/urban_people.py): the hip on the seat cushion, in
+# the vehicle body frame (MuJoCo: x forward, y left, z up). Two rows facing
+# forward, the driver front left behind the steering wheel; the cushions' tops
+# are at 0.42 m and the hip sits a little into them, in front of the backrest
+# (bodies/hakoniwa_cart/config/README.md).
+seats:
+  driver: [0.12, 0.26, 0.38]
+  passenger: [0.12, -0.26, 0.38]
+  rear_left: [-1.08, 0.26, 0.38]
+  rear_right: [-1.08, -0.26, 0.38]
+viewer:
+  # Vehicle-mounted camera shown as a picture-in-picture in the Three.js view.
+  front_camera:
+    # Under the front edge of the roof, ahead of the riders.
+    position: [0.98, 0.0, 1.80]
+    rpy: [0.0, 0.0, 0.0]
+    fov: 72
+    near: 0.1
+    far: 500
+    borderColor: "#ffffff"
+    borderWidthPx: 3
+    window:
+      x: 0.70
+      y: 0.70
+      width: 0.28
+      height: 0.28
+controls:
+  # Driven from outside through the Urban Car API (apps/car/urban_car.py), for
+  # example by apps/people/festival_director.py; the Launcher starts nothing.
+  external:
+    external: true
+  rc:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/ps5_ackermann_sender.py
+    scope: vehicle
+    args: ["--pdu-def", "${runtime.pdu_def}", "--rc-config", "${runtime.rc_config}",
+           "--robot", "${vehicle.name}", "--pdu", "ackermann_cmd",
+           "--max-speed", "${param.max_speed}",
+           "--max-steering-angle", "${param.max_steering_angle}",
+           "--deadzone", "${param.deadzone}"]
+    params:
+      max_speed: {type: number, default: 3.0}
+      max_steering_angle: {type: number, default: 0.60}
+      deadzone: {type: number, default: 0.06}
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
+    scope: composition
+    # One executor drives every api Car named in the scenario.
+    args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}"]
+    params:
+      scenario: {type: path, required: true, kinds: [car-route-scenario]}
