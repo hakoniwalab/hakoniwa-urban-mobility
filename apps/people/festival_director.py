@@ -321,6 +321,25 @@ class Director:
 
     # --- Cars ----------------------------------------------------------------------
 
+    def unstick(self, now: float, name: str, state: dict, pose) -> bool:
+        """A car driving but not moving for 3 s backs off for 2 s, wheels the
+        other way (it ran into something)."""
+        if now < state.get("reverse_until", 0.0):
+            self.cars.send(name, -0.8, -state.get("steer", 0.0))
+            return True
+        moving_wanted = state.get("sent_speed", 0.0) > 0.2
+        last = state.get("still_since")
+        if moving_wanted and self.speeds.get(name, 1.0) < 0.05:
+            if last is None:
+                state["still_since"] = now
+            elif now - last > 3.0:
+                state.update(reverse_until=now + 2.0, still_since=None)
+                self.record("unstick", vehicle=name, east_m=round(pose.east_m, 1), north_m=round(pose.north_m, 1))
+                return True
+        else:
+            state["still_since"] = None
+        return False
+
     def watch(self, poses: dict, car_poses: dict) -> None:
         """Near misses of every car (also those driven with a controller)."""
         near_miss = self.scene.get("safety", {}).get("near_miss_m", 1.5)
@@ -328,6 +347,9 @@ class Director:
             for person, ppose in poses.items():
                 if person in self.riding:
                     continue
+                left = self.plans.get(person, {}).get("left_vehicle")
+                if left and left[0] == name and time.monotonic() < left[1]:
+                    continue  # just got off this car: beside it is no near miss
                 gap = math.hypot(ppose.east_m - pose.east_m, ppose.north_m - pose.north_m) - 1.0
                 key = (name, person)
                 if gap < near_miss and self.speeds.get(name, 0.0) > 0.3:
@@ -348,7 +370,8 @@ class Director:
             self.people.get_off(state["rider"])
             self.riding.discard(state["rider"])
             # Off for a walk: not straight back on (the next one gets the seat).
-            self.plans[state["rider"]].update(goal=None, until=now + 1.0, no_ride_until=now + 60.0)
+            self.plans[state["rider"]].update(goal=None, until=now + 1.0, no_ride_until=now + 60.0,
+                                              left_vehicle=(name, now + 5.0))
             self.record("get_off", vehicle=name, person=state["rider"])
             state["rider"] = None
         def free(person):  # walking about, or waiting behind the head of a line
@@ -368,7 +391,7 @@ class Director:
             self.leave_queue(near[0][1], self.plans[near[0][1]])
             state["boarding"] = near[0][1]
             self.boarding[near[0][1]] = name
-            state["cap"] = now + 60.0
+            state["cap"] = now + 30.0
             self.record("boarding", vehicle=name, person=near[0][1], distance_m=round(near[0][0], 1))
 
     def step_cars(self, now: float, poses: dict, car_poses: dict) -> None:
@@ -378,6 +401,12 @@ class Director:
             if pose is None:
                 continue
             route = spec["route"]
+            if not state.get("placed"):  # start from the route's point nearest the car
+                state["index"] = min(range(len(route)), key=lambda i: math.hypot(
+                    route[i][0] - pose.east_m, route[i][1] - pose.north_m))
+                state["placed"] = True
+            if self.unstick(now, name, state, pose):
+                continue
             boarding = state["boarding"]
             if boarding:
                 person = poses.get(boarding)
@@ -390,11 +419,13 @@ class Director:
                     self.record("ride", vehicle=name, person=boarding)
                 elif now < state["cap"]:
                     state["until"] = max(state["until"], now + 0.5)  # wait for them
-                else:
+                else:  # could not get there in time: the shuttle goes on
                     self.boarding.pop(boarding, None)
                     self.plans[boarding].pop("via", None)
                     state["boarding"] = None
+                    self.record("boarding_gave_up", vehicle=name, person=boarding)
             if now < state["until"]:
+                state["sent_speed"] = 0.0
                 self.cars.send(name, 0.0, 0.0)
                 continue
             target = route[state["index"]]
@@ -429,6 +460,7 @@ class Director:
                 speed = 0.0
             elif nearest < safety.get("slow_within_m", 6.0):
                 speed = min(speed, 0.6)
+            state.update(sent_speed=speed, steer=steering)
             self.cars.send(name, speed, steering)
 
     def run(self, duration: float) -> None:
