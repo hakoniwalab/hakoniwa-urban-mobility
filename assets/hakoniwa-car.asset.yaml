@@ -43,6 +43,10 @@ viewer:
       width: 0.28
       height: 0.28
 controls:
+  # Driven from outside through the Urban Car API (apps/car/urban_car.py), for
+  # example by apps/people/festival_director.py; the Launcher starts nothing.
+  external:
+    external: true
   rc:
     program: ${repo:hakoniwa-urban-mobility}/apps/car/ps5_ackermann_sender.py
     scope: vehicle

@@ -223,6 +223,8 @@ def pdu_files(resolved: dict, config: Path, vehicle_states: tuple[str, Path] | N
     state_types = [
         {"channel_id": 0, "pdu_size": state_size, "name": "joint_states", "type": "sensor_msgs/JointState"},
         {"channel_id": 1, "pdu_size": state_size, "name": "vehicle_states", "type": "sensor_msgs/MultiDOFJointState"},
+        # The latest contact events of everyone (the plant keeps a window of them).
+        {"channel_id": 2, "pdu_size": 16384, "name": "contact_events", "type": "hako_msgs/ContactEventArray"},
     ]
     command_path = config / "people-command-pdutypes.json"
     state_path = config / "people-state-pdutypes.json"

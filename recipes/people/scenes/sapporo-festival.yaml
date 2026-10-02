@@ -1,0 +1,77 @@
+# さっぽろ駅前祭り: what apps/people/festival_director.py does with the people and
+# cars of the Composition `sapporo-festival` (the Sapporo Station south plaza
+# made into a festival street in Environment Studio). Places are City World
+# ENU metres (east, north).
+schema: hakoniwa.people-scene/v1
+id: sapporo-festival
+
+places:
+  # In front of the stalls of the north row (facing south) and the south row
+  # (facing north), across the aisle that runs east-west at north -36 (west
+  # of the plaza's underground entrance, which stands at east -85..-70).
+  stall-n1: [-114, -33.2]
+  stall-n2: [-110, -33.2]
+  stall-n3: [-106, -33.2]
+  stall-n4: [-94, -33.2]
+  stall-n5: [-90, -33.2]
+  stall-s1: [-116, -39.2]
+  stall-s2: [-112, -39.2]
+  stall-s3: [-108, -39.2]
+  stall-s4: [-96, -39.2]
+  stall-s5: [-92, -39.2]
+  stall-s6: [-88, -39.2]
+  # The aisle's ends and the plaza.
+  aisle-east: [-86, -36]
+  aisle-west: [-119, -36]
+  aisle-middle: [-101, -36]
+  plaza-north: [-66, -28]
+
+# The two squares open onto the aisle: people sit at their tables (stools
+# around each table, in the square's own frame as Environment Studio builds it).
+squares:
+  - {pose: [-102, -44.6, 0]}       # にぎやか
+  - {pose: [-100, -27.4, 180]}     # シンプル
+tables:
+  - {center: [-0.9, 0.35], stool_radius_m: 0.72}
+  - {center: [1.25, -0.45], stool_radius_m: 0.72}
+seating: {chance: 0.6, sit_sec: [20, 45]}
+
+queues:
+  # People line up at the stalls, along each stall's front (the head of the
+  # line is served, the others wait and step up).
+  "stall-n*": {along: [1.0, 0.0], spacing_m: 0.85, max: 4, serve_sec: [4, 9]}
+  "stall-s*": {along: [-1.0, 0.0], spacing_m: 0.85, max: 4, serve_sec: [4, 9]}
+
+personal_space_m: 0.9    # people keep about this far apart while walking
+
+roles:
+  staff: {match: "Staff-*", wave_every_sec: [6, 14]}
+  visitor: {match: ["Visitor-*", "Passerby-*"], speed: 1.1, stay_sec: [3, 9], wave_chance: 0.25}
+  child: {match: "Child-*", speed: 1.5, stay_sec: [1, 4], wave_chance: 0.5}
+
+rides:
+  # The shuttle's driver, a stall's staff.
+  - {person: Staff-8, vehicle: Patrol-1, seat: driver}
+
+vehicles:
+  # Delivery-1 is driven by a person with a PS5 controller (control rc): the
+  # director only watches it for near misses and contacts.
+  Patrol-1:
+    # A shuttle through the plaza and Kita 5-jo: west behind the south row of
+    # stalls (north -50.5) with a stop right behind the lively square, out to
+    # the road at the west end, east on the far side (north -71.5, well south
+    # of the bus island at east -84..-57, north -60..-66) with a stop at the east end. At each
+    # stop the rider gets off and a visitor nearby walks over and gets on.
+    route: [[-40, -56], [-62, -51], [-101, -50.5], [-118, -51], [-121, -57], [-114, -66], [-104, -71],
+            [-90, -71.5], [-60, -71.5], [-25, -69], [-15, -63], [-22, -57.5]]
+    stops: {2: 14, 9: 10}        # waypoint index: seconds stopped (shuttle stops)
+    # Riders from the aisle walk out at its west end and round the stalls.
+    shuttle: {seat: passenger, board_within_m: 30, via: [[-119, -37], [-120, -48]], via_unless_north_below: -43}
+    speed: 2.0
+    wheelbase_m: 1.55
+    max_steering_rad: 0.70
+
+safety:
+  slow_within_m: 6.0      # a person ahead (within the car's width): slow down
+  stop_within_m: 2.5      # closer: stop
+  near_miss_m: 1.5        # a moving car this close to a person: a near miss

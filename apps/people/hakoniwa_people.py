@@ -43,7 +43,7 @@ from urban_car import HakoniwaPollingTransport  # noqa: E402
 
 PLANT_ASSET = "HakoniwaPeople"
 STATE_ROBOT = "UrbanPeople"
-ANIMATIONS = ("auto", "walk", "idle", "wave", "sit")
+ANIMATIONS = ("auto", "walk", "idle", "wave", "sit", "talk", "sit_talk")
 
 
 class PersonPose(NamedTuple):
@@ -63,7 +63,7 @@ class PeopleClient:
         if not self.pdu_def.is_file():
             raise PeopleError(f"PDU definition not found: {self.pdu_def}")
         self.state_robot = state_robot
-        self._last_contacts: dict[str, tuple] = {}
+        self._seen_contacts: set[tuple] = set()
         self._transport = HakoniwaPollingTransport(self.pdu_def, plant_asset)
 
     def __enter__(self) -> "PeopleClient":
@@ -203,40 +203,53 @@ class PeopleClient:
         touching a car ("vehicle"), another person or the city ("static"), when
         it starts (started true, with the relative speed in m/s) and when it
         ends, with time_sec (Hakoniwa time), self, other, kind and position.
-        Each person's latest event is read, so two events of one person
-        between calls show only the newer; the full record is the plant's
-        contact log (JSONL)."""
-        fresh = []
-        for name in self.names():
-            event = self.contact(name)
-            if event is None:
-                continue
-            key = (event["time_sec"], event["other"], event["started"])
-            if self._last_contacts.get(name) != key:
-                self._last_contacts[name] = key
-                fresh.append(event)
+        Read from the latest events the plant publishes
+        (hako_msgs/ContactEventArray): nothing is missed while fewer than its
+        window happen between calls; the full record is the contact log."""
+        raw = self._transport.read(self.state_robot, "contact_events")
+        if not raw:
+            return []
+        self._use_registry()
+        from pdu.python.hako_msgs.pdu_conv_ContactEventArray import pdu_to_py_ContactEventArray
+
+        try:
+            events = [self._event(event) for event in pdu_to_py_ContactEventArray(raw).events]
+        except (IndexError, TypeError, ValueError, UnicodeDecodeError):
+            return []
+        fresh = [event for event in events if event["self"] and self._event_key(event) not in self._seen_contacts]
+        self._seen_contacts.update(self._event_key(event) for event in fresh)
         return sorted(fresh, key=lambda event: event["time_sec"])
+
+    @staticmethod
+    def _event_key(event: dict) -> tuple:
+        return event["self"], event["other"], event["started"], round(event["time_sec"], 4)
+
+    @staticmethod
+    def _use_registry() -> None:
+        registry = str(Path(__file__).resolve().parents[3] / "hakoniwa-pdu-registry")
+        if registry not in sys.path:
+            sys.path.insert(0, registry)
+
+    @staticmethod
+    def _event(event) -> dict:
+        return {"time_sec": event.stamp.sec + event.stamp.nanosec / 1e9, "self": event.self_name,
+                "other": event.other_name, "kind": event.other_kind, "started": bool(event.started),
+                "position": {"east_m": event.position.x, "north_m": event.position.y, "up_m": event.position.z},
+                "relative_speed": event.relative_speed}
 
     def contact(self, name: str) -> dict | None:
         """The person's latest contact event (hako_msgs/ContactEvent), or None."""
         raw = self._transport.read(name, "contact")
         if not raw:
             return None
-        registry = str(Path(__file__).resolve().parents[3] / "hakoniwa-pdu-registry")
-        if registry not in sys.path:
-            sys.path.insert(0, registry)
+        self._use_registry()
         from pdu.python.hako_msgs.pdu_conv_ContactEvent import pdu_to_py_ContactEvent
 
         try:
             event = pdu_to_py_ContactEvent(raw)
         except (IndexError, TypeError, ValueError, UnicodeDecodeError):
             return None
-        if not event.self_name:
-            return None
-        return {"time_sec": event.stamp.sec + event.stamp.nanosec / 1e9, "self": event.self_name,
-                "other": event.other_name, "kind": event.other_kind, "started": bool(event.started),
-                "position": {"east_m": event.position.x, "north_m": event.position.y, "up_m": event.position.z},
-                "relative_speed": event.relative_speed}
+        return self._event(event) if event.self_name else None
 
     def simulation_time(self) -> float:
         return self._transport.simulation_time_sec()
