@@ -26,6 +26,17 @@ dimensions:
 spawn:
   ground_clearance_m: 0.0
 controls:
-  api:
-    # An outside program (an agent, a script) moves it by name.
+  external:
+    # An outside program (an agent, a script) moves it by name through the
+    # Hakoniwa People API (apps/people/hakoniwa_people.py).
     external: true
+  api:
+    # Rides a car as a car route scenario's people: section says
+    # (apps/people/ride_plan.py): waits, gets on the car standing at its stop,
+    # gets off at its destination. One process for everyone in the scenario.
+    program: ${repo:hakoniwa-urban-mobility}/apps/people/ride_plan.py
+    scope: composition
+    args: ["${param.scenario}", "--people-pdu-def", "${runtime.pdu_def}",
+           "--car-pdu-def", "${runtime.car_pdu_def}", "--log", "${runtime.ride_log}"]
+    params:
+      scenario: {type: path, required: true, kinds: [car-route-scenario]}

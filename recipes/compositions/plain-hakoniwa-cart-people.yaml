@@ -15,17 +15,17 @@ vehicles:
     spawn: {east_m: 0.0, north_m: 0.0, yaw_deg: 90.0}
   - name: Person-1
     asset: hakoniwa-person-staff
-    control: api
+    control: external
     spawn: {east_m: 2.5, north_m: 1.0, yaw_deg: 180.0}
   - name: Person-2
     asset: hakoniwa-person-visitor
-    control: api
+    control: external
     spawn: {east_m: -2.5, north_m: 1.0, yaw_deg: 0.0}
   - name: Person-3
     asset: hakoniwa-person-passerby
-    control: api
+    control: external
     spawn: {east_m: 2.5, north_m: -1.5, yaw_deg: 180.0}
   - name: Person-4
     asset: hakoniwa-person-child
-    control: api
+    control: external
     spawn: {east_m: -2.5, north_m: -1.5, yaw_deg: 0.0}

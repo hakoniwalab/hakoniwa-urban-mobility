@@ -280,6 +280,23 @@ def car_runtime(work: Path):
     )
 
 
+def people_runtime(work: Path):
+    """Controls runtime for the people simulator (tools/urban_people.py) under a Recipe root."""
+    import multi_car
+    import urban_controls
+    import urban_people
+
+    return urban_controls.Runtime(
+        values={
+            "pdu_def": work / "config/people/people-pdudef.json",
+            "car_pdu_def": work / "config/car/urban-car-pdudef.json",
+            "ride_log": work / "logs/people-rides.jsonl",
+        },
+        service_asset=urban_people.PLANT_NAME,
+        python=str(multi_car.foundation_python()),
+    )
+
+
 def drone_runtime(paths: object, pdu_def: Path):
     """Controls runtime for the Drone simulator configured in drone_one paths."""
     import drone_one
@@ -430,7 +447,7 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     import urban_controls
     import urban_realtime
 
-    runtimes = {"ackermann-mujoco": car_runtime(target.work)}
+    runtimes = {"ackermann-mujoco": car_runtime(target.work), "hakoniwa-people": people_runtime(target.work)}
     conductor, drone_services = "urban-car-fleet-plant", ()
     if target.use_case == "drone-car-distributed":
         runtimes["drone-core"] = drone_runtime(

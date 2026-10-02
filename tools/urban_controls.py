@@ -192,6 +192,9 @@ def control_processes(
     """Return one process per vehicle-scoped control and per distinct composition-scoped one."""
     processes: list[dict] = []
     seen_composition: dict[str, list[dict]] = {}
+    # Composition-scoped programs already started, across Assets: people of
+    # different looks riding one scenario share one process.
+    started: set[tuple] = set()
     indexes: dict[str, int] = {}
     for vehicle in composition.vehicles:
         if vehicle.asset.controls()[vehicle.control].get("external") is True:
@@ -203,6 +206,10 @@ def control_processes(
         indexes[simulator] = index + 1
         process = control_process(composition, vehicle, index, runtimes[simulator])
         if vehicle.asset.controls()[vehicle.control].get("scope", "vehicle") == "composition":
+            signature = (process["command"], tuple(process["args"]))
+            if signature in started:
+                continue
+            started.add(signature)
             # Vehicles with identical args share one process (for example one
             # scenario executor per route); different args start another one.
             variants = seen_composition.setdefault(process["name"], [])
