@@ -57,22 +57,30 @@ vehicles:
   # Delivery-1 is driven by a person with a PS5 controller (control rc): the
   # director only watches it for near misses and contacts.
   Patrol-1:
-    # A shuttle through the plaza and Kita 5-jo: west behind the south row of
-    # stalls (north -50.5) with a stop right behind the lively square, out to
-    # the road at the west end, east on the far side (north -71.5, well south
-    # of the bus island at east -84..-57, north -60..-66) with a stop at the east end. At each
-    # stop the rider gets off and a visitor nearby walks over and gets on.
-    route: [[-40, -56], [-62, -51], [-101, -50.5], [-118, -51], [-121, -57], [-114, -66], [-104, -71],
-            [-90, -71.5], [-60, -71.5], [-25, -69], [-15, -63], [-22, -57.5]]
-    stops: {2: 14, 9: 10}        # waypoint index: seconds stopped (shuttle stops)
-    # Riders from the aisle or the lively square (its back is furnished) walk
-    # out at the aisle's west end and round the stalls.
-    shuttle: {seat: passenger, board_within_m: 30, via: [[-119, -37], [-120, -48]], via_unless_north_below: -47.5}
-    speed: 2.0
+    # A shuttle round the stalls, counter-clockwise: east behind the south
+    # row (north -50.5), north past the underground entrance (east -64),
+    # west between the station and the north row (north -23, then -28 under
+    # the corner structure at east -120..-110), south past the aisle's west
+    # mouth (east -121.5). Two stops with their signs (Environment Studio's
+    # 箱庭シャトル停留所): behind the lively square and at the aisle's west
+    # mouth. At each stop the rider gets off and a visitor nearby gets on.
+    route: [[-121.5, -50.5], [-101, -50.5], [-72, -50.5], [-64, -45], [-64, -30], [-70, -23.5],
+            [-95, -23], [-106, -23], [-110.8, -28.1], [-121.5, -28.5], [-121.5, -36], [-121.5, -45]]
+    stops: {1: 14, 10: 14}       # waypoint index: seconds stopped (shuttle stops)
+    shuttle:
+      seat: passenger
+      board_within_m: 30
+      # Boarders for the stop behind the lively square come from the aisle
+      # round its west end (the square's back is furnished), unless already
+      # south of the square; the west stop is right at the aisle's mouth.
+      via: {1: [[-119, -37], [-120, -48]]}
+      via_unless_north_below: -47.5
+    speed: 1.6
     wheelbase_m: 1.55
     max_steering_rad: 0.70
 
 safety:
   slow_within_m: 6.0      # a person ahead (within the car's width): slow down
   stop_within_m: 2.5      # closer: stop
+  path_half_width_m: 1.2  # "ahead": this far either side of the car's centre line
   near_miss_m: 1.5        # a moving car this close to a person: a near miss
