@@ -1,0 +1,31 @@
+# The 箱庭カート (four seats) and four 箱庭人間 on the plain ground. The people
+# are moved from outside (apps/people/hakoniwa_people.py with the PDU
+# definition under the Car Recipe's config/people/) and get on with
+# `ride Cart-1/driver`, `Cart-1/passenger`, `Cart-1/rear_left`, `Cart-1/rear_right`;
+# the cart is driven with a PS5 controller.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/plain-hakoniwa-cart-people.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/plain-hakoniwa-cart-people.yaml
+schema: hakoniwa.composition/v1
+id: plain-hakoniwa-cart-people
+world: plain-ground
+vehicles:
+  - name: Cart-1
+    asset: hakoniwa-cart
+    control: rc
+    spawn: {east_m: 0.0, north_m: 0.0, yaw_deg: 90.0}
+  - name: Person-1
+    asset: hakoniwa-person-staff
+    control: api
+    spawn: {east_m: 2.5, north_m: 1.0, yaw_deg: 180.0}
+  - name: Person-2
+    asset: hakoniwa-person-visitor
+    control: api
+    spawn: {east_m: -2.5, north_m: 1.0, yaw_deg: 0.0}
+  - name: Person-3
+    asset: hakoniwa-person-passerby
+    control: api
+    spawn: {east_m: 2.5, north_m: -1.5, yaw_deg: 180.0}
+  - name: Person-4
+    asset: hakoniwa-person-child
+    control: api
+    spawn: {east_m: -2.5, north_m: -1.5, yaw_deg: 0.0}
