@@ -9,6 +9,10 @@ hakoniwa-mbody-registry). Per person it reads, every step:
   walks. angular.z (rad/s, left positive) turns it while it stands.
 - ``<name>/animation`` (std_msgs/String): ``auto`` (or empty: walk while
   moving, idle otherwise), ``walk``, ``idle``, ``wave`` or ``sit``.
+- ``<name>/ride`` (std_msgs/String): ``<vehicle>/<seat>`` (for example
+  ``Car-1/driver``) to sit on a car's seat and go with it; empty to get off
+  (beside the seat). Riders follow the car's pose (the Car fleet's
+  vehicle_states) and do not collide while they ride.
 
 and it writes, for all people, the same state PDUs as the Urban Car fleet so
 the browser viewer shows them unchanged:
@@ -38,6 +42,8 @@ MOVING_M_S = 0.05
 TURN_GAIN = 5.0
 MAX_TURN_RAD_S = 3.0
 STEP_M = 0.32           # what a person steps up onto (the body's collider starts there)
+HIP_M = 0.66            # an adult's hip above the feet (the body's hip joints)
+GET_OFF_M = 0.75        # how far beside its seat a rider gets off
 
 
 @dataclass
@@ -121,13 +127,20 @@ class PeoplePlant:
                 "slide_y": joint("slide_y_joint").dofadr[0],
                 "turn_qpos": turn.qposadr[0],
                 "actuators": (actuator("move_x"), actuator("move_y"), actuator("turn")),
-            "lift": actuator("lift"),
-            "slide_z_qpos": joint("slide_z_joint").qposadr[0],
+                "lift": actuator("lift"),
+                "slide_x_qpos": joint("slide_x_joint").qposadr[0],
+                "slide_y_qpos": joint("slide_y_joint").qposadr[0],
+                "slide_z_qpos": joint("slide_z_joint").qposadr[0],
+                "collision": self.model.geom(f"{name}/person_collision").id,
+                "spawn_xy": tuple(float(v) for v in self.model.body(f"{name}/person").pos[:2]),
                 "command": (0.0, 0.0, 0.0),
                 "animation": "auto",
+                "ride": "",
+                "riding": None,  # (vehicle, seat offset) while riding
                 "gait": Gait(),
                 "angles": {joint: 0.0 for joint in LIMB_JOINTS},
             })
+        self.vehicle_poses = {}
         mujoco.mj_forward(self.model, self.data)
         # Stand each person on the ground under its spawn.
         for person in self.people:
@@ -172,6 +185,33 @@ class PeoplePlant:
                 except (IndexError, TypeError, ValueError, UnicodeDecodeError):
                     text = ""
                 person["animation"] = text if text in ANIMATIONS else "auto"
+            raw = pdu.read_pdu_raw_data(person["name"], "ride")
+            if raw:
+                try:
+                    person["ride"] = str(pdu_to_py_String(raw).data).strip()
+                except (IndexError, TypeError, ValueError, UnicodeDecodeError):
+                    pass
+        self.read_vehicles(pdu)
+
+    def read_vehicles(self, pdu) -> None:
+        """The cars' poses (MuJoCo frame) for riders."""
+        self.vehicle_poses = {}
+        robot = self.config.get("vehicle_state_robot")
+        if not robot or not any(person["ride"] or person["riding"] for person in self.people):
+            return
+        from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_MultiDOFJointState import pdu_to_py_MultiDOFJointState
+
+        raw = pdu.read_pdu_raw_data(robot, "vehicle_states")
+        if not raw:
+            return
+        try:
+            state = pdu_to_py_MultiDOFJointState(raw)
+        except (IndexError, TypeError, ValueError):
+            return
+        for name, transform in zip(state.joint_names, state.transforms):
+            q, p = transform.rotation, transform.translation
+            yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y ** 2 + q.z ** 2))
+            self.vehicle_poses[name] = (float(p.x), float(p.y), float(p.z), yaw)
 
     def write_states(self, pdu) -> None:
         from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_JointState import py_to_pdu_JointState
@@ -226,9 +266,62 @@ class PeoplePlant:
             self.data.ctrl[person["lift"]] = self.ground_under(person)
         for _ in range(self.substeps):
             self.mujoco.mj_step(self.model, self.data)
+        if any(person["ride"] or person["riding"] for person in self.people):
+            for person in self.people:
+                self.update_ride(person)
+            self.mujoco.mj_forward(self.model, self.data)
         for person in self.people:
             speed = math.hypot(self.data.qvel[person["slide_x"]], self.data.qvel[person["slide_y"]])
-            person["angles"] = animate(person["gait"], person["animation"], speed, dt, person["scale"])
+            mode = "sit" if person["riding"] else person["animation"]
+            person["angles"] = animate(person["gait"], mode, speed, dt, person["scale"])
+
+    def seat(self, ride: str):
+        """(vehicle, seat offset in its body frame) of '<vehicle>/<seat>', or None."""
+        vehicle, _, seat = ride.partition("/")
+        offset = self.config.get("vehicles", {}).get(vehicle, {}).get("seats", {}).get(seat or "driver")
+        return (vehicle, tuple(offset)) if offset is not None and vehicle in self.vehicle_poses else None
+
+    def place(self, person, x: float, y: float, z: float, yaw: float) -> None:
+        sx, sy = person["spawn_xy"]
+        self.data.qpos[person["slide_x_qpos"]] = x - sx
+        self.data.qpos[person["slide_y_qpos"]] = y - sy
+        self.data.qpos[person["slide_z_qpos"]] = z
+        self.data.qpos[person["turn_qpos"]] = yaw
+        self.data.ctrl[person["lift"]] = z
+        for dof in (person["slide_x"], person["slide_y"]):
+            self.data.qvel[dof] = 0.0
+
+    def update_ride(self, person) -> None:
+        if person["ride"] and not person["riding"]:
+            found = self.seat(person["ride"])
+            if found is None:
+                return  # no such car or seat (yet): stay
+            person["riding"] = found
+            self.model.geom_contype[person["collision"]] = 0
+            self.model.geom_conaffinity[person["collision"]] = 0
+        if not person["riding"]:
+            return
+        vehicle, (sx, sy, sz) = person["riding"]
+        pose = self.vehicle_poses.get(vehicle)
+        if pose is None:
+            return
+        x, y, z, yaw = pose
+        c, s = math.cos(yaw), math.sin(yaw)
+        if person["ride"]:
+            # The hip on the seat, the feet below it (the legs swing forward).
+            feet_z = z + sz - HIP_M * person["scale"]
+            self.place(person, x + c * sx - s * sy, y + s * sx + c * sy, feet_z, yaw)
+            return
+        # Get off beside the seat, on the ground, colliding again.
+        side = GET_OFF_M + abs(sy)
+        ox, oy = sx, math.copysign(side, sy if sy else 1.0)
+        self.place(person, x + c * ox - s * oy, y + s * ox + c * oy, 0.0, yaw)
+        person["riding"] = None
+        self.mujoco.mj_kinematics(self.model, self.data)
+        self.data.qpos[person["slide_z_qpos"]] = self.ground_under(person)
+        self.data.ctrl[person["lift"]] = self.data.qpos[person["slide_z_qpos"]]
+        self.model.geom_contype[person["collision"]] = 1
+        self.model.geom_conaffinity[person["collision"]] = 1
 
 
 def run(config: dict) -> int:

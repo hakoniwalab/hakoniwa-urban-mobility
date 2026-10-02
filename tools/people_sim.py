@@ -185,12 +185,15 @@ def world_xml(resolved: dict, city: dict | None = None) -> str:
 
 # --- PDUs -----------------------------------------------------------------------------------
 
-def pdu_files(resolved: dict, config: Path) -> dict[str, Path]:
+def pdu_files(resolved: dict, config: Path, vehicle_states: tuple[str, Path] | None = None) -> dict[str, Path]:
+    """The people's PDU definition; with vehicle_states (the Car fleet's state
+    robot and its pdutypes), the plant also reads the cars' poses (riding)."""
     count = len(resolved["people"])
     state_size = max(4096, 1 << (1024 + 1024 * count - 1).bit_length())
     command_types = [
         {"channel_id": 0, "pdu_size": 48 + PDU_HEADER, "name": "cmd_vel", "type": "geometry_msgs/Twist"},
         {"channel_id": 1, "pdu_size": 256, "name": "animation", "type": "std_msgs/String"},
+        {"channel_id": 2, "pdu_size": 256, "name": "ride", "type": "std_msgs/String"},
     ]
     state_types = [
         {"channel_id": 0, "pdu_size": state_size, "name": "joint_states", "type": "sensor_msgs/JointState"},
@@ -201,12 +204,13 @@ def pdu_files(resolved: dict, config: Path) -> dict[str, Path]:
     multi_car.write_json(command_path, command_types)
     multi_car.write_json(state_path, state_types)
     pdu_def = config / "people-pdudef.json"
-    multi_car.write_json(pdu_def, {
-        "paths": [{"id": "people-command", "path": str(command_path)},
-                  {"id": "people-state", "path": str(state_path)}],
-        "robots": [*[{"name": person["name"], "pdutypes_id": "people-command"} for person in resolved["people"]],
-                   {"name": STATE_ROBOT, "pdutypes_id": "people-state"}],
-    })
+    paths = [{"id": "people-command", "path": str(command_path)}, {"id": "people-state", "path": str(state_path)}]
+    robots = [*[{"name": person["name"], "pdutypes_id": "people-command"} for person in resolved["people"]],
+              {"name": STATE_ROBOT, "pdutypes_id": "people-state"}]
+    if vehicle_states is not None:
+        paths.append({"id": "vehicle-state", "path": str(vehicle_states[1])})
+        robots.append({"name": vehicle_states[0], "pdutypes_id": "vehicle-state"})
+    multi_car.write_json(pdu_def, {"paths": paths, "robots": robots})
     return {"pdu_def": pdu_def, "state_pdu_types": state_path}
 
 

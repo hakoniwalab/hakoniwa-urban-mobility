@@ -13,6 +13,8 @@ people simulation (tools/people_sim.py) and, per person by name,
         people.people()                                       # who is here: look, pose, animation
         people.stop_all()                                     # stand still, animation back to auto
         people.walk_to("Person-1", east=4.0, north=2.0)       # a blocking demo helper
+        people.ride("Person-1", "Car-1", "driver")            # sit on a car's seat and go with it
+        people.get_off("Person-1")
 
 The commands stay until the next one (a person keeps walking until told to
 stop). The command line does the same:
@@ -103,6 +105,23 @@ class PeopleClient:
         if reset_animation:
             self.set_animation(name, "auto")
 
+    def ride(self, name: str, vehicle: str, seat: str = "driver") -> None:
+        """Sit on a car's seat (its Asset's seats: driver, passenger) and go with it."""
+        self._send_text(name, "ride", f"{vehicle}/{seat}")
+
+    def get_off(self, name: str) -> None:
+        """Get off beside the seat, back on the ground."""
+        self._send_text(name, "ride", "")
+
+    def _send_text(self, name: str, pdu: str, text: str) -> None:
+        from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_conv_String import py_to_pdu_String
+        from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_pytype_String import String
+
+        message = String()
+        message.data = text
+        if not self._transport.send(name, pdu, py_to_pdu_String(message)):
+            raise PeopleError(f"cannot send {pdu} to {name}: is it in the simulation?")
+
     def set_velocities(self, velocities: dict[str, tuple[float, float] | tuple[float, float, float]]) -> None:
         """Several people at once: {name: (east, north[, yaw_rate])}."""
         for name, velocity in velocities.items():
@@ -118,13 +137,15 @@ class PeopleClient:
         return [person["name"] for person in self._plant_people()]
 
     def people(self) -> dict[str, dict]:
-        """Who is here: {name: {"look", "pose", "animation"}} (the look as
-        configured: visitor, staff, passerby, child)."""
+        """Who is here: {name: {"look", "pose", "animation", "ride"}} (the look
+        as configured: visitor, staff, passerby, child; ride "<vehicle>/<seat>"
+        or empty)."""
         poses = self.poses()
         result = {}
         for person in self._plant_people():
             name = person["name"]
-            result[name] = {"look": person.get("look"), "pose": poses.get(name), "animation": self.animation(name)}
+            result[name] = {"look": person.get("look"), "pose": poses.get(name), "animation": self.animation(name),
+                            "ride": self._read_text(name, "ride")}
         return result
 
     def animation(self, name: str) -> str:
@@ -137,6 +158,15 @@ class PeopleClient:
         except (IndexError, TypeError, ValueError, UnicodeDecodeError):
             text = ""
         return text if text in ANIMATIONS else "auto"
+
+    def _read_text(self, name: str, pdu: str) -> str:
+        from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_conv_String import pdu_to_py_String
+
+        raw = self._transport.read(name, pdu)
+        try:
+            return str(pdu_to_py_String(raw).data).strip() if raw else ""
+        except (IndexError, TypeError, ValueError, UnicodeDecodeError):
+            return ""
 
     def _plant_people(self) -> list[dict]:
         """The people of the plant config written next to the PDU definition."""
@@ -212,6 +242,12 @@ def parser() -> argparse.ArgumentParser:
     animate = commands.add_parser("animate", help="set an animation")
     animate.add_argument("name")
     animate.add_argument("animation", choices=ANIMATIONS)
+    ride = commands.add_parser("ride", help="sit on a car's seat (with cars in a Composition)")
+    ride.add_argument("name")
+    ride.add_argument("vehicle")
+    ride.add_argument("--seat", default="driver")
+    get_off = commands.add_parser("get-off", help="get off a car")
+    get_off.add_argument("name")
     stop = commands.add_parser("stop", help="stop walking")
     stop.add_argument("name")
     return result
@@ -236,6 +272,10 @@ def main() -> int:
             elif args.command == "walk-to":
                 pose = people.walk_to(args.name, args.east, args.north, args.speed)
                 print(json.dumps(pose._asdict()))
+            elif args.command == "ride":
+                people.ride(args.name, args.vehicle, args.seat)
+            elif args.command == "get-off":
+                people.get_off(args.name)
             elif args.command == "animate":
                 people.set_animation(args.name, args.animation)
             else:

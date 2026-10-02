@@ -197,7 +197,7 @@ class ClientTest(unittest.TestCase):
     def test_people_tells_who_is_here(self):
         with patch.object(self.people, "poses", return_value={"A": "pose-a"}):
             found = self.people.people()
-        self.assertEqual(found["A"], {"look": "staff", "pose": "pose-a", "animation": "auto"})
+        self.assertEqual(found["A"], {"look": "staff", "pose": "pose-a", "animation": "auto", "ride": ""})
         self.assertEqual(found["B"]["look"], "child")
 
 
@@ -246,3 +246,37 @@ class CompositionTest(unittest.TestCase):
         self.people.apply(work, composition, launcher, "urban-car-fleet-plant")
         self.assertEqual([asset["name"] for asset in launcher["assets"]], ["urban-car-fleet-plant"])
         self.assertFalse((work / "config/people").exists())
+
+
+class RideTest(unittest.TestCase):
+    def test_a_rider_goes_with_the_car_and_gets_off_beside_it(self):
+        if not people_sim.PERSON_BODY.is_dir():
+            self.skipTest("hakoniwa-mbody-registry is not beside this repository")
+        try:
+            import mujoco  # noqa: F401
+        except ImportError:
+            self.skipTest("mujoco is not installed")
+        with patch.object(people_sim.urban_manifest, "work_dir", return_value=Path("/w")):
+            resolved = people_sim.load(ROOT / "recipes/people/people-one.yaml")
+        world = Path(tempfile.mkdtemp()) / "world.xml"
+        world.write_text(people_sim.world_xml(resolved), encoding="utf-8")
+        people = plant.PeoplePlant({"world_xml": str(world), "delta_usec": 10000, "people": resolved["people"],
+                                    "vehicles": {"Car-1": {"seats": {"driver": [-0.28, 0.22, 0.58]}}}})
+        person = people.people[0]
+        people.vehicle_poses = {"Car-1": (5.0, 2.0, 0.45, math.pi / 2)}  # MuJoCo x north, facing west
+        person["ride"] = "Car-1/driver"
+        people.step()
+        x, y, z = people.data.xpos[person["body"]]
+        # The seat (-0.28 forward, 0.22 left) of a car facing +y lands at (5 - 0.22, 2 - 0.28).
+        self.assertAlmostEqual(x, 4.78, places=3)
+        self.assertAlmostEqual(y, 1.72, places=3)
+        self.assertAlmostEqual(z, 0.45 + 0.58 - plant.HIP_M, places=3)
+        self.assertEqual(people.model.geom_contype[person["collision"]], 0)
+        self.assertEqual(person["angles"]["hip_left_joint"] < 0, True)  # sitting
+        person["ride"] = ""
+        people.step()
+        x, y, z = people.data.xpos[person["body"]]
+        self.assertAlmostEqual(y, 2.0 - 0.28, places=3)
+        self.assertAlmostEqual(x, 5.0 - (0.22 + plant.GET_OFF_M), places=3)  # its left: -x when facing +y
+        self.assertLess(abs(z), 0.01)
+        self.assertEqual(people.model.geom_contype[person["collision"]], 1)

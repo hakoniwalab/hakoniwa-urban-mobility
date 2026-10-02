@@ -25,6 +25,12 @@ dimensions:
 spawn:
   # Base-frame height above the ground at startup.
   ground_clearance_m: 0.45
+# Where 箱庭人間 sit (tools/urban_people.py): the hip on the seat cushion, in
+# the vehicle body frame (MuJoCo: x forward, y left, z up). The seat top is
+# at 0.64 m; the hip sits a little into the cushion so heads clear the roof.
+seats:
+  driver: [-0.28, 0.22, 0.58]
+  passenger: [-0.28, -0.22, 0.58]
 viewer:
   # Vehicle-mounted camera shown as a picture-in-picture in the Three.js view.
   front_camera:

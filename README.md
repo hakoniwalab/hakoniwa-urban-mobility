@@ -341,6 +341,12 @@ bump into its buildings, but not into the cars (two physics worlds; an
 agent reading both positions keeps them apart), and the viewer shows both.
 The people's PDU definition is the Car Recipe's `config/people/people-pdudef.json`.
 
+People ride the cars whose Asset declares `seats` (the golf cart: `driver`,
+`passenger`): `people.ride("Person-1", "Car-1", "driver")` (the
+`<name>/ride` PDU, `std_msgs/String` "Car-1/driver") seats the person, who
+then follows the car's pose in the sit pose without colliding;
+`people.get_off("Person-1")` puts it beside its seat, back on the ground.
+
 ## Why this repository exists
 
 Urban scenarios cross component boundaries:
