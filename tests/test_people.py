@@ -52,6 +52,16 @@ class AnimationTest(unittest.TestCase):
         for _ in range(200):
             sitting = plant.animate(gait, "sit", 0.0, 0.01)
         self.assertAlmostEqual(sitting["hip_left_joint"], math.radians(-90))
+        self.assertAlmostEqual(sitting["knee_left_joint"], math.radians(90))
+
+    def test_the_trailing_leg_bends_its_knee(self):
+        gait = plant.Gait()
+        for _ in range(40):
+            angles = plant.animate(gait, "walk", 1.2, 0.01)
+            back = "left" if angles["hip_left_joint"] > 0 else "right"
+            front = "right" if back == "left" else "left"
+            self.assertGreaterEqual(angles[f"knee_{back}_joint"], 0.0)
+            self.assertEqual(angles[f"knee_{front}_joint"], 0.0)
 
     def test_unknown_animation_falls_back_to_auto(self):
         self.assertEqual(plant.animate(plant.Gait(), "dance", 0.0, 0.01),
