@@ -544,25 +544,22 @@ def _car_inputs(
     cars = _route_cars(composition, cars)
     types = []
     type_names: dict[str, str] = {}
-    front_camera = None
     for car in cars:
         asset = car.asset
         if asset.id in type_names:
             continue
         type_names[asset.id] = asset.id.replace("-", "_")
         model = asset.data["model"]
+        camera = asset.data.get("viewer", {}).get("front_camera")
         types.append({
             "type": type_names[asset.id],
             "mjcf": str(asset.resolve(model["physics"])),
             "contract": str(asset.resolve(model["contract"])),
             "view_model": str(asset.resolve(model["visual"])),
+            # Each car type its own vehicle-mounted camera (a golf cart and a
+            # delivery car see from different places).
+            **({"front_camera": camera} if camera is not None else {}),
         })
-        camera = asset.data.get("viewer", {}).get("front_camera")
-        if camera is not None:
-            if front_camera is not None and camera != front_camera:
-                # multi_car.py applies one front camera to every vehicle type.
-                raise CompositionError("Car Assets with different front cameras are not adapted yet")
-            front_camera = camera
 
     vehicles = {
         "types": types,
@@ -594,8 +591,11 @@ def _car_inputs(
         "http_port": int(composition.viewer.get("http_port", DEFAULT_HTTP_PORT)),
         "threejs_root": str((urban_assets.WORKSPACE / "hakoniwa-threejs-drone").resolve()),
     }
-    if front_camera is not None:
-        visualization["front_camera"] = front_camera
+    # One camera for every car type: also the composition-wide one (as before
+    # car types had their own).
+    cameras = [entry.get("front_camera") for entry in types]
+    if cameras and cameras[0] is not None and all(camera == cameras[0] for camera in cameras):
+        visualization["front_camera"] = cameras[0]
     return {
         "business_pack_city_receipt": {"path": str(city_receipt(composition))},
         "ackermann_vehicles": vehicles,

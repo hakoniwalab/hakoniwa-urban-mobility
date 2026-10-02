@@ -188,6 +188,18 @@ class CarCompositionTest(Fixture):
             entry["params"] = {"scenario": scenario}
         return entry
 
+    def test_car_types_bring_their_own_front_cameras(self):
+        golf_cart = self.car("Car-1")
+        delivery = {**self.car("Car-2", east=5.0), "asset": "hakoniwa-car"}
+        config = urban_composition.to_car_config(self.load(self.composition(vehicles=[golf_cart, delivery])),
+                                                 "urban-car-rc")
+        types = {entry["type"]: entry for entry in config["inputs"]["ackermann_vehicles"]["types"]}
+        self.assertEqual(types["golf_cart"]["front_camera"]["position"], [1.25, 0.0, 1.25])
+        self.assertEqual(types["hakoniwa_car"]["front_camera"]["position"], [1.15, 0.0, 0.80])
+        # Different cameras: none composition-wide.
+        self.assertNotIn("front_camera", config["inputs"]["browser_visualization"])
+        self.assertIn("hakoniwa_car/generated/view-model.json", types["hakoniwa_car"]["view_model"])
+
     def test_api_cars_share_one_auto_started_route_scenario(self):
         scenario = str(ROOT / "recipes/scenarios/golf-cart-demo-loop.yaml")
         config = urban_composition.to_car_config(self.load(self.composition(vehicles=[

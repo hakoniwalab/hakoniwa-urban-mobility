@@ -1,0 +1,64 @@
+# Asset manifest (docs/asset-contract.md). The Hakoniwa Car: a small delivery
+# vehicle (cab, cargo box, roof LiDAR) built from primitives in
+# hakoniwa-mbody-registry; this manifest only declares how Urban uses it.
+schema: hakoniwa.asset/v1
+id: hakoniwa-car
+kind: vehicle
+category: car
+version: 0.1.0
+title: Hakoniwa Car（配送ロボット）
+source:
+  repository: hakoniwa-mbody-registry
+simulator: ackermann-mujoco
+model:
+  physics: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car/generated/model.minimal_world.xml
+  contract: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car/config/ackermann-forge.yaml
+  visual: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car/generated/view-model.json
+# Urban Studio preview (tools/asset_preview.py).
+preview:
+  format: view-model
+  path: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car/generated/view-model.json
+# Outer size from the MJCF collision geometry (bounding box); route checks
+# keep half the width plus a margin off building walls (tools/route_check.py).
+dimensions:
+  width_m: 1.20
+  length_m: 2.20
+spawn:
+  # Base-frame height above the ground at startup.
+  ground_clearance_m: 0.45
+viewer:
+  # Vehicle-mounted camera shown as a picture-in-picture in the Three.js view.
+  front_camera:
+    # The camera above the windshield (between the two eye lights and the roof).
+    position: [1.15, 0.0, 0.80]
+    rpy: [0.0, 0.0, 0.0]
+    fov: 72
+    near: 0.1
+    far: 500
+    borderColor: "#ffffff"
+    borderWidthPx: 3
+    window:
+      x: 0.70
+      y: 0.70
+      width: 0.28
+      height: 0.28
+controls:
+  rc:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/ps5_ackermann_sender.py
+    scope: vehicle
+    args: ["--pdu-def", "${runtime.pdu_def}", "--rc-config", "${runtime.rc_config}",
+           "--robot", "${vehicle.name}", "--pdu", "ackermann_cmd",
+           "--max-speed", "${param.max_speed}",
+           "--max-steering-angle", "${param.max_steering_angle}",
+           "--deadzone", "${param.deadzone}"]
+    params:
+      max_speed: {type: number, default: 3.0}
+      max_steering_angle: {type: number, default: 0.60}
+      deadzone: {type: number, default: 0.06}
+  api:
+    program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
+    scope: composition
+    # One executor drives every api Car named in the scenario.
+    args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}"]
+    params:
+      scenario: {type: path, required: true, kinds: [car-route-scenario]}
