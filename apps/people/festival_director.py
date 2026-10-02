@@ -103,7 +103,10 @@ class Director:
                 # Round the stalls by the shuttle's via points (in order), unless
                 # already on the car's side of them.
                 beyond = shuttle.get("via_unless_north_below")
-                default = [] if beyond is not None and pose.north_m < beyond else list(shuttle.get("via", []))
+                via_spec = shuttle.get("via", [])
+                if isinstance(via_spec, dict):  # per stop: {waypoint index: [points]}
+                    via_spec = via_spec.get(self.routes[self.boarding[name]].get("stop_index"), [])
+                default = [] if beyond is not None and pose.north_m < beyond else list(via_spec)
                 via = plan.setdefault("via", default)
                 while via and math.hypot(via[0][0] - pose.east_m, via[0][1] - pose.north_m) < 1.0:
                     via.pop(0)
@@ -363,6 +366,7 @@ class Director:
     def at_stop(self, now: float, name: str, spec: dict, state: dict, poses: dict, pose) -> None:
         """A shuttle stop: the rider gets off, a visitor nearby walks over to get on."""
         shuttle = spec.get("shuttle")
+        state["stop_index"] = state["index"]
         if not shuttle:
             self.record("stop", vehicle=name, seconds=spec["stops"][state["index"]])
             return
@@ -449,12 +453,15 @@ class Director:
             # People ahead: slow down, stop; a moving car close to someone is a near miss.
             nearest = math.inf
             c, s = math.cos(pose.yaw_rad), math.sin(pose.yaw_rad)
+            # Only people in the car's path count (half its width and a margin
+            # each side); the staff stay inside their stalls, off the road.
+            path = safety.get("path_half_width_m", 1.2)
             for person, ppose in poses.items():
-                if person in self.riding or person == state["boarding"]:
+                if person in self.riding or person == state["boarding"] or self.roles.get(person) == "staff":
                     continue
                 rx, ry = ppose.east_m - pose.east_m, ppose.north_m - pose.north_m
                 ahead, side = rx * c + ry * s, -rx * s + ry * c
-                if 0 < ahead and abs(side) < 1.6:
+                if 0 < ahead and abs(side) < path:
                     nearest = min(nearest, ahead - 1.1)
             if nearest < safety.get("stop_within_m", 2.5):
                 speed = 0.0
