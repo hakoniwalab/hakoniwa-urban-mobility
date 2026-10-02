@@ -8,7 +8,7 @@ people simulation (tools/people_sim.py) and, per person by name,
     with people:
         people.set_velocity("Person-1", east=1.0, north=0.0)   # m/s, City World ENU
         people.set_animation("Person-1", "wave")              # auto | walk | idle | wave | sit
-        people.poses()["Person-1"]                            # east, north, yaw (ENU)
+        people.poses()["Person-1"]                            # east, north, yaw (ENU), up
         people.walk_to("Person-1", east=4.0, north=2.0)       # a small helper on top
 
 The commands stay until the next one (a person keeps walking until told to
@@ -44,6 +44,7 @@ class PersonPose(NamedTuple):
     east_m: float
     north_m: float
     yaw_rad: float  # ENU: 0 faces east, counter-clockwise positive
+    up_m: float = 0.0  # the feet's height (the ground, a deck)
 
 
 class PeopleError(RuntimeError):
@@ -106,7 +107,8 @@ class PeopleClient:
         for name, transform in zip(state.joint_names, state.transforms):
             q, p = transform.rotation, transform.translation
             yaw_mjcf = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y ** 2 + q.z ** 2))
-            result[name] = PersonPose(-float(p.y), float(p.x), math.atan2(math.cos(yaw_mjcf), -math.sin(yaw_mjcf)))
+            result[name] = PersonPose(-float(p.y), float(p.x), math.atan2(math.cos(yaw_mjcf), -math.sin(yaw_mjcf)),
+                                      float(p.z))
         return result
 
     def simulation_time(self) -> float:

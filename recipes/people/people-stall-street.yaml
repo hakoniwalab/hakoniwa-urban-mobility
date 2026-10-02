@@ -1,0 +1,12 @@
+# Five 箱庭人間 in the stall street of Environment Studio
+# (recipes/examples/stall-street.yaml): they bump into the stalls and step up
+# onto the squares' decks. configure writes the street as a City World first.
+schema: hakoniwa.people/v1
+id: people-stall-street
+environment: "{workspace}/hakoniwa-environment-studio/recipes/examples/stall-street.yaml"
+people:
+  - {name: Person-1, look: staff, spawn: {east_m: -8, north_m: 3.2, yaw_deg: -90}}
+  - {name: Person-2, look: visitor, spawn: {east_m: -13, north_m: 1, yaw_deg: 0}}
+  - {name: Person-3, look: passerby, spawn: {east_m: 10, north_m: 0.5, yaw_deg: 180}}
+  - {name: Person-4, look: child, spawn: {east_m: 4, north_m: 1, yaw_deg: 180}}
+  - {name: Person-5, look: visitor, spawn: {east_m: -7.2, north_m: -6.2, yaw_deg: 90}}

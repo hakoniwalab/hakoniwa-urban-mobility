@@ -112,7 +112,34 @@ class RecipeTest(unittest.TestCase):
         except ImportError:
             return
         model = mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
-        self.assertEqual(model.nu, 9)
+        self.assertEqual(model.nu, 12)  # move_x, move_y, lift, turn per person
+
+    def test_people_join_a_city_world_and_its_files_still_resolve(self):
+        if not people_sim.PERSON_BODY.is_dir():
+            self.skipTest("hakoniwa-mbody-registry is not beside this repository")
+        build = Path(tempfile.mkdtemp()) / "job/build"
+        (build / "world").mkdir(parents=True)
+        (build / "components").mkdir()
+        (build / "components/ground.hf").write_bytes(b"")
+        mjcf = build / "world/city-world.xml"
+        mjcf.write_text(
+            '<mujoco model="town"><asset><hfield name="ground" file="../components/ground.hf" nrow="2" ncol="2" '
+            'size="5 5 0.01 0.1"/></asset><worldbody><geom name="wall" type="box" size="0.1 2 1" pos="3 0 1"/>'
+            "</worldbody></mujoco>", encoding="utf-8")
+        receipt = build / "world/city-world-receipt.json"
+        receipt.write_text(
+            '{"mjcf": {"path": "%s"}, "glb": {"path": "%s"}, "coordinate_frame": {"half_extent_m": '
+            '{"north_south": 5, "east_west": 5}, "coordinate_systems": {"mjcf": "X=North,Y=-East,Z=Up"}}}'
+            % (mjcf, build / "world/city-world.glb"), encoding="utf-8")
+        city = people_sim.city_world(receipt)
+        self.assertEqual(city["size_m"], 10.0)
+        with patch.object(people_sim.urban_manifest, "work_dir", return_value=Path("/w")):
+            resolved = people_sim.load(ROOT / "recipes/people/people-one.yaml")
+        root = ET.fromstring(people_sim.world_xml(resolved, city))
+        self.assertEqual(root.find("asset/hfield").get("file"), str((build / "components/ground.hf").resolve()))
+        self.assertEqual({geom.get("name") for geom in root.findall("worldbody/geom")}, {"wall"})
+        self.assertIsNotNone(root.find("worldbody/body[@name='Person-1/person']"))
+        self.assertEqual(root.find("compiler").get("angle"), "degree")
 
 
 if __name__ == "__main__":
