@@ -9,7 +9,10 @@ people simulation (tools/people_sim.py) and, per person by name,
         people.set_velocity("Person-1", east=1.0, north=0.0)   # m/s, City World ENU
         people.set_animation("Person-1", "wave")              # auto | walk | idle | wave | sit
         people.poses()["Person-1"]                            # east, north, yaw (ENU), up
-        people.walk_to("Person-1", east=4.0, north=2.0)       # a small helper on top
+        people.set_velocities({"Person-2": (0.0, 0.5), "Person-3": (-0.3, 0.2)})
+        people.people()                                       # who is here: look, pose, animation
+        people.stop_all()                                     # stand still, animation back to auto
+        people.walk_to("Person-1", east=4.0, north=2.0)       # a blocking demo helper
 
 The commands stay until the next one (a person keeps walking until told to
 stop). The command line does the same:
@@ -93,8 +96,57 @@ class PeopleClient:
         if not self._transport.send(name, "animation", py_to_pdu_String(message)):
             raise PeopleError(f"cannot animate {name}: is it in the simulation?")
 
-    def stop(self, name: str) -> None:
+    def stop(self, name: str, reset_animation: bool = True) -> None:
+        """Stand still; by default also back to the `auto` animation (a forced
+        `walk` would otherwise keep walking on the spot)."""
         self.set_velocity(name, 0.0, 0.0, 0.0)
+        if reset_animation:
+            self.set_animation(name, "auto")
+
+    def set_velocities(self, velocities: dict[str, tuple[float, float] | tuple[float, float, float]]) -> None:
+        """Several people at once: {name: (east, north[, yaw_rate])}."""
+        for name, velocity in velocities.items():
+            self.set_velocity(name, *velocity)
+
+    def stop_all(self, reset_animation: bool = True) -> None:
+        for name in self.names():
+            self.stop(name, reset_animation)
+
+    # --- Discovery -------------------------------------------------------------------
+
+    def names(self) -> list[str]:
+        return [person["name"] for person in self._plant_people()]
+
+    def people(self) -> dict[str, dict]:
+        """Who is here: {name: {"look", "pose", "animation"}} (the look as
+        configured: visitor, staff, passerby, child)."""
+        poses = self.poses()
+        result = {}
+        for person in self._plant_people():
+            name = person["name"]
+            result[name] = {"look": person.get("look"), "pose": poses.get(name), "animation": self.animation(name)}
+        return result
+
+    def animation(self, name: str) -> str:
+        """The animation last commanded (auto until one is sent)."""
+        from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_conv_String import pdu_to_py_String
+
+        raw = self._transport.read(name, "animation")
+        try:
+            text = str(pdu_to_py_String(raw).data).strip() if raw else ""
+        except (IndexError, TypeError, ValueError, UnicodeDecodeError):
+            text = ""
+        return text if text in ANIMATIONS else "auto"
+
+    def _plant_people(self) -> list[dict]:
+        """The people of the plant config written next to the PDU definition."""
+        if not hasattr(self, "_people_config"):
+            config = self.pdu_def.parent / "people-plant.json"
+            try:
+                self._people_config = json.loads(config.read_text(encoding="utf-8"))["people"]
+            except (OSError, KeyError, ValueError) as error:
+                raise PeopleError(f"cannot read the people's config: {config}") from error
+        return self._people_config
 
     def poses(self) -> dict[str, PersonPose]:
         from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_MultiDOFJointState import pdu_to_py_MultiDOFJointState
@@ -118,7 +170,9 @@ class PeopleClient:
 
     def walk_to(self, name: str, east: float, north: float, speed: float = 1.2, tolerance: float = 0.15,
                 timeout_sec: float = 60.0) -> PersonPose:
-        """Walk straight to (east, north), slowing at the end; returns where it stopped."""
+        """Walk straight to (east, north), slowing at the end; returns where it
+        stopped. A demo helper: it blocks until then, one person at a time. To
+        move many people, loop over poses() and set_velocities() instead."""
         deadline = time.monotonic() + timeout_sec
         try:
             while time.monotonic() < deadline:
@@ -142,6 +196,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--pdu-def", type=Path, required=True, help="the people simulation's PDU definition")
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("poses", help="print every person's pose (JSON)")
+    commands.add_parser("people", help="print who is here: look, pose, animation (JSON)")
+    commands.add_parser("stop-all", help="stop everyone (animation back to auto)")
     velocity = commands.add_parser("velocity", help="walk at a velocity (and stop after --duration)")
     velocity.add_argument("name")
     velocity.add_argument("--east", type=float, default=0.0)
@@ -167,6 +223,11 @@ def main() -> int:
         with PeopleClient(args.pdu_def) as people:
             if args.command == "poses":
                 print(json.dumps({name: pose._asdict() for name, pose in people.poses().items()}, indent=2))
+            elif args.command == "people":
+                print(json.dumps({name: {**entry, "pose": entry["pose"]._asdict() if entry["pose"] else None}
+                                  for name, entry in people.people().items()}, indent=2))
+            elif args.command == "stop-all":
+                people.stop_all()
             elif args.command == "velocity":
                 people.set_velocity(args.name, args.east, args.north, args.yaw_rate)
                 if args.duration is not None:

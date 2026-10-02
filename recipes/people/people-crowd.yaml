@@ -1,0 +1,16 @@
+# Ten 箱庭人間 in the stall street: staff at the three stalls, visitors,
+# passers-by and children (apps/people/crowd_demo.py moves them all at once).
+schema: hakoniwa.people/v1
+id: people-crowd
+environment: "{workspace}/hakoniwa-environment-studio/recipes/examples/stall-street.yaml"
+people:
+  - {name: Staff-1, look: staff, spawn: {east_m: -8.6, north_m: 3.6, yaw_deg: -90}}
+  - {name: Staff-2, look: staff, spawn: {east_m: -4.6, north_m: 3.6, yaw_deg: -90}}
+  - {name: Staff-3, look: staff, spawn: {east_m: -0.6, north_m: 3.6, yaw_deg: -90}}
+  - {name: Person-1, look: visitor, spawn: {east_m: -13, north_m: 1, yaw_deg: 0}}
+  - {name: Person-2, look: visitor, spawn: {east_m: 6, north_m: 1.5, yaw_deg: 180}}
+  - {name: Person-3, look: passerby, spawn: {east_m: 10, north_m: 0, yaw_deg: 180}}
+  - {name: Person-4, look: passerby, spawn: {east_m: -11, north_m: -1, yaw_deg: 0}}
+  - {name: Person-5, look: child, spawn: {east_m: 4, north_m: 0.5, yaw_deg: 180}}
+  - {name: Person-6, look: child, spawn: {east_m: 4.6, north_m: 1.2, yaw_deg: 180}}
+  - {name: Person-7, look: visitor, spawn: {east_m: 9, north_m: -3, yaw_deg: 90}}
