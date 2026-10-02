@@ -423,8 +423,9 @@ function vehicleKind(asset) {
 
 const ROUTE_SPACING_M = 6.0; // urban_composition.ADDED_CAR_SPACING_M
 
+// Only Cars drive a route; people riding one (their api control) keep their placement.
 function routeReferenceOf(vehicle) {
-  return vehicle.control === "api" ? vehicle.params?.scenario : undefined;
+  return vehicle.control === "api" && assetById(vehicle.asset)?.category === "car" ? vehicle.params?.scenario : undefined;
 }
 
 // The same geometry as route_geometry.RouteGeometry.sample / heading_rad.
@@ -470,7 +471,7 @@ async function loadRouteStarts() {
   const references = [...new Set(vehicles.map(routeReferenceOf).filter(Boolean))];
   await Promise.all(references.map(async (reference) => {
     if (reference in state.routeData) return;
-    const item = state.scenarios.find((scenario) => scenario.reference === reference);
+    const item = scenarioFor(reference);
     try {
       state.routeData[reference] = item ? (await api("GET", `scenarios/${item.id}`)).scenario : null;
     } catch {
@@ -1276,8 +1277,13 @@ async function initRoute() {
 }
 
 // Compose -> Route: edit the route a Car uses.
+// A Composition may name a route by its ${repo:...} reference or by its file path.
+function scenarioFor(value) {
+  return state.scenarios.find((scenario) => scenario.reference === value || scenario.path === value);
+}
+
 async function editRouteFor(reference) {
-  const item = state.scenarios.find((scenario) => scenario.reference === reference);
+  const item = scenarioFor(reference);
   showTab("route");
   if (item) await openRoute(item.id);
   else newRoute();
@@ -1287,7 +1293,7 @@ async function editRouteFor(reference) {
 function routeParamField(vehicle, name, definition) {
   const composition = state.current.composition;
   const value = vehicle.params[name] ?? "";
-  const known = state.scenarios.some((item) => item.reference === value);
+  const known = Boolean(value) && Boolean(scenarioFor(value));
   const ordered = [...state.scenarios].sort((a, b) =>
     Number(b.world === composition.world) - Number(a.world === composition.world) || a.name.localeCompare(b.name));
   const select = el("select", {
@@ -1302,8 +1308,8 @@ function routeParamField(vehicle, name, definition) {
     !known && value ? el("option", { value }, `（現在）${value}`) : null,
     ...ordered.map((item) => el("option", { value: item.reference },
       `${item.name}（${item.id}）${item.world && item.world !== composition.world ? "・別の World" : item.world ? "" : "・World 未設定"}`)));
-  select.value = value;
-  const chosen = state.scenarios.find((item) => item.reference === value);
+  const chosen = scenarioFor(value);
+  select.value = chosen ? chosen.reference : value;
   const warning = chosen && chosen.world && chosen.world !== composition.world
     ? el("span", { class: "hint error" }, "別の World 用のルートです（座標が合わない可能性があります）")
     : null;
@@ -1312,10 +1318,10 @@ function routeParamField(vehicle, name, definition) {
     ? el("span", { class: "hint error" }, `このルートは ${check.conflicts.length} 区間がこの World の建物の壁にぶつかります（車が止まります）。「ルートを編集」で直してください。`
       + (check.vehicle ? `判定は ${check.vehicle.title}（幅 ${check.vehicle.width_m} m）。` : ""))
     : null;
-  // The route decides where the Car starts; its placed spawn is not used.
-  const note = value
+  // The route decides where a Car starts; its placed spawn is not used. People ride by its people: section.
+  const note = !value ? null : routeReferenceOf(vehicle)
     ? el("span", { class: "hint" }, "初期位置はルートの開始点です（同じルートの2台目以降は、ルートで決めた間隔だけ後ろ）。配置の east / north / yaw は使いません。")
-    : null;
+    : el("span", { class: "hint" }, "このルートの people: 節のとおりに乗り降りします。初期位置は配置の east / north / yaw です。");
   return el("label", { class: "field grow" }, `ルート${definition.required ? " *" : ""}`,
     el("div", { class: "row" }, select,
       el("button", { class: "secondary", onclick: (event) => { event.preventDefault(); editRouteFor(value); } }, "ルートを編集")),
