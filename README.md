@@ -294,6 +294,35 @@ only after a follow-up `GetState` reports `Landed` below the flight altitude.
 This compatibility rule belongs at the Drone adapter boundary and must not leak
 into the later mirror contract.
 
+## Hakoniwa People (箱庭人間) moved from outside
+
+People that an external program (a script, a planner, an AI agent) moves by
+name, as the Urban Car is driven from outside. Each person is the
+`hakoniwa_person` body of hakoniwa-mbody-registry: in MuJoCo a capsule that
+slides and turns; its arms and legs are animated (they swing with the distance
+walked), not simulated. `apps/people/people_plant.py` runs every person in one
+MuJoCo world as the Hakoniwa asset `HakoniwaPeople`.
+
+| PDU | type | |
+|---|---|---|
+| `<name>/cmd_vel` | `geometry_msgs/Twist` | linear.x east, linear.y north (m/s, ENU); the person faces where it walks; angular.z turns it while it stands |
+| `<name>/animation` | `std_msgs/String` | `auto` (walk while moving, idle otherwise), `walk`, `idle`, `wave`, `sit` |
+| `UrbanPeople/vehicle_states` | `sensor_msgs/MultiDOFJointState` | each person's pose (MuJoCo frame, as the car fleet's) |
+| `UrbanPeople/joint_states` | `sensor_msgs/JointState` | the animated `<name>/shoulder_*_joint`, `<name>/hip_*_joint` |
+
+```bash
+python tools/people_sim.py configure --people recipes/people/people-three.yaml
+python tools/people_sim.py start --people recipes/people/people-three.yaml   # prints the viewer URL
+python apps/people/hakoniwa_people.py --pdu-def <work>/people/people-three/config/people-pdudef.json walk-to Person-1 --east 2 --north -4
+python apps/people/hakoniwa_people.py --pdu-def <...>/people-pdudef.json animate Person-2 wave
+python tools/people_sim.py stop --people recipes/people/people-three.yaml
+```
+
+From Python, `PeopleClient` (apps/people/hakoniwa_people.py) offers
+`set_velocity`, `set_animation`, `stop`, `poses` and the helper `walk_to`.
+Commands stay until the next one. People on a plain ground for now; walking
+in a City World among the cars comes next.
+
 ## Why this repository exists
 
 Urban scenarios cross component boundaries:

@@ -1,0 +1,7 @@
+# Three 箱庭人間 (a visitor, a stall's staff and a child) on a plain ground.
+schema: hakoniwa.people/v1
+id: people-three
+people:
+  - {name: Person-1, look: visitor, spawn: {east_m: -2, north_m: 0, yaw_deg: 0}}
+  - {name: Person-2, look: staff, spawn: {east_m: 0, north_m: 2, yaw_deg: -90}}
+  - {name: Person-3, look: child, spawn: {east_m: 2, north_m: 0, yaw_deg: 180}}
