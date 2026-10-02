@@ -142,7 +142,13 @@ def plan(composition_path: Path) -> Plan:
     import urban_composition
 
     composition = load_composition(composition_path)
-    simulators = frozenset(composition.simulators())
+    # 箱庭人間 join the Car route (tools/urban_people.py); the others choose it.
+    people = urban_composition.PEOPLE_SIMULATOR in composition.simulators()
+    simulators = frozenset(composition.simulators()) - {urban_composition.PEOPLE_SIMULATOR}
+    if people and simulators != CAR:
+        raise SimulationError(
+            "箱庭人間 join a Composition of Cars for now"
+            + ("" if simulators else "; run people alone with tools/people_sim.py"))
     if composition.fleets:
         try:
             urban_composition.to_fleet_recipe(composition)
@@ -434,6 +440,9 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     launcher_path = target.work / "config/launcher.json"
     launcher = multi_car.load_json(launcher_path, "configured Launcher")
     urban_controls.apply_controls(launcher, control_processes(composition_path, runtimes))
+    import urban_people
+
+    urban_people.apply(target.work, load_composition(composition_path), launcher, conductor)
     pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
     urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     multi_car.write_json(launcher_path, launcher)

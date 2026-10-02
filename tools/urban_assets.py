@@ -27,8 +27,8 @@ USER_ASSETS = urban_manifest.path("assets.user")
 CITY_WORLD_JOBS = urban_manifest.path("assets.city_world_jobs")
 
 KINDS = {"vehicle", "city", "plain"}
-CATEGORIES = {"car", "drone"}
-SIMULATORS = {"ackermann-mujoco", "drone-core"}
+CATEGORIES = {"car", "drone", "person"}
+SIMULATORS = {"ackermann-mujoco", "drone-core", "hakoniwa-people"}
 CONTROLS = {"rc", "api"}
 SCOPES = {"vehicle", "composition"}
 REPO_REFERENCE = re.compile(r"\$\{repo:([A-Za-z0-9_.-]+)\}")
@@ -104,7 +104,7 @@ def validate(asset: Asset) -> None:
             raise AssetError(f"plain World Asset {asset.id} has no world")
         return
     if asset.category not in CATEGORIES:
-        raise AssetError(f"vehicle Asset {asset.id} category must be car or drone")
+        raise AssetError(f"vehicle Asset {asset.id} category must be one of {sorted(CATEGORIES)}")
     if asset.simulator not in SIMULATORS:
         raise AssetError(
             f"vehicle Asset {asset.id} simulator must be one of {sorted(SIMULATORS)}"
@@ -116,6 +116,10 @@ def validate(asset: Asset) -> None:
     if not isinstance(controls, dict) or not controls or set(controls) - CONTROLS:
         raise AssetError(f"vehicle Asset {asset.id} controls must declare rc and/or api")
     for name, control in controls.items():
+        # external: an outside program (an agent, a script) drives it through
+        # its API; the Launcher starts nothing for it.
+        if isinstance(control, dict) and control.get("external") is True:
+            continue
         if not isinstance(control, dict) or not isinstance(control.get("program"), str):
             raise AssetError(f"Asset {asset.id} control {name} has no program")
         if control.get("scope", "vehicle") not in SCOPES:

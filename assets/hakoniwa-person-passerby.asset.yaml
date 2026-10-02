@@ -1,0 +1,31 @@
+# 箱庭人間 (Hakoniwa People): 通行人. The body stays in hakoniwa-mbody-registry
+# (bodies/hakoniwa_person); this manifest declares how Urban uses it. People
+# join a Composition of Cars (tools/urban_people.py) and are moved from
+# outside through the Hakoniwa People API (apps/people/hakoniwa_people.py).
+schema: hakoniwa.asset/v1
+id: hakoniwa-person-passerby
+kind: vehicle
+category: person
+version: 0.1.0
+title: 箱庭人間（通行人）
+source:
+  repository: hakoniwa-mbody-registry
+simulator: hakoniwa-people
+look:
+  variant: passerby
+  scale: 1.0
+model:
+  physics: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_person/generated/passerby/model.xml
+  visual: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_person/generated/passerby/view-model.json
+preview:
+  format: view-model
+  path: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_person/generated/passerby/view-model.json
+dimensions:
+  width_m: 0.44
+  length_m: 0.44
+spawn:
+  ground_clearance_m: 0.0
+controls:
+  api:
+    # An outside program (an agent, a script) moves it by name.
+    external: true

@@ -166,7 +166,7 @@ def world_xml(resolved: dict, city: dict | None = None) -> str:
     if actuators is None:
         actuators = ET.SubElement(root, "actuator")
     for person in resolved["people"]:
-        source = ET.parse(person_model(person["look"])).getroot()
+        source = ET.parse(person.get("model") or person_model(person["look"])).getroot()
         prefix = f"{person['name']}/"
         for element in source.iter():
             for key in ("name", "joint"):

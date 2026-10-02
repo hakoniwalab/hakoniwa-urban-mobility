@@ -714,7 +714,7 @@ function addVehicle() {
   if (!asset || !state.current) return;
   if (asset.fleet) return addFleet(asset);
   const list = state.current.composition.vehicles;
-  const prefix = asset.category === "car" ? "Car" : "Drone";
+  const prefix = { car: "Car", person: "Person" }[asset.category] ?? "Drone";
   let index = 1;
   while (list.some((vehicle) => vehicle.name === `${prefix}-${index}`)) index += 1;
   list.push({
