@@ -6,6 +6,10 @@
     python tools/people_sim.py open-viewer --people recipes/people/people-one.yaml
     python tools/people_sim.py stop      --people recipes/people/people-one.yaml
 
+A recipe may name an `environment` (an Environment Studio Recipe, written as
+a City World under world/ first) or a `world` (a City World receipt); the
+people walk in it, bump into it and step up onto what is lower than 0.32 m.
+
 configure writes, under $HAKONIWA_WORK_DIR/people/<id>/:
 - config/people-world.xml: one MuJoCo world with every person (the bodies of
   hakoniwa-mbody-registry/bodies/hakoniwa_person, names prefixed "<name>/")
@@ -49,6 +53,7 @@ LOOKS = {"visitor": 1.0, "staff": 1.0, "passerby": 1.0, "child": 0.7}
 DEFAULT_HTTP_PORT = 28100
 DEFAULT_BRIDGE_PORT = 28870
 PDU_HEADER = 24  # pdudef sizes = the message's base size + the PDU header
+ENVIRONMENT_STUDIO = WORKSPACE / "hakoniwa-environment-studio"
 
 
 class PeopleError(RuntimeError):
@@ -81,7 +86,18 @@ def load(path: Path) -> dict:
             raise PeopleError(f"{where}: spawn must be finite")
         resolved.append({"name": name, "look": look, "scale": LOOKS[look], "spawn": values})
     viewer = data.get("viewer", {}) or {}
+    base = Path(path).resolve().parent
+    where = {}
+    for key in ("environment", "world"):
+        if data.get(key):
+            text = str(data[key]).replace("{workspace}", str(WORKSPACE))
+            where[key] = (base / text).resolve() if not Path(text).is_absolute() else Path(text)
+            if not where[key].is_file():
+                raise PeopleError(f"{path}: {key} not found: {where[key]}")
+    if len(where) > 1:
+        raise PeopleError(f"{path}: give an environment or a world, not both")
     return {
+        **where,
         "id": str(data.get("id") or Path(path).stem),
         "people": resolved,
         "http_port": int(viewer.get("http_port", DEFAULT_HTTP_PORT)),
@@ -100,17 +116,55 @@ def person_model(look: str) -> Path:
     return path
 
 
-def world_xml(resolved: dict) -> str:
-    """Every person in one world; each one's names prefixed "<name>/", its
-    root body standing at its spawn (MuJoCo X north, Y west)."""
-    root = ET.Element("mujoco", {"model": f"hakoniwa_people_{resolved['id']}"})
-    ET.SubElement(root, "compiler", {"angle": "degree"})
-    ET.SubElement(root, "option", {"timestep": "0.002", "gravity": "0 0 -9.81"})
-    worldbody = ET.SubElement(root, "worldbody")
-    half = resolved["ground_m"] / 2
-    ET.SubElement(worldbody, "geom", {"name": "ground", "type": "plane", "size": f"{half:g} {half:g} 0.1",
-                                      "rgba": "0.8 0.8 0.8 1"})
-    actuators = ET.SubElement(root, "actuator")
+def city_world(receipt_path: Path) -> dict:
+    """A City World receipt's MJCF (X north, Y west, as the people's) and GLB."""
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    try:
+        mjcf, glb = Path(receipt["mjcf"]["path"]), Path(receipt["glb"]["path"])
+        half = receipt["coordinate_frame"]["half_extent_m"]
+    except (KeyError, TypeError) as exc:
+        raise PeopleError(f"not a City World receipt: {receipt_path}") from exc
+    if receipt["coordinate_frame"].get("coordinate_systems", {}).get("mjcf", "X=North,Y=-East,Z=Up") != "X=North,Y=-East,Z=Up":
+        raise PeopleError(f"{receipt_path}: the people need an MJCF with X=North, Y=-East")
+    colliders = receipt_path.parents[2] / "viewer/city-world-colliders.glb"
+    return {"mjcf": mjcf, "glb": glb, "colliders": colliders if colliders.is_file() else None,
+            "size_m": 2 * max(float(half["north_south"]), float(half["east_west"]))}
+
+
+def export_environment(recipe: Path, job: Path) -> Path:
+    """An Environment Studio Recipe written as a City World job; its receipt."""
+    tool = ENVIRONMENT_STUDIO / "tools/env_urban.py"
+    if not tool.is_file():
+        raise PeopleError(f"Environment Studio not found: {tool}")
+    subprocess.run([str(multi_car.foundation_python()), str(tool), "export", str(recipe), "--out", str(job)],
+                   cwd=ENVIRONMENT_STUDIO, check=True, stdout=subprocess.DEVNULL)
+    return job / "build/world/city-world-receipt.json"
+
+
+def world_xml(resolved: dict, city: dict | None = None) -> str:
+    """Every person in one world (the City World's, if any); each one's names
+    prefixed "<name>/", its root body standing at its spawn (MuJoCo X north,
+    Y west)."""
+    if city is None:
+        root = ET.Element("mujoco", {"model": f"hakoniwa_people_{resolved['id']}"})
+        worldbody = ET.SubElement(root, "worldbody")
+        half = resolved["ground_m"] / 2
+        ET.SubElement(worldbody, "geom", {"name": "ground", "type": "plane", "size": f"{half:g} {half:g} 0.1",
+                                          "rgba": "0.8 0.8 0.8 1"})
+    else:
+        root = ET.parse(city["mjcf"]).getroot()
+        for element in root.iter():  # its files (the terrain's hfield) from wherever this world is written
+            if "file" in element.attrib and not Path(element.attrib["file"]).is_absolute():
+                element.attrib["file"] = str((city["mjcf"].parent / element.attrib["file"]).resolve())
+        worldbody = root.find("worldbody")
+    for tag in ("compiler", "option"):
+        for old in root.findall(tag):
+            root.remove(old)
+    root.insert(0, ET.Element("option", {"timestep": "0.002", "gravity": "0 0 -9.81"}))
+    root.insert(0, ET.Element("compiler", {"angle": "degree"}))
+    actuators = root.find("actuator")
+    if actuators is None:
+        actuators = ET.SubElement(root, "actuator")
     for person in resolved["people"]:
         source = ET.parse(person_model(person["look"])).getroot()
         prefix = f"{person['name']}/"
@@ -192,8 +246,12 @@ def configure(resolved: dict) -> int:
     config.mkdir(parents=True, exist_ok=True)
     (work / "logs").mkdir(exist_ok=True)
     (work / "runtime").mkdir(exist_ok=True)
+    receipt = resolved.get("world")
+    if resolved.get("environment"):
+        receipt = export_environment(resolved["environment"], work / "world")
+    city = city_world(receipt) if receipt else None
     world = config / "people-world.xml"
-    world.write_text(world_xml(resolved), encoding="utf-8")
+    world.write_text(world_xml(resolved, city), encoding="utf-8")
     import mujoco
 
     mujoco.MjModel.from_xml_path(str(world))  # stops here if the world does not load
@@ -207,11 +265,12 @@ def configure(resolved: dict) -> int:
         "name": person["name"], "type": f"hakoniwa-person-{person['look']}",
         "type_definition": {"view_model": PERSON_BODY / person["look"] / "view-model.json"},
     } for person in resolved["people"]]
+    environment_glb = city["glb"] if city else ground_glb(work / "assets/ground.glb", resolved["ground_m"])
     browser = multi_car.materialize_browser_visualization(
-        pdus, config, ground_glb(work / "assets/ground.glb", resolved["ground_m"]), vehicles,
+        pdus, config, environment_glb, vehicles,
         {"web_bridge_port": resolved["web_bridge_port"], "http_port": resolved["http_port"],
          "threejs_root": WORKSPACE / "hakoniwa-threejs-drone"},
-        state_robot=STATE_ROBOT)
+        collider_glb=city["colliders"] if city else None, state_robot=STATE_ROBOT)
     # Look at the people from a few metres away rather than from a car's distance.
     scene = json.loads(Path(browser["scene_config"]).read_text(encoding="utf-8"))
     scene["main_camera"]["position"] = [-6.0, -6.0, 4.0]

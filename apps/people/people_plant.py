@@ -37,6 +37,7 @@ MAX_SWING_RAD = math.radians(30)
 MOVING_M_S = 0.05
 TURN_GAIN = 5.0
 MAX_TURN_RAD_S = 3.0
+STEP_M = 0.32           # what a person steps up onto (the body's collider starts there)
 
 
 @dataclass
@@ -120,12 +121,33 @@ class PeoplePlant:
                 "slide_y": joint("slide_y_joint").dofadr[0],
                 "turn_qpos": turn.qposadr[0],
                 "actuators": (actuator("move_x"), actuator("move_y"), actuator("turn")),
+            "lift": actuator("lift"),
+            "slide_z_qpos": joint("slide_z_joint").qposadr[0],
                 "command": (0.0, 0.0, 0.0),
                 "animation": "auto",
                 "gait": Gait(),
                 "angles": {joint: 0.0 for joint in LIMB_JOINTS},
             })
         mujoco.mj_forward(self.model, self.data)
+        # Stand each person on the ground under its spawn.
+        for person in self.people:
+            ground = self.ground_under(person)
+            self.data.qpos[person["slide_z_qpos"]] = ground
+            self.data.ctrl[person["lift"]] = ground
+        mujoco.mj_forward(self.model, self.data)
+
+    def ground_under(self, person) -> float:
+        """The height of what the person stands on: a ray down from a step
+        above its feet (the ground, a deck), not what it would bump into."""
+        import numpy as np
+
+        x, y, z = self.data.xpos[person["body"]]
+        start = np.array([x, y, z + STEP_M + 0.05])
+        groups = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)  # the world's geoms, not people's
+        geomid = np.array([-1], dtype=np.int32)
+        distance = self.mujoco.mj_ray(self.model, self.data, start, np.array([0.0, 0.0, -1.0]),
+                                      groups, 1, person["body"], geomid)
+        return float(start[2] - distance) if distance >= 0 else 0.0
 
     # --- PDUs ----------------------------------------------------------------------
 
@@ -201,6 +223,7 @@ class PeoplePlant:
             yaw = float(self.data.qpos[person["turn_qpos"]])
             for actuator, value in zip(person["actuators"], drive(east, north, yaw_rate, yaw)):
                 self.data.ctrl[actuator] = value
+            self.data.ctrl[person["lift"]] = self.ground_under(person)
         for _ in range(self.substeps):
             self.mujoco.mj_step(self.model, self.data)
         for person in self.people:

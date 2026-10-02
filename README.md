@@ -320,8 +320,13 @@ python tools/people_sim.py stop --people recipes/people/people-three.yaml
 
 From Python, `PeopleClient` (apps/people/hakoniwa_people.py) offers
 `set_velocity`, `set_animation`, `stop`, `poses` and the helper `walk_to`.
-Commands stay until the next one. People on a plain ground for now; walking
-in a City World among the cars comes next.
+Commands stay until the next one.
+
+A recipe may name an `environment` (an Environment Studio Recipe; configure
+writes it as a City World first) or a `world` (a City World receipt): the
+people then bump into its stalls and buildings and step up onto what is lower
+than 0.32 m (a square's deck), as in `recipes/people/people-stall-street.yaml`.
+The plant measures the ground under each person with a ray and lifts it there.
 
 ## Why this repository exists
 
