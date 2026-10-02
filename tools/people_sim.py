@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Run 箱庭人間 (Hakoniwa People) that external programs move by name.
+
+    python tools/people_sim.py configure --people recipes/people/people-one.yaml
+    python tools/people_sim.py start     --people recipes/people/people-one.yaml
+    python tools/people_sim.py open-viewer --people recipes/people/people-one.yaml
+    python tools/people_sim.py stop      --people recipes/people/people-one.yaml
+
+configure writes, under $HAKONIWA_WORK_DIR/people/<id>/:
+- config/people-world.xml: one MuJoCo world with every person (the bodies of
+  hakoniwa-mbody-registry/bodies/hakoniwa_person, names prefixed "<name>/")
+- config/people-pdudef.json: per person <name>/cmd_vel (Twist) and
+  <name>/animation (String); the people's states on UrbanPeople
+  (joint_states, vehicle_states, as the car fleet's)
+- config/people-plant.json, config/launcher.json, and the web bridge and
+  Three.js configs (tools/multi_car.py materialize_browser_visualization)
+
+Then apps/people/hakoniwa_people.py (the Hakoniwa People API) moves them.
+Run it in the Business Pack Workspace.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import subprocess
+import sys
+import webbrowser
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import multi_car  # noqa: E402
+import urban_lifecycle  # noqa: E402
+import urban_manifest  # noqa: E402
+
+WORKSPACE = ROOT.parent
+PERSON_BODY = WORKSPACE / "hakoniwa-mbody-registry/bodies/hakoniwa_person/generated"
+PLANT = ROOT / "apps/people/people_plant.py"
+PLANT_ASSET = "HakoniwaPeople"
+STATE_ROBOT = "UrbanPeople"
+SCHEMA = "hakoniwa.people/v1"
+LOOKS = {"visitor": 1.0, "staff": 1.0, "passerby": 1.0, "child": 0.7}
+DEFAULT_HTTP_PORT = 28100
+DEFAULT_BRIDGE_PORT = 28870
+PDU_HEADER = 24  # pdudef sizes = the message's base size + the PDU header
+
+
+class PeopleError(RuntimeError):
+    pass
+
+
+# --- Recipe ---------------------------------------------------------------------------
+
+def load(path: Path) -> dict:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        raise PeopleError(f"{path}: schema must be {SCHEMA}")
+    people = data.get("people")
+    if not isinstance(people, list) or not people:
+        raise PeopleError(f"{path}: people must be a non-empty list")
+    names = set()
+    resolved = []
+    for index, person in enumerate(people):
+        where = f"{path}: people[{index}]"
+        name = str(person.get("name", "")).strip()
+        if not name or "/" in name or name in names or name == STATE_ROBOT:
+            raise PeopleError(f"{where}: a unique name without '/' is needed")
+        names.add(name)
+        look = person.get("look", "visitor")
+        if look not in LOOKS:
+            raise PeopleError(f"{where}: look must be one of {', '.join(LOOKS)}")
+        spawn = person.get("spawn", {}) or {}
+        values = {key: float(spawn.get(key, 0.0)) for key in ("east_m", "north_m", "yaw_deg")}
+        if not all(math.isfinite(value) for value in values.values()):
+            raise PeopleError(f"{where}: spawn must be finite")
+        resolved.append({"name": name, "look": look, "scale": LOOKS[look], "spawn": values})
+    viewer = data.get("viewer", {}) or {}
+    return {
+        "id": str(data.get("id") or Path(path).stem),
+        "people": resolved,
+        "http_port": int(viewer.get("http_port", DEFAULT_HTTP_PORT)),
+        "web_bridge_port": int(viewer.get("web_bridge_port", DEFAULT_BRIDGE_PORT)),
+        "ground_m": float(data.get("ground_m", 40.0)),
+        "work": urban_manifest.work_dir() / "people" / str(data.get("id") or Path(path).stem),
+    }
+
+
+# --- MuJoCo world ------------------------------------------------------------------------
+
+def person_model(look: str) -> Path:
+    path = PERSON_BODY / look / "model.xml"
+    if not path.is_file():
+        raise PeopleError(f"Hakoniwa Person body not found: {path} (hakoniwa-mbody-registry)")
+    return path
+
+
+def world_xml(resolved: dict) -> str:
+    """Every person in one world; each one's names prefixed "<name>/", its
+    root body standing at its spawn (MuJoCo X north, Y west)."""
+    root = ET.Element("mujoco", {"model": f"hakoniwa_people_{resolved['id']}"})
+    ET.SubElement(root, "compiler", {"angle": "degree"})
+    ET.SubElement(root, "option", {"timestep": "0.002", "gravity": "0 0 -9.81"})
+    worldbody = ET.SubElement(root, "worldbody")
+    half = resolved["ground_m"] / 2
+    ET.SubElement(worldbody, "geom", {"name": "ground", "type": "plane", "size": f"{half:g} {half:g} 0.1",
+                                      "rgba": "0.8 0.8 0.8 1"})
+    actuators = ET.SubElement(root, "actuator")
+    for person in resolved["people"]:
+        source = ET.parse(person_model(person["look"])).getroot()
+        prefix = f"{person['name']}/"
+        for element in source.iter():
+            for key in ("name", "joint"):
+                if key in element.attrib:
+                    element.attrib[key] = prefix + element.attrib[key]
+        body = source.find("worldbody/body")
+        spawn = person["spawn"]
+        body.attrib["pos"] = f"{spawn['north_m']:g} {-spawn['east_m']:g} 0"
+        worldbody.append(body)
+        actuated = source.find("actuator")
+        for actuator in [] if actuated is None else list(actuated):
+            actuators.append(actuator)
+    ET.indent(root)
+    return ET.tostring(root, encoding="unicode") + "\n"
+
+
+# --- PDUs -----------------------------------------------------------------------------------
+
+def pdu_files(resolved: dict, config: Path) -> dict[str, Path]:
+    count = len(resolved["people"])
+    state_size = max(4096, 1 << (1024 + 1024 * count - 1).bit_length())
+    command_types = [
+        {"channel_id": 0, "pdu_size": 48 + PDU_HEADER, "name": "cmd_vel", "type": "geometry_msgs/Twist"},
+        {"channel_id": 1, "pdu_size": 256, "name": "animation", "type": "std_msgs/String"},
+    ]
+    state_types = [
+        {"channel_id": 0, "pdu_size": state_size, "name": "joint_states", "type": "sensor_msgs/JointState"},
+        {"channel_id": 1, "pdu_size": state_size, "name": "vehicle_states", "type": "sensor_msgs/MultiDOFJointState"},
+    ]
+    command_path = config / "people-command-pdutypes.json"
+    state_path = config / "people-state-pdutypes.json"
+    multi_car.write_json(command_path, command_types)
+    multi_car.write_json(state_path, state_types)
+    pdu_def = config / "people-pdudef.json"
+    multi_car.write_json(pdu_def, {
+        "paths": [{"id": "people-command", "path": str(command_path)},
+                  {"id": "people-state", "path": str(state_path)}],
+        "robots": [*[{"name": person["name"], "pdutypes_id": "people-command"} for person in resolved["people"]],
+                   {"name": STATE_ROBOT, "pdutypes_id": "people-state"}],
+    })
+    return {"pdu_def": pdu_def, "state_pdu_types": state_path}
+
+
+def ground_glb(path: Path, size_m: float) -> Path:
+    """A flat grey ground for the viewer (glTF: y up)."""
+    import trimesh
+
+    mesh = trimesh.creation.box(extents=(size_m, 0.02, size_m))
+    mesh.apply_translation((0, -0.01, 0))
+    mesh.visual = trimesh.visual.TextureVisuals(
+        material=trimesh.visual.material.PBRMaterial(baseColorFactor=[200, 202, 205, 255], roughnessFactor=0.9))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(trimesh.Scene(mesh).export(file_type="glb"))
+    return path
+
+
+# --- Configure / lifecycle ------------------------------------------------------------------
+
+def spec(resolved: dict) -> urban_lifecycle.LifecycleSpec:
+    work = resolved["work"]
+    return urban_lifecycle.LifecycleSpec(
+        recipe_id=f"people-{resolved['id']}", recipe_root=work, launcher=work / "config/launcher.json",
+        session=work / "runtime/launcher-session.json", viewer_url=viewer_url(resolved),
+        websocket_port=resolved["web_bridge_port"], ports=(resolved["http_port"], resolved["web_bridge_port"]))
+
+
+def viewer_url(resolved: dict) -> str:
+    config = resolved["work"] / "config/threejs/viewer-config.json"
+    return (f"http://127.0.0.1:{resolved['http_port']}"
+            + multi_car.workspace_url(WORKSPACE / "hakoniwa-threejs-drone/index.html")
+            + "?viewerConfigPath=" + multi_car.workspace_url(config))
+
+
+def configure(resolved: dict) -> int:
+    work = resolved["work"]
+    config = work / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (work / "logs").mkdir(exist_ok=True)
+    (work / "runtime").mkdir(exist_ok=True)
+    world = config / "people-world.xml"
+    world.write_text(world_xml(resolved), encoding="utf-8")
+    import mujoco
+
+    mujoco.MjModel.from_xml_path(str(world))  # stops here if the world does not load
+    pdus = pdu_files(resolved, config)
+    multi_car.write_json(config / "people-plant.json", {
+        "asset_name": PLANT_ASSET, "state_robot": STATE_ROBOT, "world_xml": str(world),
+        "pdu_def": str(pdus["pdu_def"]), "delta_usec": 10000, "state_period_usec": 20000,
+        "owns_conductor": True, "realtime": True, "people": resolved["people"],
+    })
+    vehicles = [{
+        "name": person["name"], "type": f"hakoniwa-person-{person['look']}",
+        "type_definition": {"view_model": PERSON_BODY / person["look"] / "view-model.json"},
+    } for person in resolved["people"]]
+    browser = multi_car.materialize_browser_visualization(
+        pdus, config, ground_glb(work / "assets/ground.glb", resolved["ground_m"]), vehicles,
+        {"web_bridge_port": resolved["web_bridge_port"], "http_port": resolved["http_port"],
+         "threejs_root": WORKSPACE / "hakoniwa-threejs-drone"},
+        state_robot=STATE_ROBOT)
+    # Look at the people from a few metres away rather than from a car's distance.
+    scene = json.loads(Path(browser["scene_config"]).read_text(encoding="utf-8"))
+    scene["main_camera"]["position"] = [-6.0, -6.0, 4.0]
+    multi_car.write_json(Path(browser["scene_config"]), scene)
+    multi_car.write_json(config / "launcher.json", launcher(resolved, config, browser))
+    print(f"Configured {len(resolved['people'])} people: {work}")
+    print(f"PDU definition (for the API): {pdus['pdu_def']}")
+    return 0
+
+
+def launcher(resolved: dict, config: Path, browser: dict) -> dict:
+    source = multi_car.paths()
+    python = multi_car.foundation_python()
+    install = multi_car.foundation_install()
+    logs = resolved["work"] / "logs"
+    return {
+        "version": "0.1",
+        "defaults": {
+            "cwd": str(ROOT), "stdout": str(logs / "${asset}.out"), "stderr": str(logs / "${asset}.err"),
+            "start_grace_sec": 2, "delay_sec": 1,
+            "env": {
+                "set": {"HAKONIWA_CORE_ROOT": str(install), "HAKONIWA_PDU_ENDPOINT_ROOT": str(install),
+                        "HAKO_CONFIG_PATH": str(source["core_config"]), "PYTHONUNBUFFERED": "1"},
+                "prepend": {"PATH": [str(python.parent), str(install / "bin")],
+                            "DYLD_LIBRARY_PATH": [str(install / "lib")]},
+            },
+        },
+        "assets": [
+            {"name": "people-plant", "activation_timing": "before_start", "command": str(python),
+             "args": [str(PLANT), str(config / "people-plant.json")], "delay_sec": 2,
+             "readiness": {"type": "hako_asset", "asset_name": PLANT_ASSET, "timeout_sec": 60,
+                           "poll_interval_sec": 0.2, "command_timeout_sec": 2}},
+            {"name": "people-web-bridge", "activation_timing": "before_start", "command": str(source["web_bridge"]),
+             "args": ["--config-root", str(browser["bridge_root"]), "--node-name", "urban_vehicle_viewer_node1",
+                      "--delta-time-step-usec", "20000"],
+             "depends_on": ["people-plant"], "delay_sec": 1},
+            {"name": "people-http-server", "activation_timing": "after_start", "command": str(python),
+             "args": [str(source["http_server"]), "--port", str(resolved["http_port"]), "--bind", "127.0.0.1",
+                      "--directory", str(WORKSPACE)],
+             "cwd": str(WORKSPACE), "depends_on": ["people-web-bridge"], "delay_sec": 1},
+        ],
+        "runtime": {"cleanup_mmap_on_start": True},
+    }
+
+
+def lifecycle(operation: str, resolved: dict) -> int:
+    python = str(multi_car.foundation_python())
+    life = spec(resolved)
+    if operation == "start":
+        if not life.launcher.is_file():
+            raise PeopleError("not configured; run configure first")
+        urban_lifecycle.preflight_start(life)
+        subprocess.run([python, "-m", "hakoniwa_pdu.apps.launcher.hako_launcher", str(life.launcher),
+                        "--background", str(life.session)], cwd=ROOT, check=True)
+        report = urban_lifecycle.wait_for_demo_ready(life)
+        print(json.dumps(report, indent=2))
+        print(f"Viewer: {life.viewer_url}")
+        return 0 if report["demo_ready"] else 1
+    if operation == "status":
+        print(json.dumps(urban_lifecycle.status_report(life), indent=2))
+        return 0
+    if operation == "stop":
+        if urban_lifecycle.read_session(life) is None:
+            print("not running")
+            return 0
+        subprocess.run([python, "-m", "hakoniwa_pdu.apps.launcher.hako_launcher_ctl", "terminate",
+                        str(life.session)], cwd=ROOT, check=False)
+        urban_lifecycle.verify_stopped(life)
+        return 0
+    urban_lifecycle.require_viewer_ready(life)
+    print(f"Opening: {life.viewer_url}")
+    return 0 if webbrowser.open(life.viewer_url) else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("command", choices=("configure", "start", "status", "open-viewer", "stop"))
+    parser.add_argument("--people", type=Path, required=True, help="a hakoniwa.people/v1 recipe")
+    args = parser.parse_args()
+    try:
+        resolved = load(args.people)
+        if args.command == "configure":
+            return configure(resolved)
+        return lifecycle(args.command, resolved)
+    except (PeopleError, urban_lifecycle.LifecycleError, multi_car.RecipeError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

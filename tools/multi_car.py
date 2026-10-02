@@ -1476,8 +1476,10 @@ def materialize_browser_visualization(
     vehicles: list[dict],
     visualization: dict,
     collider_glb: Path | None = None,
+    state_robot: str = FLEET_PDU_ROBOT,
 ) -> dict[str, Path | str]:
-    """Materialize a read-only state bridge and compact Three.js configs."""
+    """Materialize a read-only state bridge and compact Three.js configs for
+    the state PDUs of `state_robot` (the car fleet's, or the people's)."""
     bridge_root = work / "web-bridge"
     browser_root = work / "threejs"
     asset_root = browser_root / "assets"
@@ -1499,7 +1501,7 @@ def materialize_browser_visualization(
             "path": "urban-fleet-state-pdutypes.json",
         }],
         "robots": [{
-            "name": FLEET_PDU_ROBOT,
+            "name": state_robot,
             "pdutypes_id": "urban-fleet-state",
         }],
     }
@@ -1516,7 +1518,7 @@ def materialize_browser_visualization(
         "name": "urban_vehicle_state_shm_callback",
         "direction": "inout",
         "io": {"robots": [{
-            "name": FLEET_PDU_ROBOT,
+            "name": state_robot,
             "pdu": [
                 {"name": "joint_states", "notify_on_recv": False},
                 {"name": "vehicle_states", "notify_on_recv": False},
@@ -1577,13 +1579,13 @@ def materialize_browser_visualization(
         "pduKeyGroups": {
             "urban_vehicle_state": [
                 {
-                    "id": f"{FLEET_PDU_ROBOT}.joint_states",
-                    "robot_name": FLEET_PDU_ROBOT,
+                    "id": f"{state_robot}.joint_states",
+                    "robot_name": state_robot,
                     "pdu_name": "joint_states",
                 },
                 {
-                    "id": f"{FLEET_PDU_ROBOT}.vehicle_states",
-                    "robot_name": FLEET_PDU_ROBOT,
+                    "id": f"{state_robot}.vehicle_states",
+                    "robot_name": state_robot,
                     "pdu_name": "vehicle_states",
                 },
             ],

@@ -1,0 +1,6 @@
+# One 箱庭人間 on a plain ground, moved from outside by the Hakoniwa People API
+# (apps/people/hakoniwa_people.py). tools/people_sim.py runs it.
+schema: hakoniwa.people/v1
+id: people-one
+people:
+  - {name: Person-1, look: visitor, spawn: {east_m: 0, north_m: 0, yaw_deg: 0}}
