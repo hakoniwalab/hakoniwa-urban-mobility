@@ -356,6 +356,33 @@ People ride the cars whose Asset declares `seats` (the golf cart: `driver`,
 then follows the car's pose in the sit pose without colliding;
 `people.get_off("Person-1")` puts it beside its seat, back on the ground.
 
+### A scene run from outside: the festival director
+
+`apps/people/festival_director.py` runs a scene file (`recipes/people/scenes/*.yaml`)
+over the People API and the Urban Car API, the loop an agent would run:
+stall staff wave behind their counters; visitors and children walk from
+stall to stall, line up at a stall (the head of the line is served, the
+others step up), keep a little apart, and some sit down at a square's table
+afterwards and talk (`sit_talk`) when someone else sits there; a golf cart
+shuttle (a car with control `external`, driven by the director) stops for a
+visitor nearby to get on and lets them off at the next stop, slowing and
+stopping for people ahead. Cars driven with a controller (control `rc`) are
+watched too: near misses and contacts are written with Hakoniwa time to the
+Car Recipe's `logs/festival-director.jsonl`.
+`recipes/people/scenes/sapporo-festival.yaml` is the さっぽろ駅前祭り: the
+Sapporo Station south plaza made into a festival street in Environment
+Studio (stalls, squares, lights for the night mode).
+
+```bash
+python apps/people/festival_director.py recipes/people/scenes/sapporo-festival.yaml \
+    --people-pdu-def <work>/recipes/urban-car-rc/config/people/people-pdudef.json \
+    --car-pdu-def <work>/recipes/urban-car-rc/config/car/urban-car-pdudef.json --duration 600
+```
+
+Car Assets also offer control `external`: an outside program drives the car
+through the Urban Car API (`apps/car/urban_car.py`) and the Launcher starts
+nothing for it.
+
 ## Why this repository exists
 
 Urban scenarios cross component boundaries:

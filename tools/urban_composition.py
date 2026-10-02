@@ -33,7 +33,9 @@ DRONE_SIMULATOR = "drone-core"
 # routes are chosen by the other simulators.
 PEOPLE_SIMULATOR = "hakoniwa-people"
 # Current tool names for the contract controls.
-CAR_CONTROL_MODES = {"rc": "ps5", "api": "external_python"}
+# external: an outside program drives the car through the Urban Car API (an
+# agent, apps/people/festival_director.py); nothing is started for it.
+CAR_CONTROL_MODES = {"rc": "ps5", "api": "external_python", "external": "external_python"}
 DRONE_CONTROL_MODES = {"rc": "ps4-rc", "api": "fleet-rpc"}
 # drone_one.py inputs the contract does not expose. The RC mode still
 # requires a mission file, and the launch area only shapes the mission plan;

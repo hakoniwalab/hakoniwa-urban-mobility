@@ -83,7 +83,7 @@ class StudioServerTest(StudioTestBase):
         kinds = [asset["kind"] for asset in assets]
         self.assertEqual(kinds, sorted(kinds, key=lambda kind: {"city": 0, "plain": 1, "vehicle": 2}[kind]))
         cart = next(asset for asset in assets if asset["id"] == "golf-cart")
-        self.assertEqual(set(cart["controls"]), {"rc", "api"})
+        self.assertEqual(set(cart["controls"]), {"rc", "api", "external"})
         self.assertIn("scenario", cart["controls"]["api"]["params"])
         hexa = next(asset for asset in assets if asset["id"] == "eams-hexa")
         self.assertIn("drone-mirror", hexa["interactions"])

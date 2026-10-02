@@ -33,6 +33,7 @@ def city_receipt(work: Path) -> Path:
 
 
 def apply(work: Path, composition, launcher: dict, conductor: str) -> None:
+    work = Path(work).resolve()  # the generated files name each other by absolute path
     people = urban_composition.people(composition)
     launcher["assets"] = [asset for asset in launcher.get("assets", []) if asset.get("name") != PLANT_NAME]
     config = work / "config/people"

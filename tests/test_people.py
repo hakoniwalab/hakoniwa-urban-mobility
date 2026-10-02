@@ -323,3 +323,59 @@ class ContactTest(unittest.TestCase):
         self.assertIn('"other": "Car-1"', log.read_text(encoding="utf-8"))
         # The person was pushed ahead of the car, not run through.
         self.assertGreater(people.data.xpos[people.people[0]["body"]][0], 0.5)
+
+
+class TerrainTest(unittest.TestCase):
+    def test_people_stand_on_a_terrain_above_zero(self):
+        if not people_sim.PERSON_BODY.is_dir():
+            self.skipTest("hakoniwa-mbody-registry is not beside this repository")
+        try:
+            import mujoco  # noqa: F401
+        except ImportError:
+            self.skipTest("mujoco is not installed")
+        directory = Path(tempfile.mkdtemp())
+        city = directory / "city.xml"
+        # A flat hfield whose surface is 1.2 m up (a City's DEM is rarely at z = 0).
+        city.write_text('<mujoco><asset><hfield name="t" nrow="2" ncol="2" size="10 10 0.5 0.5" '
+                        'elevation="0 0 0 0"/></asset><worldbody>'
+                        '<geom name="terrain" type="hfield" hfield="t" pos="0 0 1.2"/></worldbody></mujoco>',
+                        encoding="utf-8")
+        with patch.object(people_sim.urban_manifest, "work_dir", return_value=Path("/w")):
+            resolved = people_sim.load(ROOT / "recipes/people/people-one.yaml")
+        world = directory / "world.xml"
+        world.write_text(people_sim.world_xml(resolved, {"mjcf": city}), encoding="utf-8")
+        people = plant.PeoplePlant({"world_xml": str(world), "delta_usec": 10000, "people": resolved["people"]})
+        for _ in range(20):
+            people.step()
+        self.assertAlmostEqual(float(people.data.xpos[people.people[0]["body"]][2]), 1.2, places=2)
+
+
+class DirectorTest(unittest.TestCase):
+    def setUp(self):
+        try:
+            import yaml  # noqa: F401
+            import hakoniwa_pdu  # noqa: F401
+        except ImportError:
+            self.skipTest("yaml / hakoniwa_pdu are not installed")
+        self.director = load("festival_director", ROOT / "apps/people/festival_director.py")
+        import yaml
+
+        self.scene = yaml.safe_load((ROOT / "recipes/people/scenes/sapporo-festival.yaml").read_text(encoding="utf-8"))
+
+    def test_seats_ring_each_table_of_each_square(self):
+        seats = self.director.Director.make_seats(self.scene)
+        self.assertEqual(len(seats), 2 * 2 * 4)
+        for seat in seats:
+            gap = math.hypot(seat["pos"][0] - seat["centre"][0], seat["pos"][1] - seat["centre"][1])
+            self.assertAlmostEqual(gap, 0.72, places=6)
+            out = math.hypot(seat["approach"][0] - seat["centre"][0], seat["approach"][1] - seat["centre"][1])
+            self.assertAlmostEqual(out, 0.72 + 0.45, places=6)
+        # The lively square (yaw 0) at (-102, -44.6): table 1 at u -0.9, y 0.35 -> x +0.9.
+        centres = {seat["centre"] for seat in seats}
+        self.assertIn((-101.1, -44.25), {(round(x, 2), round(y, 2)) for x, y in centres})
+
+    def test_queue_places_match_their_patterns(self):
+        director = self.director.Director.__new__(self.director.Director)
+        director.scene = self.scene
+        self.assertEqual(director.queue_spec("stall-n3")["along"], [1.0, 0.0])
+        self.assertIsNone(director.queue_spec("aisle-west"))

@@ -8,7 +8,9 @@ hakoniwa-mbody-registry). Per person it reads, every step:
   velocity in m/s (the City World's ENU); the person turns to face where it
   walks. angular.z (rad/s, left positive) turns it while it stands.
 - ``<name>/animation`` (std_msgs/String): ``auto`` (or empty: walk while
-  moving, idle otherwise), ``walk``, ``idle``, ``wave`` or ``sit``.
+  moving, idle otherwise), ``walk``, ``idle``, ``wave``, ``sit`` (on a seat
+  SEAT_M high under it: the person is lowered onto it and stops colliding),
+  ``talk`` or ``sit_talk`` (gesturing while talking).
 - ``<name>/ride`` (std_msgs/String): ``<vehicle>/<seat>`` (for example
   ``Car-1/driver``) to sit on a car's seat and go with it; empty to get off
   (beside the seat). Riders follow the car's pose (the Car fleet's
@@ -17,8 +19,9 @@ hakoniwa-mbody-registry). Per person it reads, every step:
 The cars are boxes in the people's world, moved with the cars' poses: people
 bump into them (the cars do not feel the people). Every contact of a person
 with a car, another person or the city is an event, written to the contact
-log (JSONL) when it starts and ends and published as the person's latest
-``<name>/contact`` (hako_msgs/ContactEvent; PDU strings stay short).
+log (JSONL) when it starts and ends, published as the person's latest
+``<name>/contact`` (hako_msgs/ContactEvent) and, for everyone, as the latest
+events on ``<state robot>/contact_events`` (hako_msgs/ContactEventArray).
 
 and it writes, for all people, the same state PDUs as the Urban Car fleet so
 the browser viewer shows them unchanged:
@@ -43,7 +46,9 @@ from pathlib import Path
 
 LIMB_JOINTS = ("shoulder_left_joint", "shoulder_right_joint", "hip_left_joint", "hip_right_joint",
                "knee_left_joint", "knee_right_joint")
-ANIMATIONS = ("auto", "walk", "idle", "wave", "sit")
+ANIMATIONS = ("auto", "walk", "idle", "wave", "sit", "talk", "sit_talk")
+SITTING = ("sit", "sit_talk")
+SEAT_M = 0.44           # a stool's or bench's seat above what the person stands on
 STRIDE_M = 1.0          # distance walked per full swing cycle (an adult)
 MAX_SWING_RAD = math.radians(30)
 MOVING_M_S = 0.05
@@ -52,7 +57,9 @@ MAX_TURN_RAD_S = 3.0
 STEP_M = 0.32           # what a person steps up onto (the body's collider starts there)
 HIP_M = 0.66            # an adult's hip above the feet (the body's hip joints)
 GET_OFF_M = 0.75        # how far beside its seat a rider gets off
+TERRAIN_GROUP = 5       # the plant puts the terrain (hfield, plane) in this geom group
 RECENT_EVENTS = 256     # contact events kept in memory (tests, inspection)
+PUBLISHED_EVENTS = 24   # the latest events on <state robot>/contact_events
 CONTACT_GAP_SEC = 0.3   # a contact ends after this long apart (no flicker while pushing)
 WORKSPACE = Path(__file__).resolve().parents[3]
 
@@ -93,21 +100,29 @@ def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) 
         targets.update(shoulder_left_joint=sway, shoulder_right_joint=-sway)
     elif mode == "wave":
         targets["shoulder_right_joint"] = math.radians(-150) + math.radians(18) * math.sin(gait.clock * 2 * math.pi * 1.5)
-    elif mode == "sit":
+    elif mode in SITTING:
         targets.update(hip_left_joint=math.radians(-90), hip_right_joint=math.radians(-90),
                        knee_left_joint=math.radians(90), knee_right_joint=math.radians(90),
                        shoulder_left_joint=math.radians(-25), shoulder_right_joint=math.radians(-25))
+    if mode in ("talk", "sit_talk"):
+        # Talking: the hands move as one speaks, in a slow uneven rhythm.
+        t = gait.clock
+        targets["shoulder_right_joint"] = math.radians(-35) + math.radians(14) * math.sin(t * 2.3)
+        targets["shoulder_left_joint"] = math.radians(-20) + math.radians(9) * math.sin(t * 1.7 + 1.0)
     rate = math.radians(240)
     gait.angles = {joint: _approach(gait.angles[joint], targets[joint], rate, dt) for joint in LIMB_JOINTS}
     return dict(gait.angles)
 
 
-def contact_event_pdu(event: dict) -> bytes:
-    """A contact event as hako_msgs/ContactEvent (hakoniwa-pdu-registry)."""
+def _registry() -> None:
     registry = str(WORKSPACE / "hakoniwa-pdu-registry")
     if registry not in sys.path:
         sys.path.insert(0, registry)
-    from pdu.python.hako_msgs.pdu_conv_ContactEvent import py_to_pdu_ContactEvent
+
+
+def contact_event_message(event: dict):
+    """A contact event as a hako_msgs/ContactEvent message (hakoniwa-pdu-registry)."""
+    _registry()
     from pdu.python.hako_msgs.pdu_pytype_ContactEvent import ContactEvent
 
     message = ContactEvent()
@@ -120,7 +135,25 @@ def contact_event_pdu(event: dict) -> bytes:
         position["east_m"], position["north_m"], position["up_m"])
     message.relative_speed = float(event["relative_speed"])
     message.started = bool(event["started"])
-    return py_to_pdu_ContactEvent(message)
+    return message
+
+
+def contact_event_pdu(event: dict) -> bytes:
+    _registry()
+    from pdu.python.hako_msgs.pdu_conv_ContactEvent import py_to_pdu_ContactEvent
+
+    return py_to_pdu_ContactEvent(contact_event_message(event))
+
+
+def contact_events_pdu(events) -> bytes:
+    """The latest events as hako_msgs/ContactEventArray."""
+    _registry()
+    from pdu.python.hako_msgs.pdu_conv_ContactEventArray import py_to_pdu_ContactEventArray
+    from pdu.python.hako_msgs.pdu_pytype_ContactEventArray import ContactEventArray
+
+    message = ContactEventArray()
+    message.events = [contact_event_message(event) for event in events]
+    return py_to_pdu_ContactEventArray(message)
 
 
 def wrap(angle: float) -> float:
@@ -195,6 +228,12 @@ class PeoplePlant:
         self.next_event_id = 1
         log = config.get("contact_log")
         self.contact_log = open(log, "a", encoding="utf-8") if log else None
+        # The terrain on its own: a ray from below an hfield's surface hits its
+        # base (z = 0), so the ground is looked for from above the terrain.
+        terrain_types = {int(mujoco.mjtGeom.mjGEOM_HFIELD), int(mujoco.mjtGeom.mjGEOM_PLANE)}
+        for geom in range(self.model.ngeom):
+            if int(self.model.geom_type[geom]) in terrain_types:
+                self.model.geom_group[geom] = TERRAIN_GROUP
         mujoco.mj_forward(self.model, self.data)
         # Stand each person on the ground under its spawn.
         for person in self.people:
@@ -203,18 +242,30 @@ class PeoplePlant:
             self.data.ctrl[person["lift"]] = ground
         mujoco.mj_forward(self.model, self.data)
 
-    def ground_under(self, person) -> float:
-        """The height of what the person stands on: a ray down from a step
-        above its feet (the ground, a deck), not what it would bump into."""
+    def ray_down(self, x: float, y: float, z: float, groups, exclude: int) -> float | None:
         import numpy as np
 
-        x, y, z = self.data.xpos[person["body"]]
-        start = np.array([x, y, z + STEP_M + 0.05])
-        groups = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)  # the world's geoms, not people's
         geomid = np.array([-1], dtype=np.int32)
-        distance = self.mujoco.mj_ray(self.model, self.data, start, np.array([0.0, 0.0, -1.0]),
-                                      groups, 1, person["body"], geomid)
-        return float(start[2] - distance) if distance >= 0 else 0.0
+        distance = self.mujoco.mj_ray(self.model, self.data, np.array([x, y, z]), np.array([0.0, 0.0, -1.0]),
+                                      np.array(groups, dtype=np.uint8), 1, exclude, geomid)
+        return z - distance if distance >= 0 else None
+
+    def terrain_height(self, x: float, y: float) -> float:
+        groups = [0] * 6
+        groups[TERRAIN_GROUP] = 1
+        height = self.ray_down(x, y, 10_000.0, groups, -1)
+        return 0.0 if height is None else height
+
+    def ground_under(self, person) -> float:
+        """The height of what the person stands on: a ray down from a step
+        above its feet (or above the terrain, if the feet are below it) onto
+        the terrain and the city's parts (a deck), not what it would bump into."""
+        x, y, z = (float(v) for v in self.data.xpos[person["body"]])
+        terrain = self.terrain_height(x, y)
+        groups = [1, 0, 0, 0, 0, 0]
+        groups[TERRAIN_GROUP] = 1
+        hit = self.ray_down(x, y, max(z, terrain) + STEP_M + 0.05, groups, person["body"])
+        return max(terrain, hit if hit is not None else terrain)
 
     # --- PDUs ----------------------------------------------------------------------
 
@@ -307,8 +358,11 @@ class PeoplePlant:
         joints.name, joints.position = names, positions
         joints.velocity, joints.effort = [0.0] * len(names), [0.0] * len(names)
         pdu.flush_pdu_raw_data_nowait(robot, "joint_states", py_to_pdu_JointState(joints))
-        for name, event in self.pending_contacts.items():
-            pdu.flush_pdu_raw_data_nowait(name, "contact", contact_event_pdu(event))
+        if self.pending_contacts:
+            for name, event in self.pending_contacts.items():
+                pdu.flush_pdu_raw_data_nowait(name, "contact", contact_event_pdu(event))
+            latest = list(self.events)[-PUBLISHED_EVENTS:]
+            pdu.flush_pdu_raw_data_nowait(robot, "contact_events", contact_events_pdu(latest))
         self.pending_contacts = {}
         pdu.flush_pdu_raw_data_nowait(robot, "vehicle_states", py_to_pdu_MultiDOFJointState(states))
 
@@ -321,7 +375,20 @@ class PeoplePlant:
             yaw = float(self.data.qpos[person["turn_qpos"]])
             for actuator, value in zip(person["actuators"], drive(east, north, yaw_rate, yaw)):
                 self.data.ctrl[actuator] = value
-            self.data.ctrl[person["lift"]] = self.ground_under(person)
+            sitting = person["animation"] in SITTING and not person["riding"]
+            # A sitter keeps the ground it had when it sat: over a stool the ray
+            # would start inside the seat and lift it onto the stool.
+            if sitting and person.get("sit_ground") is not None:
+                ground = person["sit_ground"]
+            else:
+                ground = self.ground_under(person)
+            person["sit_ground"] = ground if sitting else None
+            # Sitting: the hip comes down onto a seat SEAT_M high, out of the way.
+            self.data.ctrl[person["lift"]] = ground - (HIP_M * person["scale"] - SEAT_M) if sitting else ground
+            if not person["riding"]:
+                collide = 0 if sitting else 1
+                self.model.geom_contype[person["collision"]] = collide
+                self.model.geom_conaffinity[person["collision"]] = collide
         for name, (mocap, _geom) in self.proxies.items():
             pose = self.vehicle_poses.get(name)
             if pose is None:
