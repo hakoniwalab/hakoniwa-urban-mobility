@@ -290,3 +290,36 @@ class RideTest(unittest.TestCase):
         self.assertAlmostEqual(x, 5.0 - (0.22 + plant.GET_OFF_M), places=3)  # its left: -x when facing +y
         self.assertLess(abs(z), 0.01)
         self.assertEqual(people.model.geom_contype[person["collision"]], 1)
+
+
+class ContactTest(unittest.TestCase):
+    def test_a_car_hitting_a_person_is_a_vehicle_contact(self):
+        if not people_sim.PERSON_BODY.is_dir():
+            self.skipTest("hakoniwa-mbody-registry is not beside this repository")
+        try:
+            import mujoco  # noqa: F401
+        except ImportError:
+            self.skipTest("mujoco is not installed")
+        with patch.object(people_sim.urban_manifest, "work_dir", return_value=Path("/w")):
+            resolved = people_sim.load(ROOT / "recipes/people/people-one.yaml")
+        vehicles = {"Car-1": {"seats": {}, "box": people_sim.vehicle_box(
+            {"dimensions": {"width_m": 1.2, "length_m": 2.0}, "spawn": {"ground_clearance_m": 0.45}})}}
+        directory = Path(tempfile.mkdtemp())
+        world = directory / "world.xml"
+        world.write_text(people_sim.world_xml(resolved, None, vehicles), encoding="utf-8")
+        log = directory / "contacts.jsonl"
+        people = plant.PeoplePlant({"world_xml": str(world), "delta_usec": 10000, "people": resolved["people"],
+                                    "vehicles": vehicles, "contact_log": str(log)})
+        # Person-1 stands at the origin; the car (MuJoCo x north) drives north into it.
+        for step in range(150):
+            x = -3.0 + 0.02 * step  # 2 m/s
+            people.previous_vehicle_poses = {"Car-1": (x - 0.02, 0.0, 0.45, 0.0)}
+            people.vehicle_poses = {"Car-1": (x, 0.0, 0.45, 0.0)}
+            people.step()
+        events = [event for event in people.events if event["kind"] == "vehicle"]
+        self.assertTrue(events and events[0]["started"])
+        self.assertEqual((events[0]["self"], events[0]["other"]), ("Person-1", "Car-1"))
+        self.assertGreater(events[0]["relative_speed"], 1.5)
+        self.assertIn('"other": "Car-1"', log.read_text(encoding="utf-8"))
+        # The person was pushed ahead of the car, not run through.
+        self.assertGreater(people.data.xpos[people.people[0]["body"]][0], 0.5)

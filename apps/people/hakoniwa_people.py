@@ -15,6 +15,7 @@ people simulation (tools/people_sim.py) and, per person by name,
         people.walk_to("Person-1", east=4.0, north=2.0)       # a blocking demo helper
         people.ride("Person-1", "Car-1", "driver")            # sit on a car's seat and go with it
         people.get_off("Person-1")
+        people.contacts()                                     # new contact events (cars, people, the city)
 
 The commands stay until the next one (a person keeps walking until told to
 stop). The command line does the same:
@@ -62,6 +63,7 @@ class PeopleClient:
         if not self.pdu_def.is_file():
             raise PeopleError(f"PDU definition not found: {self.pdu_def}")
         self.state_robot = state_robot
+        self._last_contacts: dict[str, tuple] = {}
         self._transport = HakoniwaPollingTransport(self.pdu_def, plant_asset)
 
     def __enter__(self) -> "PeopleClient":
@@ -160,9 +162,12 @@ class PeopleClient:
         return text if text in ANIMATIONS else "auto"
 
     def _read_text(self, name: str, pdu: str) -> str:
+        return self._decode_text(self._transport.read(name, pdu))
+
+    @staticmethod
+    def _decode_text(raw) -> str:
         from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_conv_String import pdu_to_py_String
 
-        raw = self._transport.read(name, pdu)
         try:
             return str(pdu_to_py_String(raw).data).strip() if raw else ""
         except (IndexError, TypeError, ValueError, UnicodeDecodeError):
@@ -192,6 +197,46 @@ class PeopleClient:
             result[name] = PersonPose(-float(p.y), float(p.x), math.atan2(math.cos(yaw_mjcf), -math.sin(yaw_mjcf)),
                                       float(p.z))
         return result
+
+    def contacts(self) -> list[dict]:
+        """New contact events since the last call, for everyone: a person
+        touching a car ("vehicle"), another person or the city ("static"), when
+        it starts (started true, with the relative speed in m/s) and when it
+        ends, with time_sec (Hakoniwa time), self, other, kind and position.
+        Each person's latest event is read, so two events of one person
+        between calls show only the newer; the full record is the plant's
+        contact log (JSONL)."""
+        fresh = []
+        for name in self.names():
+            event = self.contact(name)
+            if event is None:
+                continue
+            key = (event["time_sec"], event["other"], event["started"])
+            if self._last_contacts.get(name) != key:
+                self._last_contacts[name] = key
+                fresh.append(event)
+        return sorted(fresh, key=lambda event: event["time_sec"])
+
+    def contact(self, name: str) -> dict | None:
+        """The person's latest contact event (hako_msgs/ContactEvent), or None."""
+        raw = self._transport.read(name, "contact")
+        if not raw:
+            return None
+        registry = str(Path(__file__).resolve().parents[3] / "hakoniwa-pdu-registry")
+        if registry not in sys.path:
+            sys.path.insert(0, registry)
+        from pdu.python.hako_msgs.pdu_conv_ContactEvent import pdu_to_py_ContactEvent
+
+        try:
+            event = pdu_to_py_ContactEvent(raw)
+        except (IndexError, TypeError, ValueError, UnicodeDecodeError):
+            return None
+        if not event.self_name:
+            return None
+        return {"time_sec": event.stamp.sec + event.stamp.nanosec / 1e9, "self": event.self_name,
+                "other": event.other_name, "kind": event.other_kind, "started": bool(event.started),
+                "position": {"east_m": event.position.x, "north_m": event.position.y, "up_m": event.position.z},
+                "relative_speed": event.relative_speed}
 
     def simulation_time(self) -> float:
         return self._transport.simulation_time_sec()
@@ -228,6 +273,8 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("poses", help="print every person's pose (JSON)")
     commands.add_parser("people", help="print who is here: look, pose, animation (JSON)")
     commands.add_parser("stop-all", help="stop everyone (animation back to auto)")
+    contacts = commands.add_parser("contacts", help="print the latest contact events (JSON lines)")
+    contacts.add_argument("--follow", action="store_true", help="keep printing new events")
     velocity = commands.add_parser("velocity", help="walk at a velocity (and stop after --duration)")
     velocity.add_argument("name")
     velocity.add_argument("--east", type=float, default=0.0)
@@ -264,6 +311,13 @@ def main() -> int:
                                   for name, entry in people.people().items()}, indent=2))
             elif args.command == "stop-all":
                 people.stop_all()
+            elif args.command == "contacts":
+                while True:
+                    for event in people.contacts():
+                        print(json.dumps(event, ensure_ascii=False), flush=True)
+                    if not args.follow:
+                        break
+                    time.sleep(0.2)
             elif args.command == "velocity":
                 people.set_velocity(args.name, args.east, args.north, args.yaw_rate)
                 if args.duration is not None:

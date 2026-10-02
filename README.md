@@ -337,8 +337,17 @@ People also join a Composition of Cars as vehicles of the Assets
 outside), as in `recipes/compositions/plain-golf-cart-people.yaml`. The Car
 route then starts the people plant after the Car plant, in the same
 Hakoniwa time (`tools/urban_people.py`): people walk the same City World and
-bump into its buildings, but not into the cars (two physics worlds; an
-agent reading both positions keeps them apart), and the viewer shows both.
+bump into its buildings, and into the cars too: each car is a box of its
+Asset's size in the people's world, moved with the car (the cars do not feel
+the people; an agent reading both positions keeps them apart). The viewer
+shows both.
+
+Every contact of a person with a car, another person or the city is an
+event (who, with what, Hakoniwa time, position, relative speed; when it
+starts and ends): written to the contact log `logs/people-contacts.jsonl`,
+published as the person's `<name>/contact` (`hako_msgs/ContactEvent` of
+hakoniwa-pdu-registry), and read with `people.contacts()` (new events of
+everyone) or `people.contact(name)`.
 The people's PDU definition is the Car Recipe's `config/people/people-pdudef.json`.
 
 People ride the cars whose Asset declares `seats` (the golf cart: `driver`,
