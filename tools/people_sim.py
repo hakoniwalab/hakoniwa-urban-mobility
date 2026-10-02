@@ -141,7 +141,20 @@ def export_environment(recipe: Path, job: Path) -> Path:
     return job / "build/world/city-world-receipt.json"
 
 
-def world_xml(resolved: dict, city: dict | None = None) -> str:
+VEHICLE_HEIGHT_M = 1.7  # a car's stand-in reaches this high above the ground
+
+
+def vehicle_box(asset_data: dict) -> dict:
+    """A car's stand-in in the people's world: a box of its Asset's outer
+    size, from the ground to VEHICLE_HEIGHT_M, in its body frame (its body
+    stands ground_clearance_m above the ground)."""
+    size = asset_data["dimensions"]
+    clearance = float(asset_data.get("spawn", {}).get("ground_clearance_m", 0.0))
+    return {"half": [size["length_m"] / 2, size["width_m"] / 2, VEHICLE_HEIGHT_M / 2],
+            "pos": [0.0, 0.0, VEHICLE_HEIGHT_M / 2 - clearance]}
+
+
+def world_xml(resolved: dict, city: dict | None = None, vehicles: dict | None = None) -> str:
     """Every person in one world (the City World's, if any); each one's names
     prefixed "<name>/", its root body standing at its spawn (MuJoCo X north,
     Y west)."""
@@ -162,6 +175,16 @@ def world_xml(resolved: dict, city: dict | None = None) -> str:
             root.remove(old)
     root.insert(0, ET.Element("option", {"timestep": "0.002", "gravity": "0 0 -9.81"}))
     root.insert(0, ET.Element("compiler", {"angle": "degree"}))
+    # The cars as boxes the plant moves with them (mocap): people bump into
+    # them and their contacts are reported; the cars do not feel the people.
+    for name, vehicle in sorted((vehicles or {}).items()):
+        if "box" not in vehicle:
+            continue
+        body = ET.SubElement(worldbody, "body", {"name": f"vehicle:{name}", "mocap": "true", "pos": "0 0 -100"})
+        box = vehicle["box"]
+        ET.SubElement(body, "geom", {"name": f"vehicle:{name}", "type": "box", "size": " ".join(f"{v:g}" for v in box["half"]),
+                                     "pos": " ".join(f"{v:g}" for v in box["pos"]), "rgba": "1 0.4 0.1 0.25",
+                                     "group": "3"})
     actuators = root.find("actuator")
     if actuators is None:
         actuators = ET.SubElement(root, "actuator")
@@ -194,6 +217,8 @@ def pdu_files(resolved: dict, config: Path, vehicle_states: tuple[str, Path] | N
         {"channel_id": 0, "pdu_size": 48 + PDU_HEADER, "name": "cmd_vel", "type": "geometry_msgs/Twist"},
         {"channel_id": 1, "pdu_size": 256, "name": "animation", "type": "std_msgs/String"},
         {"channel_id": 2, "pdu_size": 256, "name": "ride", "type": "std_msgs/String"},
+        # The person's latest contact (written by the plant).
+        {"channel_id": 3, "pdu_size": 1024, "name": "contact", "type": "hako_msgs/ContactEvent"},
     ]
     state_types = [
         {"channel_id": 0, "pdu_size": state_size, "name": "joint_states", "type": "sensor_msgs/JointState"},
@@ -264,6 +289,7 @@ def configure(resolved: dict) -> int:
         "asset_name": PLANT_ASSET, "state_robot": STATE_ROBOT, "world_xml": str(world),
         "pdu_def": str(pdus["pdu_def"]), "delta_usec": 10000, "state_period_usec": 20000,
         "owns_conductor": True, "realtime": True, "people": resolved["people"],
+        "contact_log": str(work / "logs/people-contacts.jsonl"),
     })
     vehicles = [{
         "name": person["name"], "type": f"hakoniwa-person-{person['look']}",

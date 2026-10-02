@@ -42,19 +42,24 @@ def apply(work: Path, composition, launcher: dict, conductor: str) -> None:
     config.mkdir(parents=True, exist_ok=True)
     city = people_sim.city_world(city_receipt(work))
     resolved = {"id": composition.id, "people": people, "ground_m": city["size_m"]}
+    # Every car: its stand-in box (people bump into it) and its seats (riding).
+    vehicles = {}
+    for car in composition.by_simulator(urban_composition.CAR_SIMULATOR):
+        entry = {"seats": car.asset.data.get("seats", {})}
+        if car.asset.data.get("dimensions"):
+            entry["box"] = people_sim.vehicle_box(car.asset.data)
+        vehicles[car.name] = entry
     world = config / "people-world.xml"
-    world.write_text(people_sim.world_xml(resolved, city), encoding="utf-8")
+    world.write_text(people_sim.world_xml(resolved, city, vehicles), encoding="utf-8")
     fleet_types = work / "config/car/urban-fleet-state-pdutypes.json"
     pdus = people_sim.pdu_files(resolved, config, (multi_car.FLEET_PDU_ROBOT, fleet_types))
-    # The cars people can ride: their seats in the vehicle body frame.
-    vehicles = {car.name: {"seats": car.asset.data["seats"]}
-                for car in composition.by_simulator(urban_composition.CAR_SIMULATOR) if car.asset.data.get("seats")}
     multi_car.write_json(config / "people-plant.json", {
         "vehicle_state_robot": multi_car.FLEET_PDU_ROBOT, "vehicles": vehicles,
         "asset_name": people_sim.PLANT_ASSET, "state_robot": people_sim.STATE_ROBOT, "world_xml": str(world),
         "pdu_def": str(pdus["pdu_def"]), "delta_usec": 10000, "state_period_usec": 20000,
         # The Car plant owns the Conductor and the pacer keeps real time.
         "owns_conductor": False, "realtime": False, "people": people,
+        "contact_log": str(work / "logs/people-contacts.jsonl"),
     })
     plant = {
         "name": PLANT_NAME, "activation_timing": "before_start",

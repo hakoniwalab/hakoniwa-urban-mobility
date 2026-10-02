@@ -14,6 +14,12 @@ hakoniwa-mbody-registry). Per person it reads, every step:
   (beside the seat). Riders follow the car's pose (the Car fleet's
   vehicle_states) and do not collide while they ride.
 
+The cars are boxes in the people's world, moved with the cars' poses: people
+bump into them (the cars do not feel the people). Every contact of a person
+with a car, another person or the city is an event, written to the contact
+log (JSONL) when it starts and ends and published as the person's latest
+``<name>/contact`` (hako_msgs/ContactEvent; PDU strings stay short).
+
 and it writes, for all people, the same state PDUs as the Urban Car fleet so
 the browser viewer shows them unchanged:
 
@@ -31,6 +37,7 @@ import json
 import math
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,6 +52,9 @@ MAX_TURN_RAD_S = 3.0
 STEP_M = 0.32           # what a person steps up onto (the body's collider starts there)
 HIP_M = 0.66            # an adult's hip above the feet (the body's hip joints)
 GET_OFF_M = 0.75        # how far beside its seat a rider gets off
+RECENT_EVENTS = 256     # contact events kept in memory (tests, inspection)
+CONTACT_GAP_SEC = 0.3   # a contact ends after this long apart (no flicker while pushing)
+WORKSPACE = Path(__file__).resolve().parents[3]
 
 
 @dataclass
@@ -90,6 +100,27 @@ def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) 
     rate = math.radians(240)
     gait.angles = {joint: _approach(gait.angles[joint], targets[joint], rate, dt) for joint in LIMB_JOINTS}
     return dict(gait.angles)
+
+
+def contact_event_pdu(event: dict) -> bytes:
+    """A contact event as hako_msgs/ContactEvent (hakoniwa-pdu-registry)."""
+    registry = str(WORKSPACE / "hakoniwa-pdu-registry")
+    if registry not in sys.path:
+        sys.path.insert(0, registry)
+    from pdu.python.hako_msgs.pdu_conv_ContactEvent import py_to_pdu_ContactEvent
+    from pdu.python.hako_msgs.pdu_pytype_ContactEvent import ContactEvent
+
+    message = ContactEvent()
+    message.stamp.sec, nanosec = divmod(int(round(event["time_sec"] * 1e9)), 1_000_000_000)
+    message.stamp.nanosec = nanosec
+    message.self_name, message.other_name, message.other_kind = event["self"], event["other"], event["kind"]
+    # The City World's ENU, as the People API's poses.
+    position = event["position"]
+    message.position.x, message.position.y, message.position.z = (
+        position["east_m"], position["north_m"], position["up_m"])
+    message.relative_speed = float(event["relative_speed"])
+    message.started = bool(event["started"])
+    return py_to_pdu_ContactEvent(message)
 
 
 def wrap(angle: float) -> float:
@@ -145,6 +176,25 @@ class PeoplePlant:
                 "angles": {joint: 0.0 for joint in LIMB_JOINTS},
             })
         self.vehicle_poses = {}
+        self.previous_vehicle_poses = {}
+        self.proxies = {}  # car -> (mocap id, geom id)
+        for name in config.get("vehicles", {}):
+            try:
+                body = self.model.body(f"vehicle:{name}")
+            except KeyError:
+                continue
+            self.proxies[name] = (int(body.mocapid[0]), self.model.geom(f"vehicle:{name}").id)
+        self.geom_owner = {}  # geom id -> (kind, name)
+        for person in self.people:
+            self.geom_owner[person["collision"]] = ("person", person["name"])
+        for name, (_mocap, geom) in self.proxies.items():
+            self.geom_owner[geom] = ("vehicle", name)
+        self.active_contacts = {}  # (person, kind, other) -> event
+        self.pending_contacts = {}  # person -> its latest event, until published
+        self.events = deque(maxlen=RECENT_EVENTS)
+        self.next_event_id = 1
+        log = config.get("contact_log")
+        self.contact_log = open(log, "a", encoding="utf-8") if log else None
         mujoco.mj_forward(self.model, self.data)
         # Stand each person on the ground under its spawn.
         for person in self.people:
@@ -199,9 +249,8 @@ class PeoplePlant:
 
     def read_vehicles(self, pdu) -> None:
         """The cars' poses (MuJoCo frame) for riders."""
-        self.vehicle_poses = {}
         robot = self.config.get("vehicle_state_robot")
-        if not robot or not any(person["ride"] or person["riding"] for person in self.people):
+        if not robot or not (self.proxies or any(person["ride"] or person["riding"] for person in self.people)):
             return
         from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_MultiDOFJointState import pdu_to_py_MultiDOFJointState
 
@@ -212,6 +261,8 @@ class PeoplePlant:
             state = pdu_to_py_MultiDOFJointState(raw)
         except (IndexError, TypeError, ValueError):
             return
+        self.previous_vehicle_poses = self.vehicle_poses
+        self.vehicle_poses = {}
         for name, transform in zip(state.joint_names, state.transforms):
             q, p = transform.rotation, transform.translation
             yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y ** 2 + q.z ** 2))
@@ -256,6 +307,9 @@ class PeoplePlant:
         joints.name, joints.position = names, positions
         joints.velocity, joints.effort = [0.0] * len(names), [0.0] * len(names)
         pdu.flush_pdu_raw_data_nowait(robot, "joint_states", py_to_pdu_JointState(joints))
+        for name, event in self.pending_contacts.items():
+            pdu.flush_pdu_raw_data_nowait(name, "contact", contact_event_pdu(event))
+        self.pending_contacts = {}
         pdu.flush_pdu_raw_data_nowait(robot, "vehicle_states", py_to_pdu_MultiDOFJointState(states))
 
     # --- Stepping --------------------------------------------------------------------
@@ -268,8 +322,16 @@ class PeoplePlant:
             for actuator, value in zip(person["actuators"], drive(east, north, yaw_rate, yaw)):
                 self.data.ctrl[actuator] = value
             self.data.ctrl[person["lift"]] = self.ground_under(person)
+        for name, (mocap, _geom) in self.proxies.items():
+            pose = self.vehicle_poses.get(name)
+            if pose is None:
+                continue
+            x, y, z, yaw = pose
+            self.data.mocap_pos[mocap] = (x, y, z)
+            self.data.mocap_quat[mocap] = (math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))
         for _ in range(self.substeps):
             self.mujoco.mj_step(self.model, self.data)
+        self.detect_contacts()
         if any(person["ride"] or person["riding"] for person in self.people):
             for person in self.people:
                 self.update_ride(person)
@@ -278,6 +340,65 @@ class PeoplePlant:
             speed = math.hypot(self.data.qvel[person["slide_x"]], self.data.qvel[person["slide_y"]])
             mode = "sit" if person["riding"] else person["animation"]
             person["angles"] = animate(person["gait"], mode, speed, dt, person["scale"])
+
+    # --- Contacts --------------------------------------------------------------------
+
+    def vehicle_velocity(self, name: str) -> tuple[float, float]:
+        now, before = self.vehicle_poses.get(name), self.previous_vehicle_poses.get(name)
+        if now is None or before is None:
+            return 0.0, 0.0
+        dt = self.delta_usec / 1e6
+        return (now[0] - before[0]) / dt, (now[1] - before[1]) / dt
+
+    def detect_contacts(self) -> None:
+        """Contact events: a person touching a car, another person or the city."""
+        seen = {}
+        by_name = {person["name"]: person for person in self.people}
+        for index in range(self.data.ncon):
+            contact = self.data.contact[index]
+            owners = (self.geom_owner.get(contact.geom1, ("static", "static")),
+                      self.geom_owner.get(contact.geom2, ("static", "static")))
+            for mine, other in (owners, owners[::-1]):
+                if mine[0] != "person":
+                    continue
+                key = (mine[1], other[0], other[1])
+                if key not in seen:
+                    seen[key] = [float(v) for v in contact.pos]
+        now = float(self.data.time)
+        for key, position in seen.items():
+            if key in self.active_contacts:
+                self.active_contacts[key]["last_seen"] = now
+                continue
+            name, kind, other = key
+            person = by_name[name]
+            vx, vy = float(self.data.qvel[person["slide_x"]]), float(self.data.qvel[person["slide_y"]])
+            if kind == "vehicle":
+                ox, oy = self.vehicle_velocity(other)
+            elif kind == "person":
+                partner = by_name[other]
+                ox, oy = float(self.data.qvel[partner["slide_x"]]), float(self.data.qvel[partner["slide_y"]])
+            else:
+                ox, oy = 0.0, 0.0
+            event = self.event(name, kind, other, position, math.hypot(vx - ox, vy - oy), True)
+            self.active_contacts[key] = {**event, "last_seen": now}
+        for key in [key for key, contact in self.active_contacts.items()
+                    if key not in seen and now - contact["last_seen"] > CONTACT_GAP_SEC]:
+            started = self.active_contacts.pop(key)
+            self.event(key[0], key[1], key[2], started["position_mjcf"], 0.0, False)
+
+    def event(self, name, kind, other, position, relative_speed, started) -> dict:
+        x, y, z = position
+        event = {"id": self.next_event_id, "time_sec": round(float(self.data.time), 4), "self": name,
+                 "other": other, "kind": kind, "started": started,
+                 "position": {"east_m": round(-y, 3), "north_m": round(x, 3), "up_m": round(z, 3)},
+                 "relative_speed": round(relative_speed, 3)}
+        self.next_event_id += 1
+        self.events.append(event)
+        self.pending_contacts[name] = event
+        if self.contact_log is not None:
+            self.contact_log.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self.contact_log.flush()
+        return {**event, "position_mjcf": position}
 
     def seat(self, ride: str):
         """(vehicle, seat offset in its body frame) of '<vehicle>/<seat>', or None."""
