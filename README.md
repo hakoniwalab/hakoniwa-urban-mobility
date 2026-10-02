@@ -319,8 +319,12 @@ python tools/people_sim.py stop --people recipes/people/people-three.yaml
 ```
 
 From Python, `PeopleClient` (apps/people/hakoniwa_people.py) offers
-`set_velocity`, `set_animation`, `stop`, `poses` and the helper `walk_to`.
-Commands stay until the next one.
+`set_velocity`, `set_velocities` (several people at once), `set_animation`,
+`stop` (also back to `auto`), `stop_all`, `poses` and `people()` (who is
+here: look, pose, animation), and the blocking demo helper `walk_to`.
+Commands stay until the next one. An agent moving many people loops: read
+`poses()`, decide, `set_velocities()`, as `apps/people/crowd_demo.py` does
+for the ten people of `recipes/people/people-crowd.yaml`.
 
 A recipe may name an `environment` (an Environment Studio Recipe; configure
 writes it as a City World first) or a `world` (a City World receipt): the

@@ -23,6 +23,7 @@ def load(name: str, path: Path):
 
 
 plant = load("people_plant", ROOT / "apps/people/people_plant.py")
+sys.path.insert(0, str(ROOT / "apps/people"))
 people_sim = load("people_sim", ROOT / "tools/people_sim.py")
 
 
@@ -140,6 +141,64 @@ class RecipeTest(unittest.TestCase):
         self.assertEqual({geom.get("name") for geom in root.findall("worldbody/geom")}, {"wall"})
         self.assertIsNotNone(root.find("worldbody/body[@name='Person-1/person']"))
         self.assertEqual(root.find("compiler").get("angle"), "degree")
+
+
+class FakeTransport:
+    def __init__(self, *_args):
+        self.sent = []
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def send(self, robot, pdu, payload):
+        self.sent.append((robot, pdu, bytes(payload)))
+        return True
+
+    def read(self, robot, pdu):
+        for sent_robot, sent_pdu, payload in reversed(self.sent):
+            if (sent_robot, sent_pdu) == (robot, pdu):
+                return bytearray(payload)
+        return None
+
+
+class ClientTest(unittest.TestCase):
+    def setUp(self):
+        try:
+            import hakoniwa_pdu  # noqa: F401
+        except ImportError:
+            self.skipTest("hakoniwa_pdu is not installed")
+        self.client_module = load("hakoniwa_people", ROOT / "apps/people/hakoniwa_people.py")
+        directory = Path(tempfile.mkdtemp())
+        (directory / "people-pdudef.json").write_text("{}", encoding="utf-8")
+        (directory / "people-plant.json").write_text(
+            '{"people": [{"name": "A", "look": "staff"}, {"name": "B", "look": "child"}]}', encoding="utf-8")
+        with patch.object(self.client_module, "HakoniwaPollingTransport", FakeTransport):
+            self.people = self.client_module.PeopleClient(directory / "people-pdudef.json")
+        self.transport = self.people._transport
+
+    def test_stop_returns_to_the_auto_animation(self):
+        self.people.set_animation("A", "walk")
+        self.people.stop("A")
+        self.assertEqual(self.people.animation("A"), "auto")
+        self.people.set_animation("A", "walk")
+        self.people.stop("A", reset_animation=False)
+        self.assertEqual(self.people.animation("A"), "walk")
+
+    def test_batch_velocities_and_stop_all_reach_everyone(self):
+        self.people.set_velocities({"A": (1.0, 0.0), "B": (0.0, 0.5, 0.2)})
+        self.assertEqual([robot for robot, pdu, _ in self.transport.sent if pdu == "cmd_vel"], ["A", "B"])
+        self.people.stop_all()
+        self.assertEqual(self.people.names(), ["A", "B"])
+        self.assertEqual({self.people.animation(name) for name in ("A", "B")}, {"auto"})
+
+    def test_people_tells_who_is_here(self):
+        with patch.object(self.people, "poses", return_value={"A": "pose-a"}):
+            found = self.people.people()
+        self.assertEqual(found["A"], {"look": "staff", "pose": "pose-a", "animation": "auto"})
+        self.assertEqual(found["B"]["look"], "child")
 
 
 if __name__ == "__main__":
