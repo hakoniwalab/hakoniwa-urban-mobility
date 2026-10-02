@@ -20,7 +20,7 @@ the browser viewer shows them unchanged:
 - ``<state robot>/vehicle_states`` (sensor_msgs/MultiDOFJointState): one
   transform per person, MuJoCo frame (X north, Y west, Z up).
 - ``<state robot>/joint_states`` (sensor_msgs/JointState): the animated
-  shoulder and hip angles as ``<name>/<joint>``. The walk is animation: the
+  shoulder, hip and knee angles as ``<name>/<joint>``. The walk is animation: the
   limbs swing with the distance walked; they do not move the person.
 """
 
@@ -34,7 +34,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-LIMB_JOINTS = ("shoulder_left_joint", "shoulder_right_joint", "hip_left_joint", "hip_right_joint")
+LIMB_JOINTS = ("shoulder_left_joint", "shoulder_right_joint", "hip_left_joint", "hip_right_joint",
+               "knee_left_joint", "knee_right_joint")
 ANIMATIONS = ("auto", "walk", "idle", "wave", "sit")
 STRIDE_M = 1.0          # distance walked per full swing cycle (an adult)
 MAX_SWING_RAD = math.radians(30)
@@ -71,8 +72,10 @@ def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) 
         gait.phase = (gait.phase + 2 * math.pi * max(speed, 0.6) * dt / (STRIDE_M * scale)) % (2 * math.pi)
         swing = MAX_SWING_RAD * min(1.0, max(speed, 0.6) / 1.4)
         s = math.sin(gait.phase)
+        # A leg swung back (positive hip) bends its knee.
         targets = {"hip_left_joint": swing * s, "hip_right_joint": -swing * s,
-                   "shoulder_left_joint": -swing * s, "shoulder_right_joint": swing * s}
+                   "shoulder_left_joint": -swing * s, "shoulder_right_joint": swing * s,
+                   "knee_left_joint": 1.3 * swing * max(0.0, s), "knee_right_joint": 1.3 * swing * max(0.0, -s)}
         gait.angles = targets  # follows the phase exactly
         return dict(gait.angles)
     if mode == "idle":
@@ -82,7 +85,8 @@ def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) 
         targets["shoulder_right_joint"] = math.radians(-150) + math.radians(18) * math.sin(gait.clock * 2 * math.pi * 1.5)
     elif mode == "sit":
         targets.update(hip_left_joint=math.radians(-90), hip_right_joint=math.radians(-90),
-                       shoulder_left_joint=math.radians(-15), shoulder_right_joint=math.radians(-15))
+                       knee_left_joint=math.radians(90), knee_right_joint=math.radians(90),
+                       shoulder_left_joint=math.radians(-25), shoulder_right_joint=math.radians(-25))
     rate = math.radians(240)
     gait.angles = {joint: _approach(gait.angles[joint], targets[joint], rate, dt) for joint in LIMB_JOINTS}
     return dict(gait.angles)
