@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import math
@@ -393,6 +394,26 @@ class ControlModeTest(unittest.TestCase):
                 ]),
                 2,
             )
+
+    def test_joint_states_name_the_bodys_own_joints(self):
+        # A body whose steering joints are named otherwise (Hunter: *_steering_joint):
+        # the viewer animates the joints its view model names, so those names go out.
+        [vehicle, *_] = multi_car.resolve_config(ROOT / "recipes/multi-car-viewer.yaml")["vehicles"]
+        definition = copy.deepcopy(vehicle["type_definition"])
+        definition["interface"]["joints"]["steering_left"] = "front_left_steering_joint"
+        definition["interface"]["joints"]["steering_right"] = "front_right_steering_joint"
+        with tempfile.TemporaryDirectory() as directory:
+            _, joints = multi_car._materialize_vehicle_configs(
+                Path(directory), {**vehicle, "type_definition": definition})
+        self.assertEqual(sorted(joint["name"] for joint in joints), sorted(f"{vehicle['name']}/{name}" for name in (
+            "front_left_steering_joint", "front_right_steering_joint", "rear_left_wheel_joint", "rear_right_wheel_joint")))
+
+    def test_a_vehicle_takes_its_types_front_camera(self):
+        shared = {"position": [1.25, 0.0, 1.25]}
+        own = {"position": [1.15, 0.0, 0.80]}
+        self.assertEqual(multi_car.vehicle_camera({"type_definition": {"front_camera": own}}, {"front_camera": shared}), own)
+        self.assertEqual(multi_car.vehicle_camera({"type_definition": {"front_camera": None}}, {"front_camera": shared}), shared)
+        self.assertIsNone(multi_car.vehicle_camera({"type_definition": {}}, {}))
 
     def test_runtime_materializes_independent_commands_and_fleet_state(self):
         with tempfile.TemporaryDirectory() as directory:

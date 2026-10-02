@@ -417,6 +417,9 @@ def resolve_config(config_path: Path) -> dict:
                 type_input["view_model"], f"vehicle type {type_name} view model"
             )
             view_model = load_json(view_model_path, f"vehicle type {type_name} view model")
+            type_camera = type_input.get("front_camera")
+            if type_camera is not None and not isinstance(type_camera, dict):
+                raise RecipeError(f"vehicle type {type_name} front_camera must be a mapping")
             if view_model.get("format") != "hako_viewer_model":
                 raise RecipeError(f"vehicle type {type_name} has an invalid view model")
             validation = contract["validation"]
@@ -430,6 +433,8 @@ def resolve_config(config_path: Path) -> dict:
                     view_model_path, f"vehicle type {type_name} view model"
                 ),
                 "view_model_data": view_model,
+                # Its vehicle-mounted camera; else browser_visualization.front_camera.
+                "front_camera": type_camera,
                 "interface": {
                     "base_freejoint": str(interface["base_freejoint"]),
                     "joints": {
@@ -632,6 +637,11 @@ def resolve_config(config_path: Path) -> dict:
             "front_camera": front_camera,
         },
     }
+
+
+def vehicle_camera(vehicle: dict, visualization: dict) -> dict | None:
+    """A vehicle's front camera: its type's, else the composition-wide one."""
+    return vehicle["type_definition"].get("front_camera") or visualization.get("front_camera")
 
 
 def paths() -> dict[str, Path]:
@@ -1190,7 +1200,8 @@ def _materialize_vehicle_configs(work: Path, vehicle: dict) -> tuple[list[dict],
             "pdu_robot": name,
         })
         joints.append({
-            "name": f"{name}/{logical_id}_joint",
+            # As the body names it (its view model animates that joint).
+            "name": f"{name}/{interface['joints'][role]}",
             "mjcf_joint": config["spec"]["joint_name"],
         })
 
@@ -1620,11 +1631,7 @@ def materialize_browser_visualization(
             {
                 "name": vehicle["name"],
                 "type": vehicle["type"],
-                **(
-                    {"frontCamera": visualization["front_camera"]}
-                    if visualization.get("front_camera") is not None
-                    else {}
-                ),
+                **({"frontCamera": camera} if (camera := vehicle_camera(vehicle, visualization)) is not None else {}),
             }
             for vehicle in vehicles
         ],
@@ -1643,7 +1650,7 @@ def materialize_browser_visualization(
             "wireVersion": "v2",
         },
         "ui": {
-            "enableAttachedCameras": visualization.get("front_camera") is not None,
+            "enableAttachedCameras": any(vehicle_camera(vehicle, visualization) is not None for vehicle in vehicles),
             "enableMainCameraMouseControl": True,
         },
         "stateInput": {
