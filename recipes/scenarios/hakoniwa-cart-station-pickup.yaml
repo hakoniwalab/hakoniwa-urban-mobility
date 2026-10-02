@@ -1,0 +1,54 @@
+# The 箱庭カート comes to a stop where three people wait, they get on, and it
+# takes them to a destination where they get off; then it drives back round
+# to where it started. The car follows the route on simulation time
+# (apps/car/scenario_executor.py); the people: section is the people's side
+# (apps/people/ride_plan.py): who waits, which stop and seat, where they go.
+# Run with recipes/compositions/plain-hakoniwa-cart-ride.yaml.
+schema_version: 2
+name: Hakoniwa Cart station pickup
+rate_hz: 50
+start_delay_sec: 0.0
+loop_count: 1
+
+vehicles:
+  - name: Cart-1
+    route_offset_m: 0.0
+
+control:
+  speed_m_s: 2.0
+  lookahead_m: 3.0
+  position_gain: 0.8
+  wheelbase_m: 2.10
+  max_steering_deg: 34.0
+
+route:
+  closed: true
+  points:
+    - {name: start, east_m: 0.0, north_m: -14.0}
+    - {name: station, east_m: 0.0, north_m: 0.0, dwell_sec: 25.0}
+    - {name: avenue, east_m: 0.0, north_m: 16.0}
+    - {name: destination, east_m: 0.0, north_m: 30.0, dwell_sec: 20.0}
+    - {name: turn-north, east_m: 3.0, north_m: 37.0}
+    - {name: turn-east, east_m: 10.0, north_m: 37.0}
+    - {name: back-north, east_m: 13.0, north_m: 30.0}
+    - {name: back-south, east_m: 13.0, north_m: -14.0}
+    - {name: turn-south, east_m: 10.0, north_m: -21.0}
+    - {name: turn-west, east_m: 3.0, north_m: -21.0}
+
+people:
+  vehicle: Cart-1
+  riders:
+    # They wait on the east side of the stop (the cart's right); the one for
+    # the rear left seat walks round the back of the cart.
+    - name: Person-1
+      wait: [2.3, 1.2]
+      board: {stop: station, seat: passenger}
+      alight: {stop: destination, then: [4.0, 33.0]}
+    - name: Person-2
+      wait: [2.3, 0.0]
+      board: {stop: station, seat: rear_right}
+      alight: {stop: destination, then: [4.6, 31.6]}
+    - name: Person-3
+      wait: [2.3, -1.2]
+      board: {stop: station, seat: rear_left}
+      alight: {stop: destination, then: [5.2, 30.2]}

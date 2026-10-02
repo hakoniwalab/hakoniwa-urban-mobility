@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+
+import yaml
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
@@ -244,7 +246,7 @@ class CompositionTest(unittest.TestCase):
         directory = Path(tempfile.mkdtemp())
         path = directory / "people-only.yaml"
         path.write_text("schema: hakoniwa.composition/v1\nid: people-only\nworld: plain-ground\nvehicles:\n"
-                        "  - {name: P, asset: hakoniwa-person-visitor, control: api, spawn: {east_m: 0, north_m: 0, yaw_deg: 0}}\n",
+                        "  - {name: P, asset: hakoniwa-person-visitor, control: external, spawn: {east_m: 0, north_m: 0, yaw_deg: 0}}\n",
                         encoding="utf-8")
         with self.assertRaisesRegex(self.simulation.SimulationError, "people_sim"):
             self.simulation.plan(path)
@@ -269,6 +271,61 @@ class CompositionTest(unittest.TestCase):
         self.assertEqual([asset["name"] for asset in launcher["assets"]], ["urban-car-fleet-plant"])
         self.assertFalse((work / "config/people").exists())
 
+
+
+class RidePlanTest(unittest.TestCase):
+    """The people side of a car route scenario (apps/people/ride_plan.py)."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "apps/people"))
+        sys.path.insert(0, str(ROOT / "apps/car"))
+        import ride_plan
+
+        self.ride = ride_plan
+        self.scenario = yaml.safe_load((ROOT / "recipes/scenarios/hakoniwa-cart-station-pickup.yaml").read_text(encoding="utf-8"))
+
+    def test_the_scenario_drives_the_cart_and_lists_its_riders(self):
+        sys.path.insert(0, str(ROOT / "apps/car"))
+        import scenario_executor
+
+        route = scenario_executor.load_scenario(ROOT / "recipes/scenarios/hakoniwa-cart-station-pickup.yaml")
+        self.assertEqual([vehicle.name for vehicle in route.vehicles], ["Cart-1"])  # the executor ignores people:
+        plan = self.ride.load_plan(self.scenario)
+        self.assertEqual(plan.vehicle, "Cart-1")
+        self.assertEqual(sorted(plan.stops), ["destination", "station"])
+        self.assertEqual([rider.seat for rider in plan.riders], ["passenger", "rear_right", "rear_left"])
+
+    def test_a_plan_must_name_stops_of_the_route_and_free_seats(self):
+        broken = {**self.scenario, "people": {**self.scenario["people"], "riders": [
+            {"name": "A", "board": {"stop": "nowhere", "seat": "passenger"}}]}}
+        with self.assertRaisesRegex(self.ride.PlanError, "board.stop"):
+            self.ride.load_plan(broken)
+        twice = {**self.scenario, "people": {**self.scenario["people"], "riders": [
+            {"name": "A", "board": {"stop": "station", "seat": "passenger"}},
+            {"name": "B", "board": {"stop": "station", "seat": "passenger"}}]}}
+        with self.assertRaisesRegex(self.ride.PlanError, "seat"):
+            self.ride.load_plan(twice)
+
+    def test_the_far_side_door_is_reached_round_the_back(self):
+        near = self.ride.boarding_path((0.0, -2.0), (0.12, -0.26))
+        self.assertEqual(len(near), 1)
+        far = self.ride.boarding_path((0.0, -2.0), (-1.08, 0.26))
+        self.assertEqual(len(far), 3)
+        self.assertTrue(all(point[0] < -2.0 for point in far[:2]))  # behind the car
+        self.assertGreater(far[-1][1], 0.26)  # the door, outside the left seat
+
+    def test_the_riders_share_one_control_process(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import urban_controls
+        import urban_simulation
+
+        composition = urban_simulation.load_composition(ROOT / "recipes/compositions/plain-hakoniwa-cart-ride.yaml")
+        processes = urban_controls.control_processes(composition, {
+            "ackermann-mujoco": urban_simulation.car_runtime(Path("/w")),
+            "hakoniwa-people": urban_simulation.people_runtime(Path("/w"))})
+        names = [process["name"] for process in processes]
+        self.assertEqual(len(names), 2)  # the cart's scenario executor and one ride plan for three looks
+        self.assertTrue(any("ride_plan.py" in " ".join(process["args"]) for process in processes))
 
 class RideTest(unittest.TestCase):
     def test_a_rider_goes_with_the_car_and_gets_off_beside_it(self):

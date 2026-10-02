@@ -267,10 +267,10 @@ class StudioServerTest(StudioTestBase):
             status, body = self.call("POST", "/api/worlds/test-city/route-check", {"points": points})
             self.assertEqual(status, 200)
             self.assertEqual(body["conflicts"][0]["building"], "bldg_a")
-            # The Golf Cart (1.22 m wide) is the widest Car: half its width plus the margin.
-            self.assertEqual(body["vehicle"], {"asset": "golf-cart", "title": "Generic Ackermann Golf Cart",
-                                               "width_m": 1.22})
-            self.assertAlmostEqual(body["clearance_m"], 0.81)
+            # The Hakoniwa Cart (1.24 m wide) is the widest Car: half its width plus the margin.
+            self.assertEqual(body["vehicle"], {"asset": "hakoniwa-cart", "title": "箱庭カート（4人乗り）",
+                                               "width_m": 1.24})
+            self.assertAlmostEqual(body["clearance_m"], 0.82)
             # Fewer than three points is not a loop yet.
             self.assertEqual(self.call("POST", "/api/worlds/test-city/route-check", {"points": points[:2]})[1]
                              ["conflicts"], [])

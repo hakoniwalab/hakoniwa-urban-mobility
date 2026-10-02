@@ -308,7 +308,8 @@ def _assign_route_cars(composition_path: Path, vehicles: tuple[Vehicle, ...]) ->
     """
     groups: dict[Path, list[Vehicle]] = {}
     for vehicle in vehicles:
-        if vehicle.control == "api" and "scenario" in vehicle.params:
+        # Only Cars drive a route; people (whose api control rides one) only read it.
+        if vehicle.asset.simulator == CAR_SIMULATOR and vehicle.control == "api" and "scenario" in vehicle.params:
             groups.setdefault(
                 urban_assets.resolve_reference(str(vehicle.params["scenario"]), composition_path.parent), []
             ).append(vehicle)

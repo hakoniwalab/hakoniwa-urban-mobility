@@ -1,0 +1,34 @@
+# The 箱庭カート picks up three 箱庭人間 at a stop and takes them to a
+# destination where a fourth waits (recipes/scenarios/hakoniwa-cart-station-pickup.yaml).
+# The car runs the scenario's route (control api: the scenario executor); the
+# riders run its people: section (control ride: apps/people/ride_plan.py).
+#   python tools/urban_mobility.py configure --composition recipes/compositions/plain-hakoniwa-cart-ride.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/plain-hakoniwa-cart-ride.yaml
+schema: hakoniwa.composition/v1
+id: plain-hakoniwa-cart-ride
+world: plain-ground
+vehicles:
+  - name: Cart-1
+    asset: hakoniwa-cart
+    control: api
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/hakoniwa-cart-station-pickup.yaml"}
+    spawn: {east_m: 0.0, north_m: -14.0, yaw_deg: 90.0}
+  - name: Person-1
+    asset: hakoniwa-person-visitor
+    control: api
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/hakoniwa-cart-station-pickup.yaml"}
+    spawn: {east_m: 2.3, north_m: 1.2, yaw_deg: 180.0}
+  - name: Person-2
+    asset: hakoniwa-person-passerby
+    control: api
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/hakoniwa-cart-station-pickup.yaml"}
+    spawn: {east_m: 2.3, north_m: 0.0, yaw_deg: 180.0}
+  - name: Person-3
+    asset: hakoniwa-person-child
+    control: api
+    params: {scenario: "${repo:hakoniwa-urban-mobility}/recipes/scenarios/hakoniwa-cart-station-pickup.yaml"}
+    spawn: {east_m: 2.3, north_m: -1.2, yaw_deg: 180.0}
+  - name: Person-4
+    asset: hakoniwa-person-staff
+    control: external
+    spawn: {east_m: 5.0, north_m: 33.5, yaw_deg: 180.0}

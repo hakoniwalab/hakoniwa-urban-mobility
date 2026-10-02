@@ -333,8 +333,8 @@ than 0.32 m (a square's deck), as in `recipes/people/people-stall-street.yaml`.
 The plant measures the ground under each person with a ray and lifts it there.
 
 People also join a Composition of Cars as vehicles of the Assets
-`hakoniwa-person-{visitor,staff,passerby,child}` (control `api`, moved from
-outside), as in `recipes/compositions/plain-golf-cart-people.yaml`. The Car
+`hakoniwa-person-{visitor,staff,passerby,child}` (control `external`, moved
+from outside; or `api`, riding as a scenario says: below), as in `recipes/compositions/plain-golf-cart-people.yaml`. The Car
 route then starts the people plant after the Car plant, in the same
 Hakoniwa time (`tools/urban_people.py`): people walk the same City World and
 bump into its buildings, and into the cars too: each car is a box of its
@@ -355,6 +355,30 @@ People ride the cars whose Asset declares `seats` (the golf cart: `driver`,
 `<name>/ride` PDU, `std_msgs/String` "Car-1/driver") seats the person, who
 then follows the car's pose in the sit pose without colliding;
 `people.get_off("Person-1")` puts it beside its seat, back on the ground.
+
+### People riding a car route scenario
+
+A car route scenario (`apps/car/scenario_executor.py`, the Car's control
+`api`) may carry a `people:` section, which the executor ignores: who rides
+its car, where each waits, at which stop (a route point with `dwell_sec`) and
+in which seat they get on, where they get off and walk to. People whose
+control is `api` run it with `apps/people/ride_plan.py` (one process for all
+of them): when the car stands at a rider's stop, the rider walks to its
+seat's door (round the back of the car for the far side) and gets on; at the
+destination it gets off and walks on. The car keeps the executor's
+simulation-time schedule (ride_plan only reads its pose), nothing is random,
+and every event (arrived, boarding, ride, departed, alight, reached) is
+written with Hakoniwa time to `logs/people-rides.jsonl`:
+
+```bash
+python tools/urban_mobility.py configure --composition recipes/compositions/plain-hakoniwa-cart-ride.yaml
+python tools/urban_mobility.py start --composition recipes/compositions/plain-hakoniwa-cart-ride.yaml
+```
+
+`recipes/scenarios/hakoniwa-cart-station-pickup.yaml`: the 箱庭カート comes to
+a stop where three people wait, takes them to a destination 30 m on and lets
+them off. Two runs give the same events, within the 0.1 s the people's side
+polls at.
 
 ### A scene run from outside: the festival director
 
