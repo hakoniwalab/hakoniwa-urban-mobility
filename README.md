@@ -332,6 +332,15 @@ people then bump into its stalls and buildings and step up onto what is lower
 than 0.32 m (a square's deck), as in `recipes/people/people-stall-street.yaml`.
 The plant measures the ground under each person with a ray and lifts it there.
 
+People also join a Composition of Cars as vehicles of the Assets
+`hakoniwa-person-{visitor,staff,passerby,child}` (control `api`, moved from
+outside), as in `recipes/compositions/plain-golf-cart-people.yaml`. The Car
+route then starts the people plant after the Car plant, in the same
+Hakoniwa time (`tools/urban_people.py`): people walk the same City World and
+bump into its buildings, but not into the cars (two physics worlds; an
+agent reading both positions keeps them apart), and the viewer shows both.
+The people's PDU definition is the Car Recipe's `config/people/people-pdudef.json`.
+
 ## Why this repository exists
 
 Urban scenarios cross component boundaries:

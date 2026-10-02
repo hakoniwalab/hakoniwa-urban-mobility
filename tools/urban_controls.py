@@ -194,6 +194,8 @@ def control_processes(
     seen_composition: dict[str, list[dict]] = {}
     indexes: dict[str, int] = {}
     for vehicle in composition.vehicles:
+        if vehicle.asset.controls()[vehicle.control].get("external") is True:
+            continue  # moved from outside (the Hakoniwa People API): nothing to start
         simulator = vehicle.asset.simulator
         if simulator not in runtimes:
             raise ControlError(f"no runtime supplied for simulator {simulator}")

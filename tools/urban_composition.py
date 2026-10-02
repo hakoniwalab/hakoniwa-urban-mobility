@@ -29,6 +29,9 @@ COMPOSITION_SCHEMA = "hakoniwa.composition/v1"
 SPAWN_KEYS = {"east_m", "north_m", "yaw_deg"}
 CAR_SIMULATOR = "ackermann-mujoco"
 DRONE_SIMULATOR = "drone-core"
+# 箱庭人間 join a Composition beside its vehicles (tools/urban_people.py); the
+# routes are chosen by the other simulators.
+PEOPLE_SIMULATOR = "hakoniwa-people"
 # Current tool names for the contract controls.
 CAR_CONTROL_MODES = {"rc": "ps5", "api": "external_python"}
 DRONE_CONTROL_MODES = {"rc": "ps4-rc", "api": "fleet-rpc"}
@@ -460,11 +463,26 @@ def _param_path(composition: Composition, value: object) -> Path:
 
 
 def _require_simulators(composition: Composition, expected: set[str], adapter: str) -> None:
-    if composition.simulators() != expected:
+    if composition.simulators() - {PEOPLE_SIMULATOR} != expected:
         raise CompositionError(
             f"the {adapter} adapter needs simulators {sorted(expected)}; "
             f"got {sorted(composition.simulators())}"
         )
+
+
+def people(composition: Composition) -> list[dict]:
+    """The Composition's 箱庭人間 for tools/urban_people.py: name, look, scale, spawn."""
+    result = []
+    for person in composition.by_simulator(PEOPLE_SIMULATOR):
+        look = person.asset.data.get("look", {})
+        result.append({
+            "name": person.name, "look": look.get("variant", "visitor"), "scale": float(look.get("scale", 1.0)),
+            "view_model": str(person.asset.resolve(person.asset.data["model"]["visual"])),
+            "model": str(person.asset.resolve(person.asset.data["model"]["physics"])),
+            "spawn": {"east_m": float(person.spawn.get("east_m", 0.0)), "north_m": float(person.spawn.get("north_m", 0.0)),
+                      "yaw_deg": float(person.spawn.get("yaw_deg", 0.0))},
+        })
+    return result
 
 
 # --- Car (tools/multi_car.py) -------------------------------------------------
@@ -628,7 +646,8 @@ def to_car_config(
     if composition.interactions:
         raise CompositionError("interactions need a Drone; this Composition has Cars only")
     inputs = _car_inputs(
-        composition, list(composition.vehicles), DEFAULT_CAR_WEB_BRIDGE_PORT, _ground(composition, ground)
+        composition, composition.by_simulator(CAR_SIMULATOR), DEFAULT_CAR_WEB_BRIDGE_PORT,
+        _ground(composition, ground)
     )
     return _car_config(composition, recipe_id, inputs)
 

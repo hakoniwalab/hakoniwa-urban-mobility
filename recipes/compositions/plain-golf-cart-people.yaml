@@ -1,0 +1,25 @@
+# A golf cart and three 箱庭人間 on the plain ground. The people are moved
+# from outside (apps/people/hakoniwa_people.py with the PDU definition under
+# the Car Recipe's config/people/); the cart is driven with a PS5 controller.
+#   python tools/urban_mobility.py configure --composition recipes/compositions/plain-golf-cart-people.yaml
+#   python tools/urban_mobility.py start --composition recipes/compositions/plain-golf-cart-people.yaml
+schema: hakoniwa.composition/v1
+id: plain-golf-cart-people
+world: plain-ground
+vehicles:
+  - name: Car-1
+    asset: golf-cart
+    control: rc
+    spawn: {east_m: 0.0, north_m: 0.0, yaw_deg: 90.0}
+  - name: Person-1
+    asset: hakoniwa-person-staff
+    control: api
+    spawn: {east_m: 3.0, north_m: 2.0, yaw_deg: 180.0}
+  - name: Person-2
+    asset: hakoniwa-person-visitor
+    control: api
+    spawn: {east_m: -3.0, north_m: 2.0, yaw_deg: 0.0}
+  - name: Person-3
+    asset: hakoniwa-person-child
+    control: api
+    spawn: {east_m: 0.0, north_m: 4.0, yaw_deg: -90.0}

@@ -203,3 +203,46 @@ class ClientTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompositionTest(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import urban_simulation
+        import urban_people
+
+        self.simulation, self.people = urban_simulation, urban_people
+
+    def test_people_ride_the_car_route(self):
+        plan = self.simulation.plan(ROOT / "recipes/compositions/plain-golf-cart-people.yaml")
+        self.assertEqual(plan.route, "car")
+        self.assertIn("hakoniwa-people", plan.to_json()["simulators"])
+
+    def test_people_alone_are_not_a_route(self):
+        directory = Path(tempfile.mkdtemp())
+        path = directory / "people-only.yaml"
+        path.write_text("schema: hakoniwa.composition/v1\nid: people-only\nworld: plain-ground\nvehicles:\n"
+                        "  - {name: P, asset: hakoniwa-person-visitor, control: api, spawn: {east_m: 0, north_m: 0, yaw_deg: 0}}\n",
+                        encoding="utf-8")
+        with self.assertRaisesRegex(self.simulation.SimulationError, "people_sim"):
+            self.simulation.plan(path)
+
+    def test_external_people_start_no_control_process(self):
+        import urban_controls
+
+        composition = self.simulation.load_composition(ROOT / "recipes/compositions/plain-golf-cart-people.yaml")
+        processes = urban_controls.control_processes(composition, {"ackermann-mujoco": self.simulation.car_runtime(Path("/w"))})
+        self.assertEqual([process["name"] for process in processes], ["control-car-1-rc"])
+
+    def test_a_composition_without_people_removes_the_plant(self):
+        work = Path(tempfile.mkdtemp())
+        path = work / "cart.yaml"
+        path.write_text("schema: hakoniwa.composition/v1\nid: cart\nworld: plain-ground\nvehicles:\n"
+                        "  - {name: Car-1, asset: golf-cart, control: rc, spawn: {east_m: 0, north_m: 0, yaw_deg: 0}}\n",
+                        encoding="utf-8")
+        composition = self.simulation.load_composition(path)
+        (work / "config/people").mkdir(parents=True)
+        launcher = {"assets": [{"name": "urban-car-fleet-plant"}, {"name": "people-plant"}]}
+        self.people.apply(work, composition, launcher, "urban-car-fleet-plant")
+        self.assertEqual([asset["name"] for asset in launcher["assets"]], ["urban-car-fleet-plant"])
+        self.assertFalse((work / "config/people").exists())
