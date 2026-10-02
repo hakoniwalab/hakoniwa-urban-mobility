@@ -65,8 +65,9 @@ vehicles:
     route: [[-40, -56], [-62, -51], [-101, -50.5], [-118, -51], [-121, -57], [-114, -66], [-104, -71],
             [-90, -71.5], [-60, -71.5], [-25, -69], [-15, -63], [-22, -57.5]]
     stops: {2: 14, 9: 10}        # waypoint index: seconds stopped (shuttle stops)
-    # Riders from the aisle walk out at its west end and round the stalls.
-    shuttle: {seat: passenger, board_within_m: 30, via: [[-119, -37], [-120, -48]], via_unless_north_below: -43}
+    # Riders from the aisle or the lively square (its back is furnished) walk
+    # out at the aisle's west end and round the stalls.
+    shuttle: {seat: passenger, board_within_m: 30, via: [[-119, -37], [-120, -48]], via_unless_north_below: -47.5}
     speed: 2.0
     wheelbase_m: 1.55
     max_steering_rad: 0.70
