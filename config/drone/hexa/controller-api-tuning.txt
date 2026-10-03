@@ -7,9 +7,17 @@
 # no derivative (it differentiates the velocity every 1 ms step: noise) and a
 # 20 deg tilt limit: no swings, tilt within +-20 deg on moves and +-5 deg on
 # climbs and descents (Tokyo helipad to the deck and back, CSV logs).
-PID_POS_X_Kp 1.2
+# Legs fly straight: POS_DIST_CONTROL 1 sets the speed along the line to the
+# target. With 0 the east and north speeds were each capped at
+# PID_POS_MAX_SPD, so a far target pulled the Hexa off at 45 deg (up to 15 m
+# off a 90 m leg). Position Kp 0.6 (was 1.2) asks for a deceleration the
+# 20 deg tilt can give, so a stop overshoots about half as far. Tokyo demo
+# flight recorded at 20 Hz: largest distance off the line on the map 15.2 ->
+# 1.1 m, stop overshoot 2.2 -> 1.4 m.
+POS_DIST_CONTROL 1
+PID_POS_X_Kp 0.6
 PID_POS_X_Kd 0
-PID_POS_Y_Kp 1.2
+PID_POS_Y_Kp 0.6
 PID_POS_Y_Kd 0
 PID_POS_VX_Kp 4.0
 PID_POS_VX_Ki 0.0
@@ -26,3 +34,7 @@ PID_YAW_RPM_MAX 10
 # hover thrust): with it the climb / descent capped at 4.8 / 5.6 m/s against
 # drag, so leaving the 250 m Tokyo tower roof took 40 s; doubled, 7.4 / 8.1 m/s.
 PID_ALT_MAX_POWER 19.62
+# More altitude damping (Kd 12, was 6 from controller-tuning.txt): climbs and
+# descents at up to 12 m/s stopped up to 3.6 m past the height; now 0.06 m,
+# and the 218 m climb up the tower takes the same 32 s.
+PID_ALT_Kd 12.0
