@@ -932,8 +932,16 @@ async function saveComposition() {
   const current = state.current;
   if (!current) return;
   const id = current.id;
-  const composition = savedForm(current.composition);
   const status = $("#compose-status");
+  // tools/urban_studio.py COMPOSITION_ID: without one the request has no target.
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) {
+    setStatus(status, id
+      ? `ID「${id}」は使えません（英小文字・数字・ハイフン、64 文字まで、先頭は英小文字か数字）`
+      : "上の「ID」を入れてから保存してください（例: tocho-demo。英小文字・数字・ハイフン）", "error");
+    $("#composition-id").focus();
+    return;
+  }
+  const composition = savedForm(current.composition);
   setStatus(status, "検証中…");
   try {
     const plan = await api("PUT", `compositions/${id}`, composition);
