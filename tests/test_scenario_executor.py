@@ -132,6 +132,19 @@ vehicles:
         speed, _ = scenario_executor.route_command(geometry, cursor, vehicle, pose, control)
         self.assertGreater(speed, 0.0)
 
+    def test_a_vehicle_behind_its_target_does_not_cut_the_corner(self):
+        # Held 7 m behind (it yielded), short of the corner at (50, 0): it keeps
+        # straight instead of steering for a point past the corner.
+        geometry = self.square_route()
+        control = self.route_control()
+        vehicle = scenario_executor.RouteVehicle(name="Car-2", offset_m=0.0)
+        cursor = scenario_executor.RouteCursor(geometry, control.speed_m_s, loop_count=None)
+        cursor.advance(26.0)  # target at 52 m, past the corner
+        pose = scenario_executor.VehiclePose(45.0, 0.0, 0.5, 0.0)  # at 45 m, heading east
+        speed, steering = scenario_executor.route_command(geometry, cursor, vehicle, pose, control)
+        self.assertGreater(speed, 0.0)
+        self.assertAlmostEqual(steering, 0.0, places=6)
+
     def test_a_vehicle_ahead_in_range_makes_it_yield(self):
         east = 0.0  # heading east
         poses = {
