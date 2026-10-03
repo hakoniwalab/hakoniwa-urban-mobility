@@ -142,12 +142,13 @@ def plan(composition_path: Path) -> Plan:
     import urban_composition
 
     composition = load_composition(composition_path)
-    # 箱庭人間 join the Car route (tools/urban_people.py); the others choose it.
+    # 箱庭人間 join the Car and the integrated (Cars + one Drone) routes
+    # (tools/urban_people.py); the others choose it.
     people = urban_composition.PEOPLE_SIMULATOR in composition.simulators()
     simulators = frozenset(composition.simulators()) - {urban_composition.PEOPLE_SIMULATOR}
-    if people and simulators != CAR:
+    if people and simulators not in (CAR, CAR_AND_DRONE):
         raise SimulationError(
-            "箱庭人間 join a Composition of Cars for now"
+            "箱庭人間 join a Composition of Cars (with or without one Drone) for now"
             + ("" if simulators else "; run people alone with tools/people_sim.py"))
     if composition.fleets:
         try:

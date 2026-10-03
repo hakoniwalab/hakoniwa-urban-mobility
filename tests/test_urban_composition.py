@@ -585,6 +585,37 @@ class IntegratedCompositionTest(IntegratedFixture):
             recipe = urban_simulation.plan(self.integrated()).managed_recipe
         self.assertEqual(recipe, ROOT / "recipes/experiments/urban-mobility-rc.yaml")
 
+    def test_people_join_the_integrated_route(self):
+        person = {"name": "Person-1", "asset": "hakoniwa-person-visitor", "control": "external",
+                  "spawn": {"east_m": 40.0, "north_m": 7.5, "yaw_deg": 0.0}}
+        composition = self.integrated()
+        data = yaml.safe_load(composition.read_text(encoding="utf-8"))
+        data["vehicles"].append(person)
+        composition.write_text(yaml.safe_dump(data), encoding="utf-8")
+        with self.catalog():
+            plan = urban_simulation.plan(composition)
+        self.assertEqual(plan.managed_recipe, ROOT / "recipes/experiments/urban-mobility-rc.yaml")
+        self.assertIn("hakoniwa-people", plan.to_json()["simulators"])
+
+    def test_a_drone_without_a_mirror_still_gets_its_pdus(self):
+        import urban_composer
+
+        unified = self.work / "urban-car-pdudef.json"
+        drone = self.work / "pdudef/drone-pdudef-current.json"
+        drone.parent.mkdir(parents=True)
+        car = {"paths": [{"id": "urban-car-command", "path": "/c.json"}],
+               "robots": [{"name": "Car-1", "pdutypes_id": "urban-car-command"}]}
+        unified.write_text(json.dumps(car), encoding="utf-8")
+        drone.write_text(json.dumps({"paths": [{"id": "drone_type", "path": "drone-pdutypes.json"}],
+                                     "robots": [{"name": "Drone-1", "pdutypes_id": "drone_type"}]}), encoding="utf-8")
+        urban_composer.add_drone_robots(unified, drone)
+        merged = json.loads(unified.read_text(encoding="utf-8"))
+        self.assertEqual(merged["robots"][-1], {"name": "Drone-1", "pdutypes_id": "drone-drone_type"})
+        self.assertEqual(merged["paths"][-1]["path"], str((drone.parent / "drone-pdutypes.json").resolve()))
+        # A mirror already put the Drone there: nothing changes.
+        urban_composer.add_drone_robots(unified, drone)
+        self.assertEqual(json.loads(unified.read_text(encoding="utf-8")), merged)
+
 
 class IntegratedPlacementTest(IntegratedFixture):
     def context(self):
