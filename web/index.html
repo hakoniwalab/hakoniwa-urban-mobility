@@ -204,24 +204,17 @@
             <label class="field">開始待ち (s)<input id="flight-delay" type="number" step="0.5" min="0"></label>
             <label class="field">速度 (m/s)<input id="flight-speed" type="number" step="0.1" min="0.1"></label>
             <label class="field">周回数<input id="flight-loops" type="number" step="1" min="1"></label>
-            <label class="field">離陸の上昇 (m)<input id="flight-rise" type="number" step="0.5" min="0.5"></label>
-            <label class="field">離陸後の待ち (s)<input id="flight-takeoff-hold" type="number" step="0.5" min="0"></label>
-          </div>
-          <div class="row">
-            <label class="field">離陸地点 east<input id="flight-takeoff-east" type="number" step="0.1"></label>
-            <label class="field">north<input id="flight-takeoff-north" type="number" step="0.1"></label>
-            <button id="flight-pick-takeoff" class="secondary">地図で選ぶ</button>
             <label class="field">着陸<select id="flight-land">
               <option value="takeoff">離陸地点に戻る</option>
               <option value="elsewhere">別の場所</option>
               <option value="none">着陸しない</option>
             </select></label>
-            <label class="field flight-land-at">着陸 east<input id="flight-land-east" type="number" step="0.1"></label>
-            <label class="field flight-land-at">north<input id="flight-land-north" type="number" step="0.1"></label>
-            <label class="field flight-land-at">真上から (m)<input id="flight-land-rise" type="number" step="0.5" min="0.5"></label>
-            <button id="flight-pick-land" class="secondary flight-land-at">地図で選ぶ</button>
           </div>
-          <p class="hint">離陸地点は、確認用です（実際の位置は Composition の配置で決まります）。高さは、その点の真下の一番上の面（地面・屋上）からの高さで指定します。</p>
+          <div class="row">
+            <button id="flight-pick-takeoff" class="secondary">離陸地点を地図で選ぶ</button>
+            <button id="flight-pick-land" class="secondary flight-land-at">着陸地点を地図で選ぶ</button>
+          </div>
+          <p class="hint">離陸地点（T）と着陸地点（L）は、下の表の最初と最後の行で編集します。離陸地点は確認用です（実際の位置は Composition の配置で決まります）。高さは、その点の真下の一番上の面（地面・屋上）からの高さで指定します。</p>
           <label class="field inline"><input id="flight-show-buildings" type="checkbox" checked> 建物の外形を表示</label>
           <div id="flight-map" class="placement-view"></div>
           <p id="flight-map-hint" class="hint">地図をクリックすると経由点を追加します。点はドラッグで移動、クリックで選択します。T は離陸地点、L は着陸地点です。</p>

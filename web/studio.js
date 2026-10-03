@@ -1801,16 +1801,9 @@ function renderFlight() {
   $("#flight-delay").value = drone.start_delay_sec ?? 5;
   $("#flight-speed").value = drone.speed_m_s ?? 2;
   $("#flight-loops").value = drone.loop_count === "forever" ? "" : drone.loop_count ?? 1;
-  $("#flight-rise").value = drone.takeoff?.rise_m ?? 10;
-  $("#flight-takeoff-hold").value = drone.takeoff?.hold_sec ?? 2;
-  $("#flight-takeoff-east").value = data.meta.takeoff.east_m;
-  $("#flight-takeoff-north").value = data.meta.takeoff.north_m;
   const land = drone._land;
   $("#flight-land").value = land.mode;
   for (const node of document.querySelectorAll(".flight-land-at")) node.hidden = land.mode !== "elsewhere";
-  $("#flight-land-east").value = land.east_m;
-  $("#flight-land-north").value = land.north_m;
-  $("#flight-land-rise").value = land.rise_m;
   $("#flight-pick-takeoff").classList.toggle("active", flight.pick === "takeoff");
   $("#flight-pick-land").classList.toggle("active", flight.pick === "land");
   $("#flight-map-hint").textContent = flight.pick
@@ -1818,36 +1811,76 @@ function renderFlight() {
     : "地図をクリックすると経由点を追加します。点はドラッグで移動、クリックで選択します。T は離陸地点、L は着陸地点です。";
 
   const ups = new Map(flight.line.filter((point) => point.kind === "waypoint" && !point.again).map((point) => [point.index, point]));
-  $("#flight-points tbody").replaceChildren(...(drone._points.length ? drone._points.map((point, index) => {
-    const cell = (key, step, blank = false) => el("td", {}, el("input", {
-      type: "number", step, value: point[key] === "" || point[key] === undefined ? "" : String(point[key]),
-      placeholder: blank ? "既定" : "",
-      onchange: (event) => {
-        const raw = event.target.value.trim();
-        point[key] = blank && raw === "" ? "" : routeNumber(raw, 0);
-        flightEdited();
-        renderFlight();
-      },
-    }));
+  const numberInput = (value, step, apply, blank = false) => el("input", {
+    type: "number", step, value: value === "" || value === undefined ? "" : String(value), placeholder: blank ? "既定" : "",
+    onchange: (event) => {
+      const raw = event.target.value.trim();
+      apply(blank && raw === "" ? "" : routeNumber(raw, 0));
+      flightEdited();
+      renderFlight();
+    },
+  });
+  const heights = (from, to) => from?.up_m !== undefined && to?.up_m !== undefined
+    ? `${from.up_m.toFixed(1)} → ${to.up_m.toFixed(1)}（地面 ${to.ground_m?.toFixed(1) ?? "?"}）` : "…";
+  const endpointRow = (kind, cells) => el("tr", {
+    class: `flight-endpoint${flight.selected === kind ? " selected" : ""}`,
+    onclick: (event) => { if (!event.target.closest("input, button")) selectFlightPoint(kind); },
+  }, ...cells.map((cell) => el("td", { class: typeof cell === "string" ? "meta" : "" }, cell)));
+
+  // T: the takeoff stand and the climb (its height is the climb's top above the ground).
+  const takeoff = data.meta.takeoff;
+  const takeoffRow = endpointRow("takeoff", [
+    el("span", { class: "flight-badge flight-takeoff" }, "T"), "離陸",
+    numberInput(takeoff.east_m, "0.1", (value) => { takeoff.east_m = value; }),
+    numberInput(takeoff.north_m, "0.1", (value) => { takeoff.north_m = value; }),
+    numberInput(round2(HEXA_STAND_M + Number(drone.takeoff?.rise_m ?? 5)), "0.5", (value) => {
+      drone.takeoff = { ...drone.takeoff, rise_m: Math.max(0.5, round2(value - HEXA_STAND_M)) };
+    }),
+    heights(flight.line[0], flight.line[1]),
+    "—",
+    numberInput(drone.takeoff?.hold_sec ?? 2, "0.5", (value) => { drone.takeoff = { ...drone.takeoff, hold_sec: Math.max(0, value) }; }),
+    "—", "",
+  ]);
+
+  // L: over the landing point, then down on it.
+  const over = flight.line.at(-2);
+  const down = flight.line.at(-1);
+  const landed = land.mode !== "none" && down?.kind !== "waypoint";
+  const landRow = land.mode === "none"
+    ? endpointRow("land", [el("span", { class: "flight-badge flight-land" }, "L"), "着陸しない", "", "", "", "", "", "", "", ""])
+    : endpointRow("land", [
+      el("span", { class: "flight-badge flight-land" }, "L"),
+      land.mode === "takeoff" ? "離陸地点に戻る" : "着陸",
+      land.mode === "takeoff" ? String(takeoff.east_m) : numberInput(land.east_m, "0.1", (value) => { land.east_m = value; }),
+      land.mode === "takeoff" ? String(takeoff.north_m) : numberInput(land.north_m, "0.1", (value) => { land.north_m = value; }),
+      land.mode === "takeoff" ? "離陸と同じ"
+        : numberInput(round2(HEXA_STAND_M + Number(land.rise_m)), "0.5", (value) => { land.rise_m = Math.max(0.5, round2(value - HEXA_STAND_M)); }),
+      landed ? heights(over, down) : "…",
+      "—", "—", "—", "",
+    ]);
+
+  const waypointRows = drone._points.length ? drone._points.map((point, index) => {
+    const cell = (key, step, blank = false) => el("td", {}, numberInput(point[key], step, (value) => { point[key] = value; }, blank));
     const resolved = ups.get(index);
     return el("tr", {
       class: index === flight.selected ? "selected" : "",
       onclick: (event) => { if (!event.target.closest("input, button")) selectFlightPoint(index); },
     },
       el("td", {}, String(index + 1)),
-      el("td", {}, el("input", { value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); flightDrone()._dirty = true; renderFlight(); } })),
+      el("td", {}, el("input", { class: "flight-name", value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); flightDrone()._dirty = true; renderFlight(); } })),
       cell("east_m", "0.1"), cell("north_m", "0.1"), cell("agl_m", "0.5"),
       el("td", { class: "meta" }, resolved?.up_m !== undefined ? `${resolved.up_m.toFixed(1)}（地面 ${resolved.ground_m?.toFixed(1) ?? "?"}）` : "…"),
       cell("speed_m_s", "0.1", true), cell("hold_sec", "0.5", true), cell("yaw_deg", "1", true),
       el("td", {}, el("button", {
         class: "icon", title: "削除", onclick: () => {
           drone._points.splice(index, 1);
-          flight.selected = Math.min(flight.selected, drone._points.length - 1);
+          if (typeof flight.selected === "number") flight.selected = Math.min(flight.selected, drone._points.length - 1);
           flightEdited();
           renderFlight();
         },
       }, "✕")));
-  }) : [el("tr", {}, el("td", { colspan: 10, class: "hint" }, "経由点がありません。地図をクリックして追加してください。"))]));
+  }) : [el("tr", {}, el("td", { colspan: 10, class: "hint" }, "経由点がありません。地図をクリックして追加してください。"))];
+  $("#flight-points tbody").replaceChildren(takeoffRow, ...waypointRows, landRow);
 
   const conflicts = $("#flight-conflicts");
   conflicts.hidden = !flight.conflicts.length && flight.checked && !flight.uncheckable;
@@ -1898,9 +1931,13 @@ function flightMarkerMoved(marker, east, north) {
   const flight = state.flight;
   if (!flight) return;
   const place = { east_m: round2(east), north_m: round2(north) };
-  if (marker.kind === "takeoff") flight.data.meta.takeoff = place;
-  else if (marker.kind === "land") Object.assign(flightDrone()._land, place);
-  else {
+  if (marker.kind === "takeoff") {
+    flight.data.meta.takeoff = place;
+    flight.selected = "takeoff";
+  } else if (marker.kind === "land") {
+    Object.assign(flightDrone()._land, place);
+    flight.selected = "land";
+  } else {
     Object.assign(flightDrone()._points[marker.index], place);
     flight.selected = marker.index;
   }
@@ -1991,12 +2028,12 @@ async function initFlight() {
   const { FlightMapView, FlightView } = await import("./flight.js");
   state.flightMap = new FlightMapView($("#flight-map"), {
     onPick: flightMapPicked,
-    onSelect: (marker) => { if (marker.kind === "waypoint") selectFlightPoint(marker.index); },
+    onSelect: (marker) => selectFlightPoint(marker.kind === "waypoint" ? marker.index : marker.kind),
     onMove: flightMarkerMoved,
   });
   try {
     state.flightView = new FlightView($("#flight-3d"), {
-      onSelect: (point) => { if (point.kind === "waypoint") selectFlightPoint(point.index); },
+      onSelect: (point) => selectFlightPoint(point.kind === "waypoint" ? point.index : point.kind),
     });
   } catch {
     state.flightView = null; // no WebGL: the map still edits the flight
@@ -2012,9 +2049,12 @@ async function initFlight() {
   $("#flight-focus-all").addEventListener("click", () => state.flightView?.focusFlight());
   $("#flight-focus-point").addEventListener("click", () => {
     const flight = state.flight;
-    if (!flight || flight.selected < 0) return;
-    const at = flight.line.findIndex((point) => point.kind === "waypoint" && point.index === flight.selected);
-    state.flightView?.focusPoint(at);
+    if (!flight || flight.selected === -1) return;
+    // T: the top of the climb; L: over the landing point.
+    const at = flight.selected === "takeoff" ? 1
+      : flight.selected === "land" ? flight.line.length - 2
+        : flight.line.findIndex((point) => point.kind === "waypoint" && point.index === flight.selected);
+    if (at >= 0) state.flightView?.focusPoint(at);
   });
   $("#flight-show-buildings").addEventListener("change", () => loadFlightWorld());
   for (const [selector, mode] of [["#flight-pick-takeoff", "takeoff"], ["#flight-pick-land", "land"]]) {
@@ -2040,20 +2080,7 @@ async function initFlight() {
   bind("#flight-delay", (flight, input) => { flightDrone().start_delay_sec = Math.max(0, routeNumber(input.value, 5)); });
   bind("#flight-speed", (flight, input) => { flightDrone().speed_m_s = Math.max(0.1, routeNumber(input.value, 2)); });
   bind("#flight-loops", (flight, input) => { flightDrone().loop_count = Math.max(1, Math.round(routeNumber(input.value, 1))); });
-  bind("#flight-rise", (flight, input) => {
-    const drone = flightDrone();
-    drone.takeoff = { ...drone.takeoff, rise_m: Math.max(0.5, routeNumber(input.value, 5)) };
-  });
-  bind("#flight-takeoff-hold", (flight, input) => {
-    const drone = flightDrone();
-    drone.takeoff = { ...drone.takeoff, hold_sec: Math.max(0, routeNumber(input.value, 2)) };
-  });
-  bind("#flight-takeoff-east", (flight, input) => { flight.data.meta.takeoff.east_m = routeNumber(input.value, 0); });
-  bind("#flight-takeoff-north", (flight, input) => { flight.data.meta.takeoff.north_m = routeNumber(input.value, 0); });
   bind("#flight-land", (flight, input) => { flightDrone()._land.mode = input.value; });
-  bind("#flight-land-east", (flight, input) => { flightDrone()._land.east_m = routeNumber(input.value, 0); });
-  bind("#flight-land-north", (flight, input) => { flightDrone()._land.north_m = routeNumber(input.value, 0); });
-  bind("#flight-land-rise", (flight, input) => { flightDrone()._land.rise_m = Math.max(0.5, routeNumber(input.value, 5)); });
 }
 
 // Compose: a Drone's schedule param picks a flight; the flight's takeoff point
