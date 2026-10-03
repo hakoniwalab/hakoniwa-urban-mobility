@@ -229,6 +229,34 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
     return result
 
 
+def add_drone_robots(unified_path: Path, drone_pdudef_path: Path) -> None:
+    """Give the unified PDU definition the Drone robots it lacks.
+
+    The Drone service writes its own PDUs through the unified definition
+    (_merge_launchers), but the Car composer adds a Drone robot there only
+    for a drone-mirror interaction. Without one the service exits at its first
+    write ("Failed to write PDU: robot_name = Drone-1").
+    """
+    unified = multi_car.load_json(unified_path, "unified PDU definition")
+    drone = multi_car.load_json(drone_pdudef_path, "Drone PDU definition")
+    present = {robot["name"] for robot in unified["robots"]}
+    missing = [robot for robot in drone["robots"] if robot["name"] not in present]
+    if not missing:
+        return
+    ids = {item["id"] for item in unified["paths"]}
+    for item in drone["paths"]:
+        if not any(robot["pdutypes_id"] == item["id"] for robot in missing):
+            continue
+        new_id = f"drone-{item['id']}"
+        if new_id in ids:
+            raise UrbanComposeError(f"unified PDU definition already has paths id {new_id}")
+        unified["paths"].append({"id": new_id, "path": str((drone_pdudef_path.parent / item["path"]).resolve())})
+        for robot in missing:
+            if robot["pdutypes_id"] == item["id"]:
+                unified["robots"].append({**robot, "pdutypes_id": new_id})
+    multi_car.write_json(unified_path, unified)
+
+
 def _add_drone_library_path(drone_service: dict) -> None:
     """Let the Drone service find Drone Core's native libraries (MuJoCo).
 
@@ -387,6 +415,10 @@ def configure(
         )
     if multi_car.configure(resolved) != 0:
         return 1
+    add_drone_robots(
+        resolved["work"] / "config/car/urban-car-pdudef.json",
+        paths.recipe_config / "pdudef/drone-pdudef-current.json",
+    )
 
     browser = _patch_browser(resolved, paths)
     launcher = _merge_launchers(resolved, drone_launcher)
