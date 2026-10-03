@@ -356,6 +356,8 @@ class Director:
                 gap = math.hypot(ppose.east_m - pose.east_m, ppose.north_m - pose.north_m) - 1.0
                 key = (name, person)
                 if gap < near_miss and self.speeds.get(name, 0.0) > 0.3:
+                    if key not in self.near and self.people.ride_of(person):
+                        continue  # riding a car (seated by another program, e.g. a ride plan)
                     if key not in self.near:
                         self.near.add(key)
                         self.record("near_miss", vehicle=name, person=person, distance_m=round(gap, 2),
@@ -477,7 +479,7 @@ class Director:
         while time.monotonic() < end:
             now = time.monotonic()
             poses = self.people.poses()
-            car_poses = self.cars.vehicle_poses()
+            car_poses = self.cars.vehicle_poses() if self.cars is not None else {}
             for name, pose in car_poses.items():
                 if name in previous:
                     self.speeds[name] = math.hypot(pose.east_m - previous[name].east_m,
@@ -493,7 +495,8 @@ class Director:
             time.sleep(TICK_SEC)
 
     def finish(self) -> None:
-        self.cars.stop()
+        if self.scene.get("vehicles"):  # only the cars this scene drives
+            self.cars.stop()
         for person in list(self.riding):
             self.people.get_off(person)
         self.people.stop_all()
@@ -510,13 +513,21 @@ def main() -> int:
     args = parser.parse_args()
     scene = yaml.safe_load(args.scene.read_text(encoding="utf-8"))
     log = args.people_pdu_def.resolve().parents[2] / "logs/festival-director.jsonl"
-    with PeopleClient(args.people_pdu_def) as people, AckermannFleetClient(
-            args.car_pdu_def, list(scene.get("vehicles", {}))) as cars:
-        director = Director(scene, people, cars, log, args.seed)
-        try:
-            director.run(args.duration)
-        finally:
-            director.finish()
+    # The cars it drives; a scene that drives none may name cars to watch
+    # (near misses), driven by others (a route executor, a controller).
+    driven = list(scene.get("vehicles", {}))
+    watched = driven or list(scene.get("watch", []))
+    cars = AckermannFleetClient(args.car_pdu_def, watched).connect() if watched else None
+    try:
+        with PeopleClient(args.people_pdu_def) as people:
+            director = Director(scene, people, cars, log, args.seed)
+            try:
+                director.run(args.duration)
+            finally:
+                director.finish()
+    finally:
+        if cars is not None:
+            cars.close(stop=bool(driven))  # never stop the cars others drive
     return 0
 
 

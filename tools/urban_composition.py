@@ -150,8 +150,11 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
     unknown = set(params) - set(declared)
     if unknown:
         raise CompositionError(f"vehicle {name} has unknown {control} params: {sorted(unknown)}")
+    # A replaced program (section 5.2) brings its own args: the manifest
+    # program's required params are not needed then.
+    replaced = entry.get("program") is not None
     for param, definition in declared.items():
-        if definition.get("required") and param not in params:
+        if definition.get("required") and param not in params and not replaced:
             raise CompositionError(f"vehicle {name} {control} control requires param {param}")
     spawn = entry.get("spawn")
     if not isinstance(spawn, dict) or set(spawn) != SPAWN_KEYS:
