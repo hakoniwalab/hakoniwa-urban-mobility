@@ -198,6 +198,11 @@ tools remain as implementation details:
 | Car | `control_mode: ps5` (`apps/car/ps5_ackermann_sender.py`) | `control_mode: external_python` (`apps/car/scenario_executor.py`) |
 | Drone | `control.mode: ps4-rc` (Drone Core `drone_api/rc/rc-custom.py`) | `control.mode: fleet-rpc` (`apps/drone/city_fleet_mission.py`) |
 
+A Drone may also offer `schedule`: a program flies it by a schedule on
+Hakoniwa time (`apps/drone/drone_schedule.py`), the `drones:` section of a
+route scenario or of a file of its own. It uses the same RPC service as `api`
+(`control.mode: fleet-rpc`). The EAMS Hexa declares it.
+
 ### 4.1 A control is a program with arguments
 
 Car and Drone cannot share one control program, so each control declares the

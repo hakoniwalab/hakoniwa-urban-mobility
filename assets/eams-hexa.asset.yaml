@@ -46,3 +46,17 @@ controls:
            "--summary-json", "${runtime.summary_json}"]
     params:
       mission: {type: path, required: true, kinds: [drone-mission]}
+  schedule:
+    # A flight on Hakoniwa time from a schedule (apps/drone/drone_schedule.py):
+    # the drones: section of a route scenario (Cars, people and the Drone in
+    # one file) or of a file of its own.
+    program: ${repo:hakoniwa-urban-mobility}/apps/drone/drone_schedule.py
+    scope: vehicle
+    cwd: ${repo:hakoniwa-urban-mobility}
+    args: ["--schedule", "${param.schedule}", "--drone", "${vehicle.name}",
+           "--drone-root", "${runtime.drone_root}",
+           "--service-config", "${runtime.service_config}",
+           "--city-marker", "${runtime.city_marker}",
+           "--summary-json", "${runtime.summary_json}"]
+    params:
+      schedule: {type: path, required: true, kinds: [car-route-scenario, drone-schedule]}

@@ -393,6 +393,32 @@ viewer:
             self.assertEqual(params["PID_ROLL_Kp"], "17.0")
             self.assertEqual(params["TAKEOFF_ALT"], "3")
 
+    def test_api_flight_overlays_its_own_gains_and_rc_does_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hexa_root = root / "urban-hexa"
+            hexa_root.mkdir(parents=True)
+            (root / "config/controller").mkdir(parents=True)
+            (root / "config/controller/param-api-mixer-mujoco.txt").write_text(
+                "PID_POS_VX_Ki 0.5\nPID_YAW_RPM_MAX 50\n", encoding="utf-8")
+            (hexa_root / "controller-params.txt").write_text(
+                "PID_POS_VX_Ki 0.5\nPID_YAW_RPM_MAX 50\n", encoding="utf-8")
+            (hexa_root / "controller-tuning.txt").write_text(
+                "PID_POS_VX_Ki 2.0\nPID_YAW_RPM_MAX 25\n", encoding="utf-8")
+            (hexa_root / "controller-api-tuning.txt").write_text(
+                "PID_POS_VX_Ki 0.0\n", encoding="utf-8")
+            with mock.patch.object(drone_one, "URBAN_HEXA_ROOT", hexa_root):
+                api = drone_one.materialize_eams_controller_params(root, root / "api.txt")
+                rc = drone_one.materialize_eams_controller_params(root, root / "rc.txt", rc_mode=True)
+            self.assertEqual(drone_one._parameter_values(api)["PID_POS_VX_Ki"], "0.0")
+            self.assertEqual(drone_one._parameter_values(api)["PID_YAW_RPM_MAX"], "25")
+            self.assertEqual(drone_one._parameter_values(rc)["PID_POS_VX_Ki"], "2.0")
+
+    def test_the_shipped_api_tuning_has_no_velocity_integral(self):
+        values = drone_one._parameter_values(drone_one.URBAN_HEXA_ROOT / "controller-api-tuning.txt")
+        self.assertEqual(float(values["PID_POS_VX_Ki"]), 0.0)
+        self.assertEqual(float(values["PID_POS_VY_Ki"]), 0.0)
+
     def test_rc_parameters_keep_tuning_and_enable_angle_control(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

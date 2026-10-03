@@ -1,0 +1,14 @@
+# EAMS Hexa: gains overlaid for API (Fleet RPC) flight only, after
+# controller-tuning.txt (tools/drone_one.py materialize_eams_controller_params).
+# The RC tuning's horizontal velocity loop (Kp 8, Ki 2, Kd 0) winds up on long
+# gotos: the Hexa overshoots, swings and comes down. Scheduled flights
+# (apps/drone/drone_schedule.py) fly legs of tens of metres and turn round.
+PID_POS_VX_Kp 8.0
+PID_POS_VX_Ki 0.0
+PID_POS_VX_Kd 1.0
+PID_POS_VY_Kp 8.0
+PID_POS_VY_Ki 0.0
+PID_POS_VY_Kd 1.0
+PID_POS_MAX_SPD 4
+PID_ALT_MAX_SPD 2
+PID_YAW_RPM_MAX 10

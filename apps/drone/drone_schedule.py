@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Fly a Drone by a schedule on Hakoniwa time (the Drone's `schedule` control).
+
+The schedule is the `drones:` section of a YAML file: a car route scenario's
+(so one file holds the Cars' route, the people's rides and the Drone's
+flight) or a file of its own. Times are simulation time: like the Car
+scenario executor this program reads the Hakoniwa clock, so every run flies
+the same.
+
+    drones:
+      - name: Drone-1
+        start_delay_sec: 5.0      # on the ground first (settled after spawn)
+        speed_m_s: 3.0            # default for every leg
+        tolerance_m: 0.5
+        # hop_m: 3.0              # optional: fly each leg in hops of at most this
+        loop_count: forever       # or a number of rounds of the waypoints
+        takeoff: {rise_m: 15.0, hold_sec: 3.0}
+        waypoints:
+          - {name: over-bridge, east_m: -40.0, north_m: -70.0, up_m: 265.0,
+             yaw_deg: 200.0, speed_m_s: 4.0, hold_sec: 20.0}
+          - {name: back, east_m: 82.0, north_m: -5.0, rise_m: 15.0, hold_sec: 5.0}
+        land: true                # after the last round: back over the takeoff point, land
+
+Positions are the Urban World's: east_m / north_m from its origin, and the
+height either up_m (the World's height, as the spawn's) or rise_m (above the
+takeoff point). yaw_deg is the Urban convention (east 0, counter-clockwise);
+left out, the Drone faces where it flies. Drone Core's RPC frame is ROS
+(x north, y west, z up; yaw 0 north), so a point is (north, -east, up).
+
+    python apps/drone/drone_schedule.py --check --schedule <file> --drone Drone-1 \\
+        --spawn 82,-5,247.28
+prints the flight without flying.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from pathlib import Path
+import sys
+import time
+import traceback
+from typing import Any, Iterator
+
+import yaml
+
+
+class ScheduleError(RuntimeError):
+    pass
+
+
+# --- The schedule ------------------------------------------------------------------
+
+DRONE_KEYS = {"name", "start_delay_sec", "speed_m_s", "tolerance_m", "hop_m", "loop_count", "takeoff", "waypoints", "land"}
+WAYPOINT_KEYS = {"name", "east_m", "north_m", "up_m", "rise_m", "yaw_deg", "speed_m_s", "hold_sec"}
+
+
+def _number(value: Any, where: str, *, positive: bool = False, minimum: float | None = None) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ScheduleError(f"{where} must be a number")
+    if positive and value <= 0:
+        raise ScheduleError(f"{where} must be positive")
+    if minimum is not None and value < minimum:
+        raise ScheduleError(f"{where} must be at least {minimum}")
+    return float(value)
+
+
+def load_schedule(path: Path, drone: str) -> dict:
+    """The named Drone's entry of a file's drones: section, checked."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise ScheduleError(f"cannot read {path}: {exc}") from exc
+    drones = data.get("drones")
+    if not isinstance(drones, list) or not drones:
+        raise ScheduleError(f"{path} has no drones: section")
+    entries = [entry for entry in drones if isinstance(entry, dict) and entry.get("name", drone) == drone]
+    if len(entries) != 1:
+        names = [entry.get("name") for entry in drones if isinstance(entry, dict)]
+        raise ScheduleError(f"{path}: no single drones: entry for {drone} (entries: {names})")
+    return check_schedule(entries[0], f"{path.name} drones[{drone}]")
+
+
+def check_schedule(entry: dict, where: str) -> dict:
+    unknown = set(entry) - DRONE_KEYS
+    if unknown:
+        raise ScheduleError(f"{where}: unknown keys {sorted(unknown)} (known: {sorted(DRONE_KEYS)})")
+    schedule = {
+        "start_delay_sec": _number(entry.get("start_delay_sec", 5.0), f"{where}.start_delay_sec", minimum=0.0),
+        "speed_m_s": _number(entry.get("speed_m_s", 2.0), f"{where}.speed_m_s", positive=True),
+        "tolerance_m": _number(entry.get("tolerance_m", 0.5), f"{where}.tolerance_m", positive=True),
+        # Optional: fly each leg in hops of at most this (a vehicle whose position
+        # loop does not hold long gotos). Off by default: the EAMS Hexa flies
+        # long legs with its API tuning (config/drone/hexa/controller-api-tuning.txt).
+        "hop_m": (_number(entry["hop_m"], f"{where}.hop_m", positive=True) if "hop_m" in entry else None),
+    }
+    loops = entry.get("loop_count", 1)
+    if loops == "forever":
+        schedule["loop_count"] = None
+    elif isinstance(loops, int) and not isinstance(loops, bool) and loops >= 1:
+        schedule["loop_count"] = loops
+    else:
+        raise ScheduleError(f"{where}.loop_count must be a positive whole number or forever")
+    takeoff = entry.get("takeoff", {})
+    if not isinstance(takeoff, dict) or set(takeoff) - {"rise_m", "hold_sec"}:
+        raise ScheduleError(f"{where}.takeoff takes rise_m and hold_sec")
+    schedule["takeoff"] = {
+        "rise_m": _number(takeoff.get("rise_m", 10.0), f"{where}.takeoff.rise_m", positive=True),
+        "hold_sec": _number(takeoff.get("hold_sec", 2.0), f"{where}.takeoff.hold_sec", minimum=0.0),
+    }
+    waypoints = entry.get("waypoints")
+    if not isinstance(waypoints, list) or not waypoints:
+        raise ScheduleError(f"{where}.waypoints must list at least one point")
+    schedule["waypoints"] = []
+    for index, point in enumerate(waypoints):
+        at = f"{where}.waypoints[{index}]"
+        if not isinstance(point, dict):
+            raise ScheduleError(f"{at} must be a mapping")
+        unknown = set(point) - WAYPOINT_KEYS
+        if unknown:
+            raise ScheduleError(f"{at}: unknown keys {sorted(unknown)} (known: {sorted(WAYPOINT_KEYS)})")
+        if ("up_m" in point) == ("rise_m" in point):
+            raise ScheduleError(f"{at} needs one height: up_m (the World's) or rise_m (above the takeoff point)")
+        checked = {
+            "name": str(point.get("name", f"point-{index + 1}")),
+            "east_m": _number(point.get("east_m"), f"{at}.east_m"),
+            "north_m": _number(point.get("north_m"), f"{at}.north_m"),
+            "speed_m_s": _number(point.get("speed_m_s", schedule["speed_m_s"]), f"{at}.speed_m_s", positive=True),
+            "hold_sec": _number(point.get("hold_sec", 0.0), f"{at}.hold_sec", minimum=0.0),
+        }
+        if "up_m" in point:
+            checked["up_m"] = _number(point["up_m"], f"{at}.up_m")
+        else:
+            checked["rise_m"] = _number(point["rise_m"], f"{at}.rise_m")
+        if "yaw_deg" in point:
+            checked["yaw_deg"] = _number(point["yaw_deg"], f"{at}.yaw_deg")
+        schedule["waypoints"].append(checked)
+    land = entry.get("land", True)
+    if not isinstance(land, bool):
+        raise ScheduleError(f"{where}.land must be true or false")
+    if land and schedule["loop_count"] is None:
+        raise ScheduleError(f"{where}: a schedule that loops forever never lands (set land: false)")
+    schedule["land"] = land
+    return schedule
+
+
+# --- Frames ------------------------------------------------------------------------
+
+def to_ros(east_m: float, north_m: float, up_m: float) -> tuple[float, float, float]:
+    """Urban ENU -> Drone Core's RPC frame (ROS: x north, y west, z up)."""
+    return (north_m, -east_m, up_m)
+
+
+def ros_yaw(urban_yaw_deg: float) -> float:
+    """Urban yaw (east 0, counter-clockwise) -> ROS yaw (north 0, counter-clockwise), in -180..180."""
+    return (urban_yaw_deg - 90.0 + 180.0) % 360.0 - 180.0
+
+
+def heading(from_en: tuple[float, float], to_en: tuple[float, float], fallback: float) -> float:
+    """The Urban yaw from one point towards another (fallback when they coincide)."""
+    de, dn = to_en[0] - from_en[0], to_en[1] - from_en[1]
+    if math.hypot(de, dn) < 0.5:
+        return fallback
+    return math.degrees(math.atan2(dn, de))
+
+
+# --- The flight as steps -----------------------------------------------------------
+
+def steps(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw_deg: float = 0.0) -> Iterator[dict]:
+    """The flight, step by step (endless for loop_count forever):
+    {"op": "wait"|"set_ready"|"takeoff"|"goto"|"land", ...}, positions in Urban ENU."""
+    east0, north0, up0 = spawn_enu
+    cruise = up0 + schedule["takeoff"]["rise_m"]
+    yield {"op": "wait", "sec": schedule["start_delay_sec"], "label": "on the ground"}
+    yield {"op": "set_ready"}
+    yield {"op": "takeoff", "up_m": cruise}
+    if schedule["takeoff"]["hold_sec"] > 0:
+        yield {"op": "wait", "sec": schedule["takeoff"]["hold_sec"], "label": "after takeoff"}
+    here, here_up, yaw = (east0, north0), cruise, spawn_yaw_deg
+    round_number = 0
+    while schedule["loop_count"] is None or round_number < schedule["loop_count"]:
+        round_number += 1
+        for point in schedule["waypoints"]:
+            up = point["up_m"] if "up_m" in point else up0 + point["rise_m"]
+            target = (point["east_m"], point["north_m"])
+            yaw = point.get("yaw_deg", heading(here, target, yaw))
+            yield from _hops({"op": "goto", "name": point["name"], "round": round_number, "east_m": target[0],
+                              "north_m": target[1], "up_m": up, "yaw_deg": yaw, "speed_m_s": point["speed_m_s"],
+                              "tolerance_m": schedule["tolerance_m"]}, (*here, here_up), schedule["hop_m"])
+            here, here_up = target, up
+            if point["hold_sec"] > 0:
+                yield {"op": "wait", "sec": point["hold_sec"], "label": f"at {point['name']}"}
+    if schedule["land"]:
+        yaw = heading(here, (east0, north0), yaw)
+        yield from _hops({"op": "goto", "name": "over-takeoff-point", "round": round_number, "east_m": east0,
+                          "north_m": north0, "up_m": cruise, "yaw_deg": yaw, "speed_m_s": schedule["speed_m_s"],
+                          "tolerance_m": schedule["tolerance_m"]}, (*here, here_up), schedule["hop_m"])
+        yield {"op": "land", "up_m": up0}
+
+
+def _hops(goto: dict, start: tuple[float, float, float], hop_m: float) -> Iterator[dict]:
+    """A goto as hops of at most hop_m along the straight line (the last one is the goto)."""
+    end = (goto["east_m"], goto["north_m"], goto["up_m"])
+    count = 1 if hop_m is None else max(1, math.ceil(math.dist(start, end) / hop_m - 1e-9))
+    for index in range(1, count):
+        t = index / count
+        yield {**goto, "hop": f"{index}/{count}", **dict(zip(("east_m", "north_m", "up_m"),
+                                                             (a + (b - a) * t for a, b in zip(start, end))))}
+    yield {**goto, **({"hop": f"{count}/{count}"} if count > 1 else {})}
+
+
+def leg_timeout(step: dict, previous: tuple[float, float, float] | None) -> float:
+    """A generous RPC timeout for a goto: its straight-line time, twice, plus a minute."""
+    if previous is None:
+        return 120.0
+    distance = math.dist(previous, (step["east_m"], step["north_m"], step["up_m"]))
+    return 2.0 * distance / step["speed_m_s"] + 60.0
+
+
+# --- Spawn -------------------------------------------------------------------------
+
+def spawn_from_marker(marker_path: Path) -> tuple[tuple[float, float, float], float]:
+    """The Drone's spawn (ENU, yaw) as tools/drone_one.py wrote it into the City marker."""
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    spawn = marker.get("flight_plan", {}).get("runtime_spawn")
+    if not isinstance(spawn, dict) or spawn.get("frame") != "ENU":
+        raise ScheduleError(f"{marker_path} has no ENU runtime_spawn (configure the Composition first)")
+    return (float(spawn["east_m"]), float(spawn["north_m"]), float(spawn["up_m"])), float(spawn["yaw_deg"])
+
+
+# --- Running it --------------------------------------------------------------------
+#
+# Like the Car scenario executor this is an outside program (the Launcher starts
+# it after the simulation, when no asset can register): it reads the Hakoniwa
+# clock and calls the Drone service with Drone Core's shared-runtime RPC client.
+
+class Runner:
+    """Steps through the flight on Hakoniwa time."""
+
+    def __init__(self, args: argparse.Namespace, schedule: dict, spawn_enu, spawn_yaw: float, client, clock) -> None:
+        self.args = args
+        self.flight = steps(schedule, spawn_enu, spawn_yaw)
+        self.spawn_enu = spawn_enu
+        self.client = client
+        self.clock = clock  # () -> simulation seconds
+        self.pending = None
+        self.current: dict | None = None
+        self.wait_until: float | None = None
+        self.previous = None
+        self.done = False
+        self.summary: dict[str, Any] = {"status": "running", "drone": args.drone, "spawn_enu_m": list(spawn_enu),
+                                        "steps": []}
+
+    def write_summary(self, status: str, error: str | None = None) -> None:
+        self.summary["status"] = status
+        if error:
+            self.summary["error"] = error
+        if self.args.summary_json:
+            self.args.summary_json.parent.mkdir(parents=True, exist_ok=True)
+            self.args.summary_json.write_text(json.dumps(self.summary, indent=2) + "\n", encoding="utf-8")
+
+    def _submit(self, step: dict):
+        op = step["op"]
+        if op == "set_ready":
+            return self.client.set_ready_async()
+        if op == "takeoff":
+            return self.client.takeoff_async(step["up_m"])
+        if op == "goto":
+            x, y, z = to_ros(step["east_m"], step["north_m"], step["up_m"])
+            return self.client.goto_async(x, y, z, yaw_deg=ros_yaw(step["yaw_deg"]), speed_m_s=step["speed_m_s"],
+                                          tolerance_m=step["tolerance_m"],
+                                          timeout_sec=leg_timeout(step, self.previous))
+        if op == "land":
+            return self.client.land_async(timeout_sec=self.args.land_timeout_sec)
+        raise ScheduleError(f"unknown step {op}")
+
+    def _finished(self, step: dict, result) -> None:
+        ok = not isinstance(result, Exception) and bool(getattr(result, "ok", False))
+        record = {"op": step["op"], **{key: step[key] for key in ("name", "round", "hop") if key in step},
+                  "simulation_sec": round(self.clock(), 3), "ok": ok}
+        if not ok and step["op"] == "land":
+            # Drone Core's land completion assumes ground at height 0: on a roof the
+            # RPC times out although the Drone is down (as apps/drone/city_fleet_mission.py).
+            record["note"] = f"land RPC: {result}; the Drone is taken as landed on the surface below"
+            ok = True
+        if not ok:
+            raise ScheduleError(f"{step['op']} failed: {getattr(result, 'message', result)}")
+        if step["op"] == "goto":
+            self.previous = (step["east_m"], step["north_m"], step["up_m"])
+        elif step["op"] == "takeoff":
+            self.previous = (self.spawn_enu[0], self.spawn_enu[1], step["up_m"])
+        self.summary["steps"].append(record)
+        print(f"SCHEDULE: done {record}", flush=True)
+
+    def step_once(self) -> None:
+        """Advance as far as the clock allows; returns at once."""
+        if self.done:
+            return
+        if self.wait_until is not None:
+            if self.clock() < self.wait_until:
+                return
+            self.wait_until = None
+        if self.pending is not None:
+            self.client.poll_once()
+            if not self.pending.done():
+                return
+            try:
+                result = self.pending.result(timeout=0.0)
+            except Exception as exc:  # a timeout or a failed call
+                result = exc
+            step, self.pending = self.current, None
+            self._finished(step, result)
+            return
+        step = next(self.flight, None)
+        if step is None:
+            self.done = True
+            print("SCHEDULE: flight done", flush=True)
+            self.write_summary("done")
+            return
+        self.current = step
+        if step["op"] == "wait":
+            print(f"SCHEDULE: wait {step['sec']:.1f} s ({step['label']}) at {self.clock():.2f} s", flush=True)
+            self.wait_until = self.clock() + step["sec"]
+            return
+        print(f"SCHEDULE: start {step} at {self.clock():.2f} s", flush=True)
+        self.pending = self._submit(step)
+
+
+def foundation_offsets() -> Path | None:
+    """The PDU offset files the Workspace foundation installed (next to its Python:
+    install/python -> install/share/hakoniwa/offset); Drone Core's own default
+    lies in a submodule the Workspace does not fetch."""
+    candidate = Path(sys.prefix).resolve().parent / "share" / "hakoniwa" / "offset"
+    return candidate if candidate.is_dir() else None
+
+
+def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> int:
+    sys.path.insert(0, str(args.drone_root.resolve() / "drone_api" / "external_rpc"))
+    import hakopy
+    from hakosim_async_shared_rpc import AsyncSharedHakoniwaRpcDroneClient
+
+    options = {}
+    offsets = args.offset_path or foundation_offsets()
+    if offsets is not None:
+        options["offset_path"] = offsets
+    client = AsyncSharedHakoniwaRpcDroneClient(
+        # No client-side request timeout (Drone Core's default): each call carries
+        # its own (the goto legs, the land), and a client timeout cancels a goto
+        # midway, which brings the Drone down where it is.
+        drone_name=args.drone, service_config_path=args.service_config.resolve(),
+        poll_interval_sec=0.0, **options)
+
+    def clock() -> float:
+        return max(0, int(hakopy.simulation_time())) / 1_000_000.0
+
+    runner = Runner(args, schedule, spawn, spawn_yaw, client, clock)
+    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})", flush=True)
+    while True:  # the Drone service registers its RPC services once it runs
+        try:
+            client.prepare_services(["DroneSetReady", "DroneTakeOff", "DroneGoTo", "DroneLand"])
+            break
+        except Exception as exc:
+            print(f"SCHEDULE: waiting for the Drone service ({exc})", flush=True)
+            time.sleep(1.0)
+    try:
+        while not runner.done:
+            runner.step_once()
+            time.sleep(args.poll_sec)
+    except Exception as exc:
+        traceback.print_exc()
+        runner.write_summary("failed", str(exc))
+        return 1
+    # Done: stay up (the Launcher stops everything when a control exits).
+    while True:
+        time.sleep(1.0)
+
+
+def parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--schedule", type=Path, required=True, help="YAML with a drones: section")
+    parser.add_argument("--drone", default="Drone-1", help="the Drone's name (its drones: entry)")
+    parser.add_argument("--drone-root", type=Path, help="hakoniwa-drone-core (for its external_rpc client)")
+    parser.add_argument("--service-config", type=Path, help="Drone Core RPC service config")
+    parser.add_argument("--city-marker", type=Path, help="the City marker with the Drone's runtime spawn")
+    parser.add_argument("--summary-json", type=Path)
+    parser.add_argument("--offset-path", type=Path, help="PDU offset files (default: the Workspace foundation's)")
+    parser.add_argument("--poll-sec", type=float, default=0.01, help="wall-clock pause between steps")
+    parser.add_argument("--land-timeout-sec", type=float, default=30.0)
+    parser.add_argument("--check", action="store_true", help="print the flight and exit (no simulation)")
+    parser.add_argument("--spawn", help="with --check: east,north,up of the spawn (default: from --city-marker)")
+    parser.add_argument("--check-steps", type=int, default=40, help="with --check: how many steps to print")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        schedule = load_schedule(args.schedule, args.drone)
+        if args.spawn:
+            east, north, up = (float(value) for value in args.spawn.split(","))
+            spawn, spawn_yaw = (east, north, up), 0.0
+        elif args.city_marker:
+            spawn, spawn_yaw = spawn_from_marker(args.city_marker)
+        else:
+            raise ScheduleError("give --city-marker (or --spawn with --check)")
+    except ScheduleError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.check:
+        for index, step in zip(range(args.check_steps), steps(schedule, spawn, spawn_yaw)):
+            print(json.dumps(step, ensure_ascii=False))
+        return 0
+    if args.drone_root is None or args.service_config is None:
+        print("ERROR: --drone-root and --service-config are needed to fly", file=sys.stderr)
+        return 2
+    return fly(args, schedule, spawn, spawn_yaw)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

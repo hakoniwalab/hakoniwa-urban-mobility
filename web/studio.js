@@ -782,7 +782,7 @@ function renderFleet(fleet, index) {
       el("label", { class: "field grow" }, "Asset", el("span", {}, asset ? `${asset.title} (${asset.id})` : fleet.asset)),
       field("制御", el("select", { onchange: (event) => { fleet.control = event.target.value; } },
         ...controls.map((name) => el("option", { value: name, selected: name === fleet.control },
-          name === "rc" ? "RC（コントローラ）" : "API（プログラム）")))),
+          name === "rc" ? "RC（コントローラ）" : name === "schedule" ? "スケジュール" : "API（プログラム）")))),
       field(`台数 (1–${maxCount})`, number(fleet.count, { min: 1, max: maxCount, step: 1 },
         (value) => { fleet.count = Math.max(1, Math.min(maxCount, Math.round(value) || 1)); })),
       field(`間隔 (m, ${minSpacing}–${maxSpacing})`, number(fleet.spacing_m, { min: minSpacing, max: maxSpacing, step: 0.25 },
@@ -837,7 +837,7 @@ function renderVehicle(vehicle, index) {
 
   const controlSelect = el("select", {
     onchange: (event) => { vehicle.control = event.target.value; vehicle.params = {}; renderEditor(); refreshRouteStarts(); },
-  }, ...controls.map((name) => el("option", { value: name, selected: name === vehicle.control }, name === "rc" ? "RC（コントローラ）" : "API（プログラム）")));
+  }, ...controls.map((name) => el("option", { value: name, selected: name === vehicle.control }, name === "rc" ? "RC（コントローラ）" : name === "schedule" ? "スケジュール" : "API（プログラム）")));
 
   const paramFields = Object.entries(params).map(([name, definition]) => definition.type === "path"
     && (definition.kinds || []).includes(ROUTE_KIND) ? routeParamField(vehicle, name, definition) : el("label", { class: "field" },
