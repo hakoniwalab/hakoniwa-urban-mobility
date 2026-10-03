@@ -37,6 +37,6 @@ controls:
     program: ${repo:hakoniwa-urban-mobility}/apps/people/ride_plan.py
     scope: composition
     args: ["${param.scenario}", "--people-pdu-def", "${runtime.pdu_def}",
-           "--car-pdu-def", "${runtime.car_pdu_def}", "--log", "${runtime.ride_log}"]
+           "--car-pdu-def", "${runtime.car_pdu_def}", "--log", "${runtime.ride_log}", "--stay"]
     params:
       scenario: {type: path, required: true, kinds: [car-route-scenario]}

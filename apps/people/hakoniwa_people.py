@@ -150,6 +150,10 @@ class PeopleClient:
                             "ride": self._read_text(name, "ride")}
         return result
 
+    def ride_of(self, name: str) -> str:
+        """The seat the person rides, "<vehicle>/<seat>", or "" (on foot)."""
+        return self._read_text(name, "ride")
+
     def animation(self, name: str) -> str:
         """The animation last commanded (auto until one is sent)."""
         from hakoniwa_pdu.pdu_msgs.std_msgs.pdu_conv_String import pdu_to_py_String

@@ -266,18 +266,22 @@ class RidePlan:
         return all(rider.state == "done" or (rider.state == "riding" and rider.alight_stop is None)
                    for rider in self.plan.riders)
 
-    def run(self, duration: float) -> None:
+    def run(self, duration: float, stay: bool = False) -> None:
         start = self.people.simulation_time()
         self.record("plan", vehicle=self.plan.vehicle, riders=[rider.name for rider in self.plan.riders])
         while True:
             now = self.people.simulation_time()
             if self.step(now):
                 self.record("finished", vehicle=self.plan.vehicle)
-                return
+                break
             if duration and now - start > duration:
                 self.record("timeout", states={rider.name: rider.state for rider in self.plan.riders})
-                return
+                break
             time.sleep(TICK_SEC)
+        # Under a Launcher, a control process that ends stops the whole
+        # simulation: wait to be stopped instead.
+        while stay:
+            time.sleep(1.0)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -287,6 +291,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--car-pdu-def", type=Path, required=True)
     result.add_argument("--log", type=Path, help="also write the events here (JSON lines)")
     result.add_argument("--duration", type=float, default=0.0, help="give up after this many simulation seconds (0: never)")
+    result.add_argument("--stay", action="store_true",
+                        help="keep running once done (a Launcher stops everything when a control process ends)")
     return result
 
 
@@ -304,7 +310,7 @@ def main() -> int:
     cars = AckermannFleetClient(args.car_pdu_def, [plan.vehicle]).connect()
     try:
         with PeopleClient(args.people_pdu_def) as people:
-            RidePlan(plan, seats, people, cars, args.log).run(args.duration)
+            RidePlan(plan, seats, people, cars, args.log).run(args.duration, args.stay)
     except PlanError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
