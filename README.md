@@ -99,6 +99,11 @@ spin and tilt (`tools/urban_fault_injection.py`).
   Car picks its route from a selector. "削除" removes a saved route; examples
   stay, and a route a saved Composition still uses is kept until no Car
   picks it.
+- **Flight**: draw a Drone flight on the City World map and check it in 3D:
+  the takeoff point, waypoints with their height above the ground or roof
+  under them, speed, hold, yaw, and where it lands. Legs that pass a building
+  too closely are shown in red. Flights are saved next to the routes; in
+  Compose, a Drone with the `schedule` control picks its flight.
 - **Compose**: place vehicles by dragging them in the 3D view, or by clicking
   the map for a City World. The spawn height is the ground (rooftops and
   obstacles included) plus the vehicle's clearance. Adding the Drone Core

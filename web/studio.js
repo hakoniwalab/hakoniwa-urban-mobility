@@ -122,6 +122,12 @@ function showTab(name) {
     pollRtf();
   }
   if (name === "city") { pollCities(); loadCache(); }
+  if (name === "flight") {
+    if (!state.flight) {
+      const first = (state.flights || []).find((item) => item.world === state.current?.composition.world);
+      if (first) openFlight(first.id); else newFlight();
+    } else loadFlightWorld();
+  }
   if (name === "route") {
     if (!state.route) {
       const first = state.scenarios.find((item) => item.world === state.current?.composition.world);
@@ -840,6 +846,8 @@ function renderVehicle(vehicle, index) {
   }, ...controls.map((name) => el("option", { value: name, selected: name === vehicle.control }, name === "rc" ? "RC（コントローラ）" : name === "schedule" ? "スケジュール" : "API（プログラム）")));
 
   const paramFields = Object.entries(params).map(([name, definition]) => definition.type === "path"
+    && (definition.kinds || []).includes("drone-schedule") ? flightParamField(vehicle, name, definition)
+    : definition.type === "path"
     && (definition.kinds || []).includes(ROUTE_KIND) ? routeParamField(vehicle, name, definition) : el("label", { class: "field" },
     `${name}${definition.required ? " *" : ""}`,
     el("input", {
@@ -1542,6 +1550,559 @@ async function runCommand(command) {
   }
 }
 
+// --- Flight (Drone flights) -------------------------------------------------------------
+// A flight is the drones: section of a YAML file (apps/drone/drone_schedule.py).
+// The editor works in heights above the top of the World under each point
+// (ground or roof); the backend turns them into the World heights the
+// schedule flies (POST worlds/<id>/flight-check) and checks every leg.
+
+// The EAMS Hexa's spawn ground_clearance_m: its height when standing on a surface.
+const HEXA_STAND_M = 0.5;
+const FLIGHT_CHECK_DELAY_MS = 400;
+
+function newFlightData(world, takeoff) {
+  return {
+    name: "", meta: { world, takeoff: takeoff || { east_m: 0, north_m: 0 } },
+    drones: [{
+      name: "Drone-1", start_delay_sec: 3, speed_m_s: 3, loop_count: 1,
+      takeoff: { rise_m: 5, hold_sec: 2 }, waypoints: [], land: true,
+    }],
+  };
+}
+
+async function loadFlights() {
+  try {
+    state.flights = await api("GET", "flights");
+  } catch (error) {
+    state.flights = []; // the rest of Studio still works
+    setStatus($("#flight-list-status"), `飛行計画を読み込めませんでした: ${error.message}`, "error");
+  }
+  renderFlightList();
+}
+
+function renderFlightList() {
+  $("#flight-list").replaceChildren(...(state.flights || []).map((item) => el("li", {},
+    el("button", {
+      "aria-current": String(state.flight?.id === item.id),
+      onclick: () => openFlight(item.id),
+    }, item.name, el("span", { class: "meta" }, `${item.id}・${item.drones.join(", ")}${item.editable ? "" : "・例"}`)))));
+}
+
+const flightDrone = () => state.flight?.data.drones[state.flight.droneIndex];
+
+// Ground heights under points (the top of the World: ground or roof), null where there is none.
+async function flightGrounds(world, points) {
+  if (!world || !points.length) return points.map(() => null);
+  const checked = await api("POST", `worlds/${world}/flight-check`,
+    { points: points.map((point) => ({ east_m: point.east_m, north_m: point.north_m, up_m: 0 })) });
+  return checked.points.map((point) => point.ground_m);
+}
+
+// Turn a drone's schedule into the editor's model: waypoints with their height above the ground.
+async function editableDrone(world, takeoff, drone) {
+  const waypoints = drone.waypoints || [];
+  const land = drone.land && typeof drone.land === "object" ? drone.land : null;
+  const grounds = await flightGrounds(world, [takeoff, ...waypoints, ...(land ? [land] : [])]);
+  const stand = (grounds[0] ?? 0) + HEXA_STAND_M;
+  drone._points = waypoints.map((point, index) => {
+    const ground = grounds[index + 1];
+    const up = point.up_m ?? stand + (point.rise_m ?? 0);
+    const agl = round2(up - (ground ?? 0));
+    return {
+      name: point.name || `p${index + 1}`, east_m: point.east_m, north_m: point.north_m,
+      agl_m: agl, _read: { east_m: point.east_m, north_m: point.north_m, agl_m: agl, up_m: up },
+      speed_m_s: point.speed_m_s ?? "", hold_sec: point.hold_sec ?? "", yaw_deg: point.yaw_deg ?? "",
+    };
+  });
+  drone._land = land
+    ? { mode: "elsewhere", east_m: land.east_m, north_m: land.north_m, rise_m: land.rise_m ?? drone.takeoff?.rise_m ?? 5 }
+    : { mode: drone.land === false ? "none" : "takeoff", east_m: takeoff.east_m + 10, north_m: takeoff.north_m, rise_m: drone.takeoff?.rise_m ?? 5 };
+}
+
+async function openFlight(id) {
+  const status = $("#flight-status");
+  try {
+    const loaded = await api("GET", `flights/${id}`);
+    const data = loaded.flight;
+    data.meta = data.meta || {};
+    // A flight written by hand names no World or takeoff point: those of a
+    // Composition that flies it, else of the Composition open in Compose.
+    const world = data.meta.world || loaded.suggested_world || state.current?.composition.world;
+    data.meta.world = world;
+    const placed = state.current?.composition.vehicles.find((vehicle) => data.drones.some((drone) => drone.name === vehicle.name));
+    data.meta.takeoff = data.meta.takeoff || loaded.suggested_takeoff
+      || (placed ? { east_m: placed.spawn.east_m, north_m: placed.spawn.north_m } : { east_m: 0, north_m: 0 });
+    for (const drone of data.drones) await editableDrone(world, data.meta.takeoff, drone);
+    state.flight = { id, editable: loaded.editable, savedId: loaded.editable ? id : null, data, droneIndex: 0,
+      selected: -1, line: [], conflicts: [], checked: false, pick: null, route: loaded.route };
+    renderFlightList();
+    renderFlight();
+    setStatus(status, loaded.editable ? (loaded.route ? "車のルートと同じファイルです。保存すると、車のルートはそのまま残ります（コメントは消えます）。" : "")
+      : "例の飛行計画です。保存するとコピーが作られます。");
+    await loadFlightWorld();
+    checkFlightNow(state.flight);
+  } catch (error) {
+    setStatus(status, error.message, "error");
+  }
+}
+
+function newFlight() {
+  const world = state.current?.composition.world
+    || (usableWorlds().find((item) => item.kind === "city") || usableWorlds()[0])?.id;
+  const placed = state.current?.composition.vehicles.find((vehicle) => assetById(vehicle.asset)?.category === "drone");
+  const data = newFlightData(world, placed ? { east_m: placed.spawn.east_m, north_m: placed.spawn.north_m } : null);
+  if (placed) data.drones[0].name = placed.name;
+  const drone = data.drones[0];
+  drone._points = [];
+  drone._land = { mode: "takeoff", east_m: data.meta.takeoff.east_m + 10, north_m: data.meta.takeoff.north_m, rise_m: 5 };
+  state.flight = { id: "", editable: true, savedId: null, data, droneIndex: 0, selected: -1, line: [], conflicts: [],
+    checked: true, pick: null };
+  renderFlightList();
+  renderFlight();
+  setStatus($("#flight-status"), "");
+  $("#flight-id").focus();
+  loadFlightWorld().then(() => checkFlightNow(state.flight));
+}
+
+async function loadFlightWorld() {
+  const worldId = state.flight?.data.meta.world;
+  let hasMap = false;
+  if (worldId && state.flightMap) {
+    try {
+      const info = await api("GET", `worlds/${worldId}`);
+      hasMap = state.flightMap.setWorld(info);
+      await state.flightView?.setWorld(info);
+    } catch (error) {
+      setStatus($("#flight-status"), error.message, "error");
+    }
+  }
+  $("#flight-map").hidden = !hasMap;
+  if (hasMap) {
+    state.flightMap.show();
+    state.footprints = state.footprints || {};
+    if (!(worldId in state.footprints)) {
+      try {
+        state.footprints[worldId] = (await api("GET", `worlds/${worldId}/footprints`)).buildings;
+      } catch {
+        state.footprints[worldId] = [];
+      }
+    }
+    state.flightMap.setFootprints(state.footprints[worldId], $("#flight-show-buildings").checked);
+  }
+  renderFlightViews();
+}
+
+// The flight's line in order, as the schedule flies it: takeoff stand, the
+// climb, the waypoints (once more to the first for another round), and the
+// landing (over it, then the stand).
+function flightLine() {
+  const flight = state.flight;
+  const drone = flightDrone();
+  const takeoff = flight.data.meta.takeoff;
+  const rise = Number(drone.takeoff?.rise_m ?? 5);
+  const line = [
+    { east_m: takeoff.east_m, north_m: takeoff.north_m, agl_m: HEXA_STAND_M, stand: true, label: "T", kind: "takeoff" },
+    { east_m: takeoff.east_m, north_m: takeoff.north_m, agl_m: HEXA_STAND_M + rise, label: "T", kind: "takeoff" },
+    ...drone._points.map((point, index) => ({
+      east_m: point.east_m, north_m: point.north_m, agl_m: Number(point.agl_m), label: String(index + 1),
+      kind: "waypoint", index, name: point.name,
+    })),
+  ];
+  const loops = drone.loop_count === "forever" ? 2 : Number(drone.loop_count || 1);
+  if (loops > 1 && drone._points.length > 1) line.push({ ...line[2], again: true });
+  const land = drone._land;
+  if (land.mode === "takeoff") {
+    line.push({ ...line[1] }, { ...line[0] });
+  } else if (land.mode === "elsewhere") {
+    const rise = Number(land.rise_m || 5);
+    line.push(
+      { east_m: land.east_m, north_m: land.north_m, agl_m: HEXA_STAND_M + rise, label: "L", kind: "land" },
+      { east_m: land.east_m, north_m: land.north_m, agl_m: HEXA_STAND_M, stand: true, label: "L", kind: "land" },
+    );
+  }
+  return line;
+}
+
+function flightEdited() {
+  const flight = state.flight;
+  if (!flight) return;
+  flightDrone()._dirty = true;
+  flight.checked = false;
+  clearTimeout(state.flightCheckTimer);
+  state.flightCheckTimer = setTimeout(() => checkFlightNow(flight), FLIGHT_CHECK_DELAY_MS);
+}
+
+async function checkFlightNow(flight) {
+  if (!flight) return;
+  const world = flight.data.meta.world;
+  const line = flightLine();
+  const version = (flight.checkVersion = (flight.checkVersion || 0) + 1);
+  if (!world) return;
+  let checked;
+  try {
+    checked = await api("POST", `worlds/${world}/flight-check`, {
+      points: line.map(({ east_m, north_m, agl_m, stand }) => ({ east_m, north_m, agl_m, stand: Boolean(stand) })),
+    });
+  } catch (error) {
+    if (state.flight === flight) setStatus($("#flight-status"), error.message, "error");
+    return;
+  }
+  if (state.flight !== flight || flight.checkVersion !== version) return; // a newer edit supersedes it
+  flight.line = line.map((point, index) => ({ ...point, ...checked.points[index] }));
+  flight.conflicts = checked.conflicts;
+  flight.checked = checked.checked;
+  flight.uncheckable = !checked.checked;
+  renderFlight();
+}
+
+function flightPointLabel(index) {
+  const point = state.flight.line[index - 1];
+  if (!point) return `点${index}`;
+  if (point.kind === "waypoint") return `点${point.label}`;
+  return point.kind === "takeoff" ? "離陸地点" : "着陸地点";
+}
+
+function renderFlightViews() {
+  const flight = state.flight;
+  if (!flight) return;
+  const drone = flightDrone();
+  const takeoff = flight.data.meta.takeoff;
+  const markers = [
+    { east_m: takeoff.east_m, north_m: takeoff.north_m, label: "T", kind: "takeoff", name: "離陸地点" },
+    ...drone._points.map((point, index) => ({ ...point, label: String(index + 1), kind: "waypoint", index })),
+  ];
+  if (drone._land.mode === "elsewhere") {
+    markers.push({ east_m: drone._land.east_m, north_m: drone._land.north_m, label: "L", kind: "land", name: "着陸地点" });
+  }
+  const line = flight.line.length ? flight.line : flightLine();
+  const xy = line.map((point) => [point.east_m, point.north_m]);
+  const blocked = flight.conflicts.map((conflict) => [xy[conflict.from - 1], xy[conflict.to - 1]]).filter(([a, b]) => a && b);
+  if (!$("#flight-map").hidden) state.flightMap?.setFlight(markers, xy, flight.selected, blocked);
+  if (flight.line.length) state.flightView?.setFlight(flight.line, flight.selected, flight.conflicts);
+}
+
+function renderFlight() {
+  const flight = state.flight;
+  $(".flight-editor").hidden = !flight;
+  if (!flight) return;
+  const data = flight.data;
+  const drone = flightDrone();
+  $("#flight-delete").hidden = !flight.savedId;
+  $("#flight-id").value = flight.id;
+  $("#flight-name").value = data.name || "";
+  const worldSelect = $("#flight-world");
+  worldSelect.replaceChildren(
+    el("option", { value: "" }, "（未設定）"),
+    ...usableWorlds().map((world) => el("option", { value: world.id }, `${world.title}（${worldKindLabel(world.kind)}）`)));
+  worldSelect.value = data.meta.world || "";
+  const droneSelect = $("#flight-drone");
+  droneSelect.replaceChildren(...data.drones.map((item, index) => el("option", { value: String(index) }, item.name)));
+  droneSelect.value = String(flight.droneIndex);
+  $("#flight-delay").value = drone.start_delay_sec ?? 5;
+  $("#flight-speed").value = drone.speed_m_s ?? 2;
+  $("#flight-loops").value = drone.loop_count === "forever" ? "" : drone.loop_count ?? 1;
+  $("#flight-rise").value = drone.takeoff?.rise_m ?? 10;
+  $("#flight-takeoff-hold").value = drone.takeoff?.hold_sec ?? 2;
+  $("#flight-takeoff-east").value = data.meta.takeoff.east_m;
+  $("#flight-takeoff-north").value = data.meta.takeoff.north_m;
+  const land = drone._land;
+  $("#flight-land").value = land.mode;
+  for (const node of document.querySelectorAll(".flight-land-at")) node.hidden = land.mode !== "elsewhere";
+  $("#flight-land-east").value = land.east_m;
+  $("#flight-land-north").value = land.north_m;
+  $("#flight-land-rise").value = land.rise_m;
+  $("#flight-pick-takeoff").classList.toggle("active", flight.pick === "takeoff");
+  $("#flight-pick-land").classList.toggle("active", flight.pick === "land");
+  $("#flight-map-hint").textContent = flight.pick
+    ? `地図をクリックして${flight.pick === "takeoff" ? "離陸" : "着陸"}地点を決めてください。`
+    : "地図をクリックすると経由点を追加します。点はドラッグで移動、クリックで選択します。T は離陸地点、L は着陸地点です。";
+
+  const ups = new Map(flight.line.filter((point) => point.kind === "waypoint" && !point.again).map((point) => [point.index, point]));
+  $("#flight-points tbody").replaceChildren(...(drone._points.length ? drone._points.map((point, index) => {
+    const cell = (key, step, blank = false) => el("td", {}, el("input", {
+      type: "number", step, value: point[key] === "" || point[key] === undefined ? "" : String(point[key]),
+      placeholder: blank ? "既定" : "",
+      onchange: (event) => {
+        const raw = event.target.value.trim();
+        point[key] = blank && raw === "" ? "" : routeNumber(raw, 0);
+        flightEdited();
+        renderFlight();
+      },
+    }));
+    const resolved = ups.get(index);
+    return el("tr", {
+      class: index === flight.selected ? "selected" : "",
+      onclick: (event) => { if (!event.target.closest("input, button")) selectFlightPoint(index); },
+    },
+      el("td", {}, String(index + 1)),
+      el("td", {}, el("input", { value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); flightDrone()._dirty = true; renderFlight(); } })),
+      cell("east_m", "0.1"), cell("north_m", "0.1"), cell("agl_m", "0.5"),
+      el("td", { class: "meta" }, resolved?.up_m !== undefined ? `${resolved.up_m.toFixed(1)}（地面 ${resolved.ground_m?.toFixed(1) ?? "?"}）` : "…"),
+      cell("speed_m_s", "0.1", true), cell("hold_sec", "0.5", true), cell("yaw_deg", "1", true),
+      el("td", {}, el("button", {
+        class: "icon", title: "削除", onclick: () => {
+          drone._points.splice(index, 1);
+          flight.selected = Math.min(flight.selected, drone._points.length - 1);
+          flightEdited();
+          renderFlight();
+        },
+      }, "✕")));
+  }) : [el("tr", {}, el("td", { colspan: 10, class: "hint" }, "経由点がありません。地図をクリックして追加してください。"))]));
+
+  const conflicts = $("#flight-conflicts");
+  conflicts.hidden = !flight.conflicts.length && flight.checked && !flight.uncheckable;
+  conflicts.replaceChildren(...(flight.uncheckable
+    ? [el("li", {}, "この環境では建物との当たりを調べられません（MuJoCo Python がありません）。")]
+    : flight.conflicts.length
+      ? flight.conflicts.map((conflict) => el("li", {},
+        `${flightPointLabel(conflict.from)} → ${flightPointLabel(conflict.to)}：ぶつかります（${conflict.at[0]}E, ${conflict.at[1]}N, 高度 ${conflict.at[2]} m、${conflict.geom.slice(0, 40)}）`))
+      : flight.checked ? [] : [el("li", { class: "hint" }, "当たりをチェックしています…")]));
+  renderFlightViews();
+}
+
+function selectFlightPoint(index) {
+  if (!state.flight) return;
+  state.flight.selected = index;
+  renderFlight();
+}
+
+function addFlightPoint(east, north) {
+  const drone = flightDrone();
+  const last = drone._points.at(-1);
+  drone._points.push({
+    name: `p${drone._points.length + 1}`, east_m: round2(east), north_m: round2(north),
+    agl_m: last ? last.agl_m : 10, speed_m_s: "", hold_sec: "", yaw_deg: "",
+  });
+  state.flight.selected = drone._points.length - 1;
+  flightEdited();
+  renderFlight();
+}
+
+function flightMapPicked(east, north) {
+  const flight = state.flight;
+  if (!flight) return;
+  if (flight.pick === "takeoff") {
+    flight.data.meta.takeoff = { east_m: round2(east), north_m: round2(north) };
+  } else if (flight.pick === "land") {
+    Object.assign(flightDrone()._land, { east_m: round2(east), north_m: round2(north) });
+  } else {
+    addFlightPoint(east, north);
+    return;
+  }
+  flight.pick = null;
+  flightEdited();
+  renderFlight();
+}
+
+function flightMarkerMoved(marker, east, north) {
+  const flight = state.flight;
+  if (!flight) return;
+  const place = { east_m: round2(east), north_m: round2(north) };
+  if (marker.kind === "takeoff") flight.data.meta.takeoff = place;
+  else if (marker.kind === "land") Object.assign(flightDrone()._land, place);
+  else {
+    Object.assign(flightDrone()._points[marker.index], place);
+    flight.selected = marker.index;
+  }
+  flightEdited();
+  renderFlight();
+}
+
+// The schedule the Drone flies, from the editor's model and the latest check.
+async function droneSchedule(world, takeoff, drone) {
+  const { _points: points, _land: land, _dirty: dirty, ...schedule } = drone;
+  if (!dirty) return schedule; // untouched: saved as it was read
+  const state0 = state.flight;
+  const index = state0.data.drones.indexOf(drone);
+  const saved = state0.droneIndex;
+  state0.droneIndex = index;
+  const line = flightLine();
+  state0.droneIndex = saved;
+  const checked = await api("POST", `worlds/${world}/flight-check`, {
+    points: line.map(({ east_m, north_m, agl_m, stand }) => ({ east_m, north_m, agl_m, stand: Boolean(stand) })),
+  });
+  const ups = new Map();
+  line.forEach((point, at) => { if (point.kind === "waypoint" && !point.again) ups.set(point.index, checked.points[at].up_m); });
+  schedule.waypoints = points.map((point, at) => {
+    // A point left where it was keeps its height as read (no rounding through the height above the ground).
+    const read = point._read;
+    const kept = read && read.east_m === point.east_m && read.north_m === point.north_m && read.agl_m === Number(point.agl_m);
+    const waypoint = { name: point.name || `p${at + 1}`, east_m: point.east_m, north_m: point.north_m,
+      up_m: kept ? read.up_m : round2(ups.get(at)) };
+    if (point.speed_m_s !== "" && point.speed_m_s !== undefined) waypoint.speed_m_s = Number(point.speed_m_s);
+    if (point.hold_sec !== "" && point.hold_sec !== undefined && Number(point.hold_sec) > 0) waypoint.hold_sec = Number(point.hold_sec);
+    if (point.yaw_deg !== "" && point.yaw_deg !== undefined) waypoint.yaw_deg = Number(point.yaw_deg);
+    return waypoint;
+  });
+  if (land.mode === "elsewhere") {
+    schedule.land = { east_m: land.east_m, north_m: land.north_m, up_m: round2(checked.points.at(-1).up_m), rise_m: Number(land.rise_m) };
+  } else {
+    schedule.land = land.mode !== "none";
+  }
+  return schedule;
+}
+
+async function saveFlight() {
+  const flight = state.flight;
+  if (!flight) return;
+  const status = $("#flight-status");
+  if (!flight.id) { setStatus(status, "ID を入力してください", "error"); return; }
+  const data = flight.data;
+  if (!data.meta.world) { setStatus(status, "World を選んでください", "error"); return; }
+  setStatus(status, "検証中…");
+  try {
+    const drones = [];
+    for (const drone of data.drones) drones.push(await droneSchedule(data.meta.world, data.meta.takeoff, drone));
+    const body = { ...data, drones };
+    await api("PUT", `flights/${flight.id}`, body);
+    flight.editable = true;
+    flight.savedId = flight.id;
+    for (const drone of data.drones) drone._dirty = false;
+    await loadFlights();
+    renderEditor(); // Compose lists the new or renamed flight
+    renderFlight();
+    await checkFlightNow(flight);
+    setStatus(status, flight.conflicts.length
+      ? `保存しました。ただし ${flight.conflicts.length} 区間が建物などにぶつかります（赤）。点を動かすか高さを変えて、保存し直してください。`
+      : "保存しました。建物などにぶつかる区間はありません。Compose のドローン（スケジュール）で、この飛行計画を選べます。",
+    flight.conflicts.length ? "error" : "ok");
+  } catch (error) {
+    setStatus(status, error.message, "error");
+  }
+}
+
+async function deleteFlight() {
+  const flight = state.flight;
+  if (!flight?.savedId) return;
+  if (!window.confirm(`飛行計画「${flight.data.name || flight.savedId}」（${flight.savedId}）を削除しますか？\n元に戻せません。`)) return;
+  try {
+    await api("DELETE", `flights/${flight.savedId}`);
+    state.flight = null;
+    await loadFlights();
+    renderEditor();
+    renderFlight();
+    setStatus($("#flight-list-status"), `飛行計画 ${flight.savedId} を削除しました。`, "ok");
+  } catch (error) {
+    setStatus($("#flight-status"), error.message, "error");
+  }
+}
+
+async function initFlight() {
+  const { FlightMapView, FlightView } = await import("./flight.js");
+  state.flightMap = new FlightMapView($("#flight-map"), {
+    onPick: flightMapPicked,
+    onSelect: (marker) => { if (marker.kind === "waypoint") selectFlightPoint(marker.index); },
+    onMove: flightMarkerMoved,
+  });
+  try {
+    state.flightView = new FlightView($("#flight-3d"), {
+      onSelect: (point) => { if (point.kind === "waypoint") selectFlightPoint(point.index); },
+    });
+  } catch {
+    state.flightView = null; // no WebGL: the map still edits the flight
+  }
+  $("#new-flight").addEventListener("click", newFlight);
+  $("#flight-save").addEventListener("click", saveFlight);
+  $("#flight-delete").addEventListener("click", deleteFlight);
+  $("#flight-add-point").addEventListener("click", () => {
+    if (!state.flight) return;
+    const last = flightDrone()._points.at(-1) || state.flight.data.meta.takeoff;
+    addFlightPoint(last.east_m + 5, last.north_m);
+  });
+  $("#flight-focus-all").addEventListener("click", () => state.flightView?.focusFlight());
+  $("#flight-focus-point").addEventListener("click", () => {
+    const flight = state.flight;
+    if (!flight || flight.selected < 0) return;
+    const at = flight.line.findIndex((point) => point.kind === "waypoint" && point.index === flight.selected);
+    state.flightView?.focusPoint(at);
+  });
+  $("#flight-show-buildings").addEventListener("change", () => loadFlightWorld());
+  for (const [selector, mode] of [["#flight-pick-takeoff", "takeoff"], ["#flight-pick-land", "land"]]) {
+    $(selector).addEventListener("click", () => {
+      if (!state.flight) return;
+      state.flight.pick = state.flight.pick === mode ? null : mode;
+      renderFlight();
+    });
+  }
+  const bind = (selector, apply, edits = true) => $(selector).addEventListener("change", (event) => {
+    if (!state.flight) return;
+    apply(state.flight, event.target);
+    if (edits) flightEdited();
+    renderFlight();
+  });
+  bind("#flight-id", (flight, input) => { flight.id = input.value.trim(); }, false);
+  bind("#flight-name", (flight, input) => { flight.data.name = input.value.trim(); }, false);
+  bind("#flight-world", (flight, input) => {
+    flight.data.meta.world = input.value || undefined;
+    loadFlightWorld();
+  });
+  bind("#flight-drone", (flight, input) => { flight.droneIndex = Number(input.value); flight.selected = -1; });
+  bind("#flight-delay", (flight, input) => { flightDrone().start_delay_sec = Math.max(0, routeNumber(input.value, 5)); });
+  bind("#flight-speed", (flight, input) => { flightDrone().speed_m_s = Math.max(0.1, routeNumber(input.value, 2)); });
+  bind("#flight-loops", (flight, input) => { flightDrone().loop_count = Math.max(1, Math.round(routeNumber(input.value, 1))); });
+  bind("#flight-rise", (flight, input) => {
+    const drone = flightDrone();
+    drone.takeoff = { ...drone.takeoff, rise_m: Math.max(0.5, routeNumber(input.value, 5)) };
+  });
+  bind("#flight-takeoff-hold", (flight, input) => {
+    const drone = flightDrone();
+    drone.takeoff = { ...drone.takeoff, hold_sec: Math.max(0, routeNumber(input.value, 2)) };
+  });
+  bind("#flight-takeoff-east", (flight, input) => { flight.data.meta.takeoff.east_m = routeNumber(input.value, 0); });
+  bind("#flight-takeoff-north", (flight, input) => { flight.data.meta.takeoff.north_m = routeNumber(input.value, 0); });
+  bind("#flight-land", (flight, input) => { flightDrone()._land.mode = input.value; });
+  bind("#flight-land-east", (flight, input) => { flightDrone()._land.east_m = routeNumber(input.value, 0); });
+  bind("#flight-land-north", (flight, input) => { flightDrone()._land.north_m = routeNumber(input.value, 0); });
+  bind("#flight-land-rise", (flight, input) => { flightDrone()._land.rise_m = Math.max(0.5, routeNumber(input.value, 5)); });
+}
+
+// Compose: a Drone's schedule param picks a flight; the flight's takeoff point
+// is where the editor checked it from, so the placement is offered to follow it.
+function flightFor(value) {
+  return (state.flights || []).find((flight) => flight.reference === value || flight.path === value);
+}
+
+function flightParamField(vehicle, name, definition) {
+  const composition = state.current.composition;
+  const value = vehicle.params[name] ?? "";
+  const chosen = value ? flightFor(value) : null;
+  const ordered = [...(state.flights || [])].sort((a, b) =>
+    Number(b.world === composition.world) - Number(a.world === composition.world) || a.name.localeCompare(b.name));
+  const select = el("select", {
+    onchange: (event) => {
+      if (event.target.value) vehicle.params[name] = event.target.value;
+      else delete vehicle.params[name];
+      renderEditor();
+    },
+  },
+    el("option", { value: "" }, "（飛行計画を選択）"),
+    value && !chosen ? el("option", { value }, `（現在）${value}`) : null,
+    ...ordered.map((item) => el("option", { value: item.reference },
+      `${item.name}（${item.id}）${item.world && item.world !== composition.world ? "・別の World" : ""}${item.drones.includes(vehicle.name) ? "" : "・このドローンの名前がありません"}`)));
+  select.value = chosen ? chosen.reference : value;
+  const edit = chosen ? el("button", {
+    class: "secondary", onclick: async () => { showTab("flight"); await openFlight(chosen.id); },
+  }, "飛行計画を編集") : null;
+  const notes = [];
+  if (chosen && !chosen.drones.includes(vehicle.name)) {
+    notes.push(el("span", { class: "hint error" }, `この飛行計画に ${vehicle.name} の項目がありません（${chosen.drones.join(", ")}）。`));
+  }
+  const takeoff = chosen?.takeoff;
+  if (takeoff && Math.hypot(takeoff.east_m - vehicle.spawn.east_m, takeoff.north_m - vehicle.spawn.north_m) > 0.5) {
+    notes.push(el("span", { class: "hint error" },
+      `飛行計画の離陸地点（${takeoff.east_m}, ${takeoff.north_m}）と配置が違います。航路のチェックは離陸地点からしています。`,
+      el("button", {
+        class: "secondary", onclick: () => {
+          vehicle.spawn.east_m = takeoff.east_m;
+          vehicle.spawn.north_m = takeoff.north_m;
+          vehicle._ground = undefined;
+          renderEditor();
+        },
+      }, "配置を離陸地点に合わせる")));
+  }
+  return el("div", { class: "field" }, `${name}${definition.required ? " *" : ""}`, el("div", { class: "row" }, select, edit), ...notes);
+}
+
 // --- Start ----------------------------------------------------------------------------
 
 async function main() {
@@ -1592,7 +2153,9 @@ async function main() {
   renderAssets();
   await initPlacement();
   await initRoute();
+  await initFlight();
   await loadScenarios();
+  await loadFlights();
   await loadCompositions();
   // Reopen the Composition used last (in Compose or Simulation), else the first one.
   const last = rememberedComposition();
