@@ -29,7 +29,7 @@ CITY_WORLD_JOBS = urban_manifest.path("assets.city_world_jobs")
 KINDS = {"vehicle", "city", "plain"}
 CATEGORIES = {"car", "drone", "person"}
 SIMULATORS = {"ackermann-mujoco", "drone-core", "hakoniwa-people"}
-CONTROLS = {"rc", "api", "external"}
+CONTROLS = {"rc", "api", "schedule", "external"}
 SCOPES = {"vehicle", "composition"}
 REPO_REFERENCE = re.compile(r"\$\{repo:([A-Za-z0-9_.-]+)\}")
 
@@ -114,7 +114,7 @@ def validate(asset: Asset) -> None:
         raise AssetError(f"vehicle Asset {asset.id} needs spawn.ground_clearance_m >= 0")
     controls = asset.controls()
     if not isinstance(controls, dict) or not controls or set(controls) - CONTROLS:
-        raise AssetError(f"vehicle Asset {asset.id} controls must declare rc, api and/or external")
+        raise AssetError(f"vehicle Asset {asset.id} controls must declare rc, api, schedule and/or external")
     for name, control in controls.items():
         # external: an outside program (an agent, a script) drives it through
         # its API; the Launcher starts nothing for it.

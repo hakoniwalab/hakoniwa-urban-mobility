@@ -680,6 +680,11 @@ def materialize_eams_controller_params(
             "CTRLMODE_LANDING_COMPLETION_STABLE_ANGLE_DEG": "1.0",
             "CTRLMODE_LANDING_COMPLETION_STABLE_DURATION_SEC": "1.0",
         })
+    else:
+        # API flight: gains for long gotos and turns (config/drone/hexa/controller-api-tuning.txt).
+        api_tuning = URBAN_HEXA_ROOT / "controller-api-tuning.txt"
+        if api_tuning.is_file():
+            tuned.update(_parameter_values(api_tuning))
     baseline = "Urban Hexa RC" if rc_mode else "Urban Hexa Fleet RPC"
     lines: list[str] = [f"# {baseline} nominal 9 kg parameter set."]
     seen: set[str] = set()
