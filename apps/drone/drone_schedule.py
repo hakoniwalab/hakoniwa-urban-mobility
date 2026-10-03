@@ -20,6 +20,9 @@ the same.
              yaw_deg: 200.0, speed_m_s: 4.0, hold_sec: 20.0}
           - {name: back, east_m: 82.0, north_m: -5.0, rise_m: 15.0, hold_sec: 5.0}
         land: true                # after the last round: back over the takeoff point, land
+        # or land elsewhere, approached rise_m (default takeoff.rise_m) above it;
+        # up_m is the Drone's height when down there (as the spawn's):
+        # land: {east_m: 89.25, north_m: -3.82, up_m: 248.93, rise_m: 10.0}
 
 Positions are the Urban World's: east_m / north_m from its origin, and the
 height either up_m (the World's height, as the spawn's) or rise_m (above the
@@ -53,6 +56,7 @@ class ScheduleError(RuntimeError):
 # --- The schedule ------------------------------------------------------------------
 
 DRONE_KEYS = {"name", "start_delay_sec", "speed_m_s", "tolerance_m", "hop_m", "loop_count", "takeoff", "waypoints", "land"}
+LAND_KEYS = {"east_m", "north_m", "up_m", "rise_m"}
 WAYPOINT_KEYS = {"name", "east_m", "north_m", "up_m", "rise_m", "yaw_deg", "speed_m_s", "hold_sec"}
 
 
@@ -137,8 +141,19 @@ def check_schedule(entry: dict, where: str) -> dict:
             checked["yaw_deg"] = _number(point["yaw_deg"], f"{at}.yaw_deg")
         schedule["waypoints"].append(checked)
     land = entry.get("land", True)
-    if not isinstance(land, bool):
-        raise ScheduleError(f"{where}.land must be true or false")
+    if isinstance(land, dict):
+        # Somewhere other than the takeoff point: approached rise_m above it.
+        if set(land) - LAND_KEYS or not {"east_m", "north_m", "up_m"} <= set(land):
+            raise ScheduleError(f"{where}.land takes east_m, north_m, up_m and optionally rise_m")
+        land = {
+            "east_m": _number(land["east_m"], f"{where}.land.east_m"),
+            "north_m": _number(land["north_m"], f"{where}.land.north_m"),
+            "up_m": _number(land["up_m"], f"{where}.land.up_m"),
+            "rise_m": _number(land.get("rise_m", schedule["takeoff"]["rise_m"]), f"{where}.land.rise_m",
+                              positive=True),
+        }
+    elif not isinstance(land, bool):
+        raise ScheduleError(f"{where}.land must be true, false or a place to land")
     if land and schedule["loop_count"] is None:
         raise ScheduleError(f"{where}: a schedule that loops forever never lands (set land: false)")
     schedule["land"] = land
@@ -192,11 +207,17 @@ def steps(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw_deg: 
             if point["hold_sec"] > 0:
                 yield {"op": "wait", "sec": point["hold_sec"], "label": f"at {point['name']}"}
     if schedule["land"]:
-        yaw = heading(here, (east0, north0), yaw)
-        yield from _hops({"op": "goto", "name": "over-takeoff-point", "round": round_number, "east_m": east0,
-                          "north_m": north0, "up_m": cruise, "yaw_deg": yaw, "speed_m_s": schedule["speed_m_s"],
+        name, (east1, north1, up1, over) = "over-takeoff-point", (east0, north0, up0, cruise)
+        if isinstance(schedule["land"], dict):
+            place = schedule["land"]
+            name = "over-landing-point"
+            east1, north1, up1 = place["east_m"], place["north_m"], place["up_m"]
+            over = up1 + place["rise_m"]
+        yaw = heading(here, (east1, north1), yaw)
+        yield from _hops({"op": "goto", "name": name, "round": round_number, "east_m": east1,
+                          "north_m": north1, "up_m": over, "yaw_deg": yaw, "speed_m_s": schedule["speed_m_s"],
                           "tolerance_m": schedule["tolerance_m"]}, (*here, here_up), schedule["hop_m"])
-        yield {"op": "land", "up_m": up0}
+        yield {"op": "land", "up_m": up1}
 
 
 def _hops(goto: dict, start: tuple[float, float, float], hop_m: float) -> Iterator[dict]:

@@ -60,6 +60,21 @@ class DroneScheduleTest(unittest.TestCase):
         self.assertEqual([step["round"] for step in flight if step["op"] == "goto"], [1, 1, 2, 2, 2])
         self.assertEqual((flight[-2]["east_m"], flight[-2]["north_m"], flight[-2]["up_m"]), (82.0, -5.0, 262.0))
 
+    def test_it_can_land_somewhere_other_than_the_takeoff_point(self):
+        text = SCHEDULE.replace("loop_count: 2", "loop_count: 1").replace(
+            "land: true", "land: {east_m: 89.0, north_m: -4.0, up_m: 249.0, rise_m: 12}")
+        schedule = schedule_module.load_schedule(self.write(text), "Drone-1")
+        flight = list(schedule_module.steps(schedule, (50.0, -3.0, 11.0)))  # takes off on a deck
+        over, land = flight[-2], flight[-1]
+        self.assertEqual((over["name"], over["east_m"], over["north_m"], over["up_m"]),
+                         ("over-landing-point", 89.0, -4.0, 261.0))
+        self.assertEqual(land, {"op": "land", "up_m": 249.0})
+        # rise_m defaults to the takeoff's.
+        schedule = schedule_module.load_schedule(self.write(text.replace(", rise_m: 12", "")), "Drone-1")
+        self.assertEqual(list(schedule_module.steps(schedule, (50.0, -3.0, 11.0)))[-2]["up_m"], 264.0)
+        with self.assertRaisesRegex(schedule_module.ScheduleError, "takes east_m, north_m, up_m"):
+            schedule_module.load_schedule(self.write(text.replace("up_m: 249.0, ", "")), "Drone-1")
+
     def test_legs_are_flown_in_short_hops(self):
         schedule = schedule_module.load_schedule(self.write(SCHEDULE.replace("loop_count: 2", "loop_count: 2\n    hop_m: 3")), "Drone-1")
         flight = list(schedule_module.steps(schedule, (82.0, -5.0, 247.0)))
