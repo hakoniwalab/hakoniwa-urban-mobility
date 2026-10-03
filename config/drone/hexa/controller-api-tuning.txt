@@ -9,6 +9,10 @@ PID_POS_VX_Kd 1.0
 PID_POS_VY_Kp 8.0
 PID_POS_VY_Ki 0.0
 PID_POS_VY_Kd 1.0
-PID_POS_MAX_SPD 4
-PID_ALT_MAX_SPD 2
+PID_POS_MAX_SPD 8
+PID_ALT_MAX_SPD 12
 PID_YAW_RPM_MAX 10
+# Twice the RC tuning's altitude thrust authority (+-9.81 N about the 88.3 N
+# hover thrust): with it the climb / descent capped at 4.8 / 5.6 m/s against
+# drag, so leaving the 250 m Tokyo tower roof took 40 s; doubled, 7.4 / 8.1 m/s.
+PID_ALT_MAX_POWER 19.62

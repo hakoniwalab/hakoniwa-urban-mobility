@@ -247,6 +247,7 @@ class Runner:
         self.pending = None
         self.current: dict | None = None
         self.wait_until: float | None = None
+        self.land_until = 0.0
         self.previous = None
         self.done = False
         self.summary: dict[str, Any] = {"status": "running", "drone": args.drone, "spawn_enu_m": list(spawn_enu),
@@ -272,7 +273,10 @@ class Runner:
                                           tolerance_m=step["tolerance_m"],
                                           timeout_sec=leg_timeout(step, self.previous))
         if op == "land":
-            return self.client.land_async(timeout_sec=self.args.land_timeout_sec)
+            # No RPC timeout: a timed-out land is cancelled, and Drone Core then
+            # leaves landing mode and slides the Drone off where it came down.
+            self.land_until = self.clock() + self.args.land_settle_sec
+            return self.client.land_async(timeout_sec=0.0)
         raise ScheduleError(f"unknown step {op}")
 
     def _finished(self, step: dict, result) -> None:
@@ -280,8 +284,9 @@ class Runner:
         record = {"op": step["op"], **{key: step[key] for key in ("name", "round", "hop") if key in step},
                   "simulation_sec": round(self.clock(), 3), "ok": ok}
         if not ok and step["op"] == "land":
-            # Drone Core's land completion assumes ground at height 0: on a roof the
-            # RPC times out although the Drone is down (as apps/drone/city_fleet_mission.py).
+            # Drone Core's land completion assumes ground at height 0: on a roof it
+            # never answers although the Drone is down. The request is left open
+            # (not cancelled) and the Drone taken as landed after land_settle_sec.
             record["note"] = f"land RPC: {result}; the Drone is taken as landed on the surface below"
             ok = True
         if not ok:
@@ -304,6 +309,9 @@ class Runner:
         if self.pending is not None:
             self.client.poll_once()
             if not self.pending.done():
+                if self.current["op"] == "land" and self.clock() >= self.land_until:
+                    step, self.pending = self.current, None  # left open: see _submit
+                    self._finished(step, "no answer (the land completion assumes ground at height 0)")
                 return
             try:
                 result = self.pending.result(timeout=0.0)
@@ -386,7 +394,8 @@ def parser() -> argparse.ArgumentParser:
     parser.add_argument("--summary-json", type=Path)
     parser.add_argument("--offset-path", type=Path, help="PDU offset files (default: the Workspace foundation's)")
     parser.add_argument("--poll-sec", type=float, default=0.01, help="wall-clock pause between steps")
-    parser.add_argument("--land-timeout-sec", type=float, default=30.0)
+    parser.add_argument("--land-settle-sec", type=float, default=20.0,
+                        help="simulation seconds after the land command after which the Drone is taken as down")
     parser.add_argument("--check", action="store_true", help="print the flight and exit (no simulation)")
     parser.add_argument("--spawn", help="with --check: east,north,up of the spawn (default: from --city-marker)")
     parser.add_argument("--check-steps", type=int, default=40, help="with --check: how many steps to print")
