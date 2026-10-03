@@ -75,6 +75,28 @@ class DroneScheduleTest(unittest.TestCase):
         with self.assertRaisesRegex(schedule_module.ScheduleError, "takes east_m, north_m, up_m"):
             schedule_module.load_schedule(self.write(text.replace("up_m: 249.0, ", "")), "Drone-1")
 
+    def test_the_flight_path_for_a_viewer_draws_one_round_and_the_landing(self):
+        text = SCHEDULE.replace("loop_count: 2", "loop_count: 2\n    hop_m: 3").replace(
+            "land: true", "land: {east_m: 89.0, north_m: -4.0, up_m: 249.0, rise_m: 12}")
+        schedule = schedule_module.load_schedule(self.write(text), "Drone-1")
+        line = schedule_module.flight_path(schedule, (50.0, -3.0, 11.0))
+        self.assertEqual([(item["kind"], item["label"]) for item in line], [
+            ("takeoff", "T"), ("takeoff", "T"), ("waypoint", "1"), ("waypoint", "2"),
+            ("waypoint", "1"), ("land", "L"), ("land", "L")])
+        self.assertTrue(line[0]["stand"] and line[-1]["stand"])
+        self.assertTrue(line[4]["again"])  # back to the first waypoint for round 2; hops left out
+        self.assertEqual((line[1]["up_m"], line[3]["up_m"], line[-2]["up_m"], line[-1]["up_m"]), (26.0, 31.0, 261.0, 249.0))
+
+    def test_a_flight_that_never_lands_ends_its_path_back_at_the_first_waypoint(self):
+        text = SCHEDULE.replace("loop_count: 2", "loop_count: forever").replace("land: true", "land: false")
+        line = schedule_module.flight_path(schedule_module.load_schedule(self.write(text), "Drone-1"), (0.0, 0.0, 0.0))
+        self.assertEqual([item["label"] for item in line], ["T", "T", "1", "2", "1"])
+        landing_home = schedule_module.flight_path(
+            schedule_module.load_schedule(self.write(SCHEDULE.replace("loop_count: 2", "loop_count: 1")), "Drone-1"),
+            (82.0, -5.0, 247.0))
+        self.assertEqual([item["label"] for item in landing_home][-2:], ["T", "T"])  # lands where it took off
+        self.assertEqual((landing_home[-1]["east_m"], landing_home[-1]["up_m"]), (82.0, 247.0))
+
     def test_legs_are_flown_in_short_hops(self):
         schedule = schedule_module.load_schedule(self.write(SCHEDULE.replace("loop_count: 2", "loop_count: 2\n    hop_m: 3")), "Drone-1")
         flight = list(schedule_module.steps(schedule, (82.0, -5.0, 247.0)))
@@ -114,6 +136,33 @@ class DroneScheduleTest(unittest.TestCase):
                                 capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('"op": "land"', result.stdout)
+
+    def test_the_viewer_configs_get_the_flight_path_of_a_schedule_drone(self):
+        import json
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import urban_simulation
+
+        schedule_path = self.write(SCHEDULE)
+        marker = self.directory / "mujoco-city-fleet.json"
+        marker.write_text(json.dumps({"flight_plan": {"runtime_spawn": {
+            "frame": "ENU", "east_m": 82.0, "north_m": -5.0, "up_m": 247.0, "yaw_deg": 0.0}}}), encoding="utf-8")
+        viewer = self.directory / "viewer-config.json"
+        viewer.write_text(json.dumps({"ui": {}}), encoding="utf-8")
+        drone = SimpleNamespace(name="Drone-1", control="schedule", params={"schedule": str(schedule_path)})
+        car = SimpleNamespace(name="Car-1", control="api", params={})
+        composition = self.directory / "composition.yaml"
+        with mock.patch.object(urban_simulation, "load_composition", return_value=SimpleNamespace(vehicles=[car, drone])):
+            urban_simulation.write_viewer_flight_paths([viewer], composition, marker)
+        written = json.loads(viewer.read_text(encoding="utf-8"))
+        self.assertEqual(written["ui"], {})
+        self.assertEqual([path["drone"] for path in written["flightPaths"]], ["Drone-1"])
+        self.assertEqual(written["flightPaths"][0]["points"][0]["east_m"], 82.0)
+        # Without a schedule Drone the path is cleared.
+        with mock.patch.object(urban_simulation, "load_composition", return_value=SimpleNamespace(vehicles=[car])):
+            urban_simulation.write_viewer_flight_paths([viewer], composition, marker)
+        self.assertNotIn("flightPaths", json.loads(viewer.read_text(encoding="utf-8")))
 
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):
         import urban_assets

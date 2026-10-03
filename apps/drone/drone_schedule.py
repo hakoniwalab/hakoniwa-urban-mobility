@@ -220,6 +220,49 @@ def steps(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw_deg: 
         yield {"op": "land", "up_m": up1}
 
 
+def flight_path(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw_deg: float = 0.0) -> list[dict]:
+    """The flight's line for a viewer, from the same steps the Drone flies.
+
+    [{east_m, north_m, up_m, kind, label, ...}] in order: the takeoff stand
+    and the climb (kind "takeoff", label "T"), the waypoints of the first
+    round (kind "waypoint", labels "1", "2", ...; hops are left out), the
+    first one again for another round ("again": true), then the landing: over
+    it and down (kind "land", label "L"; "T" when it lands where it took off).
+    Stands on a surface carry "stand": true.
+    """
+    east0, north0, up0 = spawn_enu
+    line = [{"east_m": east0, "north_m": north0, "up_m": up0, "kind": "takeoff", "label": "T", "stand": True}]
+    last_round = 0
+    for step in steps(schedule, spawn_enu, spawn_yaw_deg):
+        if step["op"] == "takeoff":
+            line.append({"east_m": east0, "north_m": north0, "up_m": step["up_m"], "kind": "takeoff", "label": "T"})
+            continue
+        if step["op"] == "land":
+            over = line[-1]
+            line.append({"east_m": over["east_m"], "north_m": over["north_m"], "up_m": step["up_m"],
+                         "kind": over["kind"], "label": over["label"], "stand": True})
+            break
+        if step["op"] != "goto" or ("hop" in step and step["hop"].split("/")[0] != step["hop"].split("/")[1]):
+            continue
+        point = {"east_m": step["east_m"], "north_m": step["north_m"], "up_m": step["up_m"]}
+        if step["name"] in ("over-takeoff-point", "over-landing-point"):
+            at_takeoff = step["name"] == "over-takeoff-point"
+            line.append({**point, "kind": "takeoff" if at_takeoff else "land", "label": "T" if at_takeoff else "L"})
+            continue
+        if step["round"] > 1:
+            if last_round == 1:  # back to the first waypoint for another round; one round is drawn
+                first = next(item for item in line if item["kind"] == "waypoint")
+                line.append({**first, "again": True})
+            last_round = step["round"]
+            if schedule["loop_count"] is None:
+                break  # never lands
+            continue
+        last_round = 1
+        number = sum(1 for item in line if item["kind"] == "waypoint") + 1
+        line.append({**point, "kind": "waypoint", "label": str(number), "name": step["name"]})
+    return line
+
+
 def _hops(goto: dict, start: tuple[float, float, float], hop_m: float) -> Iterator[dict]:
     """A goto as hops of at most hop_m along the straight line (the last one is the goto)."""
     end = (goto["east_m"], goto["north_m"], goto["up_m"])

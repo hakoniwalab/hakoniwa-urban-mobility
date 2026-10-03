@@ -464,6 +464,50 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
     urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     multi_car.write_json(launcher_path, launcher)
+    if target.use_case == "drone-car-distributed":
+        write_viewer_flight_paths(
+            sorted((target.work / "config/threejs").glob("viewer-config*.json")),
+            composition_path,
+            drone_one._paths(target.recipe_id).recipe_config / "mujoco-city-fleet.json",
+        )
+
+
+def write_viewer_flight_paths(viewer_configs: list[Path], composition_path: Path, city_marker: Path) -> list[dict]:
+    """Put the planned line of each schedule-flown Drone into the Viewer configs.
+
+    The Viewer draws it on request ("Flight path" in its panel). The line comes
+    from the same steps the Drone flies (apps/drone/drone_schedule.py
+    flight_path) from its runtime spawn in the City marker. A Composition
+    without such a Drone clears it.
+    """
+    import multi_car
+    import urban_assets
+
+    sys.path.insert(0, str(ROOT / "apps/drone"))
+    try:
+        import drone_schedule
+    finally:
+        sys.path.remove(str(ROOT / "apps/drone"))
+    composition = load_composition(composition_path)
+    paths = []
+    for vehicle in composition.vehicles:
+        if vehicle.control != "schedule" or not vehicle.params.get("schedule"):
+            continue
+        try:
+            schedule_path = urban_assets.resolve_reference(vehicle.params["schedule"], composition_path.parent)
+            schedule = drone_schedule.load_schedule(schedule_path, vehicle.name)
+            spawn, yaw = drone_schedule.spawn_from_marker(city_marker)
+        except (urban_assets.AssetError, drone_schedule.ScheduleError, OSError) as exc:
+            raise SimulationError(f"{vehicle.name}: no flight path for the Viewer: {exc}") from exc
+        paths.append({"drone": vehicle.name, "points": drone_schedule.flight_path(schedule, spawn, yaw)})
+    for path in viewer_configs:
+        viewer = multi_car.load_json(path, "Viewer config")
+        if paths:
+            viewer["flightPaths"] = paths
+        else:
+            viewer.pop("flightPaths", None)
+        multi_car.write_json(path, viewer)
+    return paths
 
 
 # --- Drone route (tools/drone_one.py) --------------------------------------------------
