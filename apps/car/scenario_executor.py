@@ -395,8 +395,11 @@ def route_command(
     ))
     if speed <= 1e-3:
         return 0.0, 0.0
+    # Steer for the lookahead point from where the vehicle is, not from its
+    # target: a vehicle held behind (yielding, up to max_route_lead_m) would
+    # otherwise aim past the next corner and cut it.
     (target_east, target_north), _ = geometry.formation_sample(
-        target_s + control.lookahead_m,
+        target_s - progress_error + control.lookahead_m,
         lateral_offset_m=vehicle.lateral_offset_m,
     )
     bearing = math.atan2(target_north - pose.north_m, target_east - pose.east_m)
