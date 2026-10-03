@@ -328,6 +328,38 @@ class WorldHeight:
             point[2] = hit - 1.0e-6
         raise WorldHeightError(f"too many non-colliding geoms above east={east_m} m, north={north_m} m")
 
+    def first_hit(self, start_enu, end_enu) -> tuple[float, str] | None:
+        """The first colliding geom on the segment start -> end (Urban ENU metres):
+        (distance from start in metres, geom name), or None when the way is clear.
+        Visual-only geoms are passed through, as for the ground height."""
+        numpy = self._numpy
+        mujoco = self._mujoco
+        start = numpy.array([start_enu[1], -start_enu[0], start_enu[2]], dtype=numpy.float64)
+        end = numpy.array([end_enu[1], -end_enu[0], end_enu[2]], dtype=numpy.float64)
+        length = float(numpy.linalg.norm(end - start))
+        if length < 1.0e-9:
+            return None
+        direction = (end - start) / length
+        geom = numpy.array([-1], dtype=numpy.int32)
+        best: tuple[float, str] | None = None
+        for model, data, mask in zip(self.models, self.datas, self.masks):
+            travelled = 0.0
+            for _ in range(MAX_PASS_THROUGH):
+                distance = mujoco.mj_ray(model, data, start + direction * travelled, direction, mask, 1, -1, geom)
+                if distance < 0 or travelled + distance > length:
+                    break
+                index = int(geom[0])
+                if model.geom_contype[index] or model.geom_conaffinity[index]:
+                    hit = travelled + distance
+                    if best is None or hit < best[0]:
+                        name = (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, index)
+                                or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[index]))
+                                or f"geom {index}")
+                        best = (hit, name)
+                    break
+                travelled += distance + 1.0e-6  # a visual-only geom: continue past it
+        return best
+
     def __call__(self, east_m: float, north_m: float) -> float:
         hits = [
             hit for hit in (self._hit(model, data, east_m, north_m, mask, start)

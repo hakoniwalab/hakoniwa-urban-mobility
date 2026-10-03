@@ -40,6 +40,13 @@ API (all JSON):
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
   POST /api/worlds/<id>/route-check      segments of route points blocked by those walls
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
+  POST /api/worlds/<id>/flight-check     a Drone flight's point heights (from the height above
+                                         the ground) and the legs that meet the World
+  GET  /api/flights                      Drone flights (files with a drones: section)
+  GET  /api/flights/<id>                 one flight
+  PUT  /api/flights/<id>                 validate and save a flight
+  DELETE /api/flights/<id>               delete a saved flight (not an example, not one a
+                                         saved Composition uses)
   GET  /api/cities                       Environment Studio (running, its export folder), the
                                          City World jobs it wrote to Urban's folder (a ready,
                                          unregistered one starts its registration), the
@@ -60,6 +67,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import itertools
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -538,6 +546,142 @@ def save_scenario(scenario_id: str, scenario: dict) -> dict:
             **route_clearance()}
 
 
+# --- Drone flights (Flight tab) ----------------------------------------------------------
+# A flight is the drones: section of a YAML file (apps/drone/drone_schedule.py):
+# a file of its own, or a Car route scenario that also flies a Drone. Its
+# meta: holds what only the editor uses: the World and the takeoff point
+# (the Composition places the Drone; the editor checks the legs from there).
+
+
+def _flight_entry(path: Path, data: dict, editable: bool) -> dict:
+    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    return {
+        "id": path.stem,
+        "name": data.get("name", path.stem),
+        "editable": editable,
+        "world": meta.get("world"),
+        "drones": [item.get("name") for item in data.get("drones") or [] if isinstance(item, dict)],
+        "route": isinstance(data.get("route"), dict),  # also a Car route scenario
+        "takeoff": meta.get("takeoff") if isinstance(meta.get("takeoff"), dict) else None,
+        "reference": _repo_reference(path.resolve()),
+        "path": str(path),
+        "updated_at": path.stat().st_mtime,
+    }
+
+
+def _load_flights() -> dict[str, tuple[Path, dict, bool]]:
+    import yaml
+
+    found: dict[str, tuple[Path, dict, bool]] = {}
+    for directory, editable in ((EXAMPLE_SCENARIOS, False), (USER_SCENARIOS, True)):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.yaml")):
+            if path.name.endswith(".partial.yaml"):
+                continue
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(data, dict) and isinstance(data.get("drones"), list) and data["drones"]:
+                found[path.stem] = (path, data, editable)  # a saved one hides the example
+    return found
+
+
+def list_flights() -> list[dict]:
+    return sorted(
+        (_flight_entry(path, data, editable) for path, data, editable in _load_flights().values()),
+        key=lambda item: item["id"],
+    )
+
+
+def read_flight(flight_id: str) -> dict:
+    _check_id(flight_id)
+    found = _load_flights().get(flight_id)
+    if found is None:
+        raise StudioError(f"flight {flight_id} not found", HTTPStatus.NOT_FOUND)
+    path, data, editable = found
+    entry = {**_flight_entry(path, data, editable), "flight": data, "used_by": _compositions_using(path)}
+    # A flight written by hand names no World or takeoff point: those of a
+    # Composition that flies it (its World, where it places the Drone).
+    drones = set(entry["drones"])
+    for composition_id in entry["used_by"]:
+        try:
+            composition = read_composition(composition_id)["composition"] or {}
+        except (StudioError, OSError):
+            continue
+        entry.setdefault("suggested_world", composition.get("world"))
+        for vehicle in composition.get("vehicles") or []:
+            if isinstance(vehicle, dict) and vehicle.get("name") in drones and isinstance(vehicle.get("spawn"), dict):
+                spawn = vehicle["spawn"]
+                entry.setdefault("suggested_takeoff", {"east_m": spawn.get("east_m", 0), "north_m": spawn.get("north_m", 0)})
+        if "suggested_takeoff" in entry:
+            break
+    return entry
+
+
+def save_flight(flight_id: str, flight: dict) -> dict:
+    """Validate every Drone schedule in a flight file (and its Car route, if any) and save it."""
+    import yaml
+
+    _check_id(flight_id)
+    if not isinstance(flight, dict) or not isinstance(flight.get("drones"), list) or not flight["drones"]:
+        raise StudioError("the request body must be a flight: {drones: [...], meta: {...}}")
+    USER_SCENARIOS.mkdir(parents=True, exist_ok=True)
+    path = USER_SCENARIOS / f"{flight_id}.yaml"
+    staging = path.with_suffix(".partial.yaml")
+    staging.write_text(yaml.safe_dump(flight, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    try:
+        sys.path.insert(0, str(ROOT / "apps/drone"))
+        try:
+            from drone_schedule import ScheduleError, check_schedule
+
+            for index, entry in enumerate(flight["drones"]):
+                if not isinstance(entry, dict):
+                    raise StudioError(f"drones[{index}] must be a mapping")
+                check_schedule(entry, f"drones[{entry.get('name', index)}]")
+        except ScheduleError as exc:
+            raise StudioError(f"飛行計画を保存できません: {exc}") from exc
+        finally:
+            sys.path.remove(str(ROOT / "apps/drone"))
+        if isinstance(flight.get("route"), dict):
+            sys.path.insert(0, str(ROOT / "apps/car"))
+            try:
+                from scenario_executor import ScenarioError, load_scenario
+
+                try:
+                    load_scenario(staging)
+                except ScenarioError as exc:
+                    raise StudioError(f"飛行計画を保存できません（車のルート）: {exc}") from exc
+            finally:
+                sys.path.remove(str(ROOT / "apps/car"))
+    except StudioError:
+        staging.unlink()
+        raise
+    staging.replace(path)
+    return _flight_entry(path, flight, True)
+
+
+def delete_flight(flight_id: str) -> dict:
+    """Delete a saved flight; examples and flights a saved Composition uses stay."""
+    _check_id(flight_id)
+    found = _load_flights().get(flight_id)
+    if found is None:
+        raise StudioError(f"flight {flight_id} not found", HTTPStatus.NOT_FOUND)
+    path, _, editable = found
+    if not editable:
+        raise StudioError(f"例の飛行計画 {flight_id} は削除できません")
+    users = _compositions_using(path)
+    if users:
+        raise StudioError(
+            f"飛行計画 {flight_id} は Composition {', '.join(users)} が使っています。"
+            "そのドローンの飛行計画を変えてから削除してください。",
+            HTTPStatus.CONFLICT,
+        )
+    path.unlink()
+    return {"deleted": flight_id}
+
+
 def repair_saved_composition(path: Path) -> list[str]:
     """Before running a saved Composition, fix path params the same way a save does.
 
@@ -726,8 +870,8 @@ def world_glb(world_id: str) -> Path:
     return path
 
 
-def world_height(world_id: str, east_m: float, north_m: float) -> dict:
-    """Ground height (terrain, buildings, obstacles) under a point; the World model loads once."""
+def _world_ground(world_id: str) -> tuple[object, threading.Lock, bool]:
+    """(ground(east, north), its lock, whether rooftops count); the World model loads once."""
     import urban_composition
 
     with _grounds_lock:
@@ -741,7 +885,57 @@ def world_height(world_id: str, east_m: float, north_m: float) -> dict:
                 rooftops = False
             entry = (urban_composition.city_ground(receipt_path), threading.Lock(), rooftops)
             _grounds[world_id] = entry
-    ground, lock, rooftops = entry
+    return entry
+
+
+def check_flight(world_id: str, body: object) -> dict:
+    """Heights and blocked legs of a Drone flight on a World (the flight editor).
+
+    body: {"points": [{east_m, north_m, agl_m | up_m, stand?}]}, the flight's
+    line in order (takeoff stand, waypoints, landing stand). agl_m is the
+    height above the top of the World under the point (ground or roof).
+    Returns each point's ground_m and up_m, and the legs that meet the World
+    (tools/flight_check.py); checked is false when the World model cannot cast
+    rays (no MuJoCo Python).
+    """
+    import flight_check
+
+    points = body.get("points") if isinstance(body, dict) else None
+
+    def number(value) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    if not isinstance(points, list) or any(
+        not isinstance(point, dict) or not number(point.get("east_m")) or not number(point.get("north_m"))
+        or not (number(point.get("agl_m")) or number(point.get("up_m")))
+        for point in points
+    ):
+        raise StudioError("the request body must be {points: [{east_m, north_m, agl_m or up_m, stand?}, ...]}")
+    ground, lock, _ = _world_ground(world_id)
+    resolved = []
+    with lock:  # one MuJoCo query at a time per World model
+        for point in points:
+            try:
+                ground_m = float(ground(point["east_m"], point["north_m"]))
+            except Exception:  # noqa: BLE001 - e.g. outside the World
+                ground_m = None
+            if number(point.get("agl_m")):
+                if ground_m is None:
+                    raise StudioError(f"no ground at east={point['east_m']}, north={point['north_m']}")
+                up_m = ground_m + float(point["agl_m"])
+            else:
+                up_m = float(point["up_m"])
+            resolved.append({"ground_m": None if ground_m is None else round(ground_m, 3), "up_m": round(up_m, 3)})
+        first_hit = getattr(ground, "first_hit", None)
+        line = [{"east_m": point["east_m"], "north_m": point["north_m"], "up_m": done["up_m"],
+                 "stand": bool(point.get("stand"))} for point, done in zip(points, resolved)]
+        conflicts = flight_check.leg_conflicts(first_hit, line) if first_hit else []
+    return {"points": resolved, "conflicts": conflicts, "checked": first_hit is not None, **flight_check.margins()}
+
+
+def world_height(world_id: str, east_m: float, north_m: float) -> dict:
+    """Ground height (terrain, buildings, obstacles) under a point; the World model loads once."""
+    ground, lock, rooftops = _world_ground(world_id)
     with lock:  # one MuJoCo query at a time per World model
         try:
             height = ground(east_m, north_m)
@@ -1161,6 +1355,17 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(cache_state(self.runner))
             if method == "POST" and parts == ["cache", "prune"]:
                 return self._json(prune_cache(self.runner).snapshot(), HTTPStatus.ACCEPTED)
+            if method == "POST" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "flight-check":
+                return self._json(check_flight(parts[1], self._body()))
+            if method == "GET" and parts == ["flights"]:
+                return self._json(list_flights())
+            if len(parts) == 2 and parts[0] == "flights":
+                if method == "GET":
+                    return self._json(read_flight(parts[1]))
+                if method == "PUT":
+                    return self._json(save_flight(parts[1], self._body()))
+                if method == "DELETE":
+                    return self._json(delete_flight(parts[1]))
             if method == "GET" and parts == ["scenarios"]:
                 return self._json(list_scenarios())
             if len(parts) == 2 and parts[0] == "scenarios":

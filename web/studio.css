@@ -142,6 +142,15 @@ code { font-family: ui-monospace, Consolas, monospace; }
 .route-point span.dwell { background: #d9822b; }
 .route-point span.selected { border-color: #ffb300; transform: scale(1.2); }
 .route-point { cursor: grab; }
+.route-point span.flight-takeoff { background: #2e9d4f; }
+.route-point span.flight-land { background: #d0572a; }
+#flight-map { height: 420px; }
+#flight-map[hidden] { display: none; }
+#flight-3d { height: 420px; }
+#flight-points input { width: 6em; }
+#flight-points tr.selected { background: rgba(255, 179, 0, 0.15); }
+.flight-editor[hidden], .flight-land-at[hidden] { display: none; }
+button.active { outline: 2px solid #ffb300; }
 #route-map { height: 420px; }
 #route-map[hidden] { display: none; }
 #route-points input { width: 7em; }

@@ -314,6 +314,56 @@ class StudioServerTest(StudioTestBase):
         status, _ = self.call("PUT", "/api/scenarios/Bad_Id", self.route())
         self.assertEqual(status, 400)
 
+    def flight(self, **drone):
+        entry = {"name": "Drone-1", "start_delay_sec": 3, "speed_m_s": 4, "loop_count": 1,
+                 "takeoff": {"rise_m": 5, "hold_sec": 1},
+                 "waypoints": [{"name": "a", "east_m": 10, "north_m": 0, "up_m": 20, "hold_sec": 2}],
+                 "land": {"east_m": 30, "north_m": 0, "up_m": 0.5, "rise_m": 10}}
+        entry.update(drone)
+        return {"name": "Patrol", "meta": {"world": "plain-ground", "takeoff": {"east_m": 0, "north_m": 0}},
+                "drones": [entry]}
+
+    def test_a_flight_is_validated_saved_listed_and_deleted(self):
+        status, saved = self.call("PUT", "/api/flights/patrol", self.flight())
+        self.assertEqual((status, saved["drones"], saved["world"], saved["route"]), (200, ["Drone-1"], "plain-ground", False))
+        _, flights = self.call("GET", "/api/flights")
+        self.assertIn("patrol", [item["id"] for item in flights])
+        status, loaded = self.call("GET", "/api/flights/patrol")
+        self.assertEqual(loaded["flight"]["drones"][0]["land"]["east_m"], 30)
+        status, _ = self.call("DELETE", "/api/flights/patrol")
+        self.assertEqual(status, 200)
+        self.assertFalse((self.work / "scenarios/patrol.yaml").exists())
+
+    def test_an_invalid_flight_is_rejected_and_not_saved(self):
+        status, body = self.call("PUT", "/api/flights/bad", self.flight(waypoints=[{"east_m": 1, "north_m": 2}]))
+        self.assertEqual(status, 400)
+        self.assertIn("needs one height", body["error"])
+        self.assertFalse((self.work / "scenarios/bad.yaml").exists())
+        self.assertFalse((self.work / "scenarios/bad.partial.yaml").exists())
+
+    def test_a_flight_check_turns_heights_above_the_ground_into_world_heights(self):
+        class Roof:  # a 40 m roof east of east = 50, open ground (2 m) elsewhere; a wall at east = 50
+            def __call__(self, east, north):
+                return 40.0 if east > 50 else 2.0
+
+            def first_hit(self, start, end):
+                if (start[0] - 50) * (end[0] - 50) >= 0:
+                    return None
+                t = (50 - start[0]) / (end[0] - start[0])
+                return (t * abs(end[0] - start[0]), "tower") if start[2] + (end[2] - start[2]) * t < 40 else None
+
+        entry = (Roof(), threading.Lock(), True)
+        with mock.patch.object(urban_studio, "_world_ground", return_value=entry):
+            status, checked = self.call("POST", "/api/worlds/plain-ground/flight-check", {"points": [
+                {"east_m": 0, "north_m": 0, "agl_m": 0.5, "stand": True},
+                {"east_m": 0, "north_m": 0, "agl_m": 10},
+                {"east_m": 60, "north_m": 0, "agl_m": 5}]})
+        self.assertEqual(status, 200)
+        self.assertEqual([point["up_m"] for point in checked["points"]], [2.5, 12.0, 45.0])
+        self.assertEqual([(item["from"], item["to"], item["geom"]) for item in checked["conflicts"]], [(2, 3, "tower")])
+        status, _ = self.call("POST", "/api/worlds/plain-ground/flight-check", {"points": [{"east_m": 0}]})
+        self.assertEqual(status, 400)
+
     def test_composition_summary_keeps_unknown_assets_recognisable(self):
         summary = urban_studio.composition_summary(
             {"world": "no-such-world", "vehicles": [{"name": "X", "asset": "no-such-asset", "control": "rc"}]}, {}
