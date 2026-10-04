@@ -287,6 +287,19 @@ class DroneScheduleTest(unittest.TestCase):
         self.assertEqual([(drone, wind.speed_m_s, faults) for drone, wind, faults in sent], [("Drone-1", 8.0, {2: 0.0})])
         self.assertEqual(runner.summary["events"][0]["rotor_scales"], [1.0, 1.0, 0.0])
 
+    def test_the_runner_records_the_flown_track_next_to_its_summary(self):
+        times = iter([1.0, 1.05, 1.2, 1.2])
+        positions = iter([(1.0, 2.0, 3.0), (1.1, 2.0, 3.0), (1.2, 2.0, 3.0)])
+        args = type("Args", (), {"drone": "Drone-1", "summary_json": self.directory / "summary.json"})()
+        runner = schedule_module.Runner(args, schedule_module.load_schedule(self.write(SCHEDULE), "Drone-1"),
+                                        (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: next(times))
+        with unittest.mock.patch.object(schedule_module, "drone_position", lambda client: next(positions)):
+            for _ in range(3):
+                runner.watch_events()
+        lines = (self.directory / "summary-track.csv").read_text(encoding="utf-8").splitlines()
+        # Every TRACK_PERIOD_SEC of simulation time: the second sample (0.05 s later) is left out.
+        self.assertEqual(lines, ["simulation_sec,east_m,north_m,up_m", "1.00,1.000,2.000,3.000", "1.20,1.200,2.000,3.000"])
+
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):
         import urban_assets
         import urban_composition

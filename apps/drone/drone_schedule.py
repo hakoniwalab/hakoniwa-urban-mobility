@@ -358,6 +358,9 @@ def spawn_from_marker(marker_path: Path) -> tuple[tuple[float, float, float], fl
 # it after the simulation, when no asset can register): it reads the Hakoniwa
 # clock and calls the Drone service with Drone Core's shared-runtime RPC client.
 
+TRACK_PERIOD_SEC = 0.1
+
+
 class Runner:
     """Steps through the flight on Hakoniwa time."""
 
@@ -366,6 +369,14 @@ class Runner:
         self.flight = steps(schedule, spawn_enu, spawn_yaw)
         self.events = flight_events.EventState(event_zones(schedule, spawn_enu, spawn_yaw))
         self.position_warned = False
+        # The flown track next to the summary (<summary>-track.csv): simulation s, east, north, up.
+        self.track = None
+        self.track_last: float | None = None
+        if args.summary_json:
+            path = args.summary_json.with_name(args.summary_json.stem + "-track.csv")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.track = path.open("w", encoding="utf-8")
+            self.track.write("simulation_sec,east_m,north_m,up_m\n")
         self.spawn_enu = spawn_enu
         self.client = client
         self.clock = clock  # () -> simulation seconds
@@ -424,8 +435,9 @@ class Runner:
         print(f"SCHEDULE: done {record}", flush=True)
 
     def watch_events(self) -> None:
-        """Send the wind / rotor faults of the zone the Drone is in when they change."""
-        if not self.events.zones:
+        """Record where the Drone flies (track_csv) and send the wind / rotor
+        faults of the zone it is in when they change."""
+        if not self.events.zones and self.track is None:
             return
         try:
             east, north, up = drone_position(self.client)
@@ -433,6 +445,9 @@ class Runner:
             if not self.position_warned:
                 print(f"SCHEDULE: no position for the wind / fault zones yet ({exc})", flush=True)
                 self.position_warned = True
+            return
+        self.record_track(east, north, up)
+        if not self.events.zones:
             return
         change = self.events.update(east, north, up)
         if change is None:
@@ -444,6 +459,18 @@ class Runner:
                   "rotor_scales": flight_events.rotor_scales(faults)}
         self.summary.setdefault("events", []).append(record)
         print(f"SCHEDULE: disturbance {record}", flush=True)
+
+    def record_track(self, east: float, north: float, up: float) -> None:
+        """Append the Drone's position (Urban ENU) to the track CSV at most every TRACK_PERIOD_SEC
+        of simulation time, written as it goes (a flight that ends in a crash keeps its track)."""
+        if self.track is None:
+            return
+        now = self.clock()
+        if self.track_last is not None and now - self.track_last < TRACK_PERIOD_SEC:
+            return
+        self.track_last = now
+        self.track.write(f"{now:.2f},{east:.3f},{north:.3f},{up:.3f}\n")
+        self.track.flush()
 
     def step_once(self) -> None:
         """Advance as far as the clock allows; returns at once."""
