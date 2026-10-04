@@ -157,7 +157,7 @@ async function mountAssetPreviews(items) {
       } else {
         const info = await api("GET", `worlds/${asset.id}`);
         if (asset.kind === "city") {
-          previews.drawCityPreview(container, await api("GET", `worlds/${asset.id}/footprints`), info.half_extent_m);
+          await previews.mountCityPreview(container, await api("GET", `worlds/${asset.id}/footprints`), info.half_extent_m, info.glb, info.glb_bytes);
         } else {
           await previews.mountWorldPreview(container, info.glb);
         }
