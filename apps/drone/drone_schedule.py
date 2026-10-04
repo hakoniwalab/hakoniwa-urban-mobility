@@ -64,7 +64,7 @@ class ScheduleError(RuntimeError):
 # --- The schedule ------------------------------------------------------------------
 
 DRONE_KEYS = {"name", "start_delay_sec", "speed_m_s", "tolerance_m", "hop_m", "loop_count", "takeoff", "waypoints", "land",
-              "zone_width_m", "zone_height_m"}
+              "zone_width_m", "zone_height_m", "contact_fault"}
 LAND_KEYS = {"east_m", "north_m", "up_m", "rise_m"}
 WAYPOINT_KEYS = {"name", "east_m", "north_m", "up_m", "rise_m", "yaw_deg", "speed_m_s", "hold_sec",
                  "wind", "fault", "zone_width_m", "zone_height_m"}
@@ -114,6 +114,17 @@ def check_schedule(entry: dict, where: str) -> dict:
         "zone_height_m": _number(entry.get("zone_height_m", flight_events.DEFAULT_ZONE_HEIGHT_M),
                                  f"{where}.zone_height_m", positive=True),
     }
+    # Optional: when the Drone touches something in flight (its status PDU's
+    # collided_counts goes up), the rotor on the wall side stops (scale 0) or
+    # loses thrust, and stays so (flight_events.wall_side_rotor).
+    contact = entry.get("contact_fault")
+    if contact is not None:
+        if not isinstance(contact, dict) or set(contact) - {"scale"}:
+            raise ScheduleError(f"{where}.contact_fault takes scale (0 stopped .. 1)")
+        scale = _number(contact.get("scale", 0.0), f"{where}.contact_fault.scale", minimum=0.0)
+        if scale > 1.0:
+            raise ScheduleError(f"{where}.contact_fault.scale must be at most 1")
+        schedule["contact_fault"] = {"scale": scale}
     loops = entry.get("loop_count", 1)
     if loops == "forever":
         schedule["loop_count"] = None
@@ -369,6 +380,12 @@ class Runner:
         self.flight = steps(schedule, spawn_enu, spawn_yaw)
         self.events = flight_events.EventState(event_zones(schedule, spawn_enu, spawn_yaw))
         self.position_warned = False
+        self.contact_fault = schedule.get("contact_fault")
+        self.contact_rotor: int | None = None  # the rotor the first contact stopped
+        self.last_hit_print = -math.inf
+        self.airborne = False        # after the takeoff, until the landing starts
+        self.collisions: int | None = None
+        self.rotors = flight_events.rotor_arms(getattr(args, "rotor_config", None))
         # The flown track next to the summary (<summary>-track.csv): simulation s, east, north, up.
         self.track = None
         self.track_last: float | None = None
@@ -376,7 +393,7 @@ class Runner:
             path = args.summary_json.with_name(args.summary_json.stem + "-track.csv")
             path.parent.mkdir(parents=True, exist_ok=True)
             self.track = path.open("w", encoding="utf-8")
-            self.track.write("simulation_sec,east_m,north_m,up_m\n")
+            self.track.write("simulation_sec,east_m,north_m,up_m,speed_m_s,collisions\n")
         self.spawn_enu = spawn_enu
         self.client = client
         self.clock = clock  # () -> simulation seconds
@@ -409,6 +426,7 @@ class Runner:
                                           tolerance_m=step["tolerance_m"],
                                           timeout_sec=leg_timeout(step, self.previous))
         if op == "land":
+            self.airborne = False  # touching down is not a contact fault
             # No RPC timeout: a timed-out land is cancelled, and Drone Core then
             # leaves landing mode and slides the Drone off where it came down.
             self.land_until = self.clock() + self.args.land_settle_sec
@@ -431,45 +449,90 @@ class Runner:
             self.previous = (step["east_m"], step["north_m"], step["up_m"])
         elif step["op"] == "takeoff":
             self.previous = (self.spawn_enu[0], self.spawn_enu[1], step["up_m"])
+            self.airborne = True
         self.summary["steps"].append(record)
         print(f"SCHEDULE: done {record}", flush=True)
 
     def watch_events(self) -> None:
-        """Record where the Drone flies (track_csv) and send the wind / rotor
-        faults of the zone it is in when they change."""
-        if not self.events.zones and self.track is None:
+        """Record where the Drone flies (track_csv), stop the wall-side rotor when it
+        touches something in flight (contact_fault), and send the wind / rotor faults
+        of the zone it is in when they change."""
+        if not self.events.zones and self.track is None and self.contact_fault is None:
             return
         try:
-            east, north, up = drone_position(self.client)
+            state = drone_state(self.client)
         except Exception as exc:  # not up yet: next time
             if not self.position_warned:
                 print(f"SCHEDULE: no position for the wind / fault zones yet ({exc})", flush=True)
                 self.position_warned = True
             return
-        self.record_track(east, north, up)
-        if not self.events.zones:
+        east, north, up = state["enu"]
+        self.record_track(east, north, up, state["speed"], state["collisions"])
+        if self.contact_fault is not None and state["collisions"] is not None:
+            if self.collisions is not None and state["collisions"] > self.collisions and self.airborne:
+                if self.contact_rotor is None:
+                    self.contact(state)
+                else:
+                    self.hit(state)
+            self.collisions = state["collisions"]
+        if not self.events.zones and not self.events.faults:
             return
         change = self.events.update(east, north, up)
         if change is None:
             return
+        self.send_events(change, (east, north, up))
+
+    def send_events(self, change, at) -> None:
         wind, faults = change
         send_disturbance(self.client, self.args.drone, wind, faults)
-        record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(east, 2), round(north, 2), round(up, 2)],
+        record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(value, 2) for value in at],
                   "wind": None if wind is None else {"towards_deg": wind.towards_deg, "speed_m_s": wind.speed_m_s},
                   "rotor_scales": flight_events.rotor_scales(faults)}
         self.summary.setdefault("events", []).append(record)
         print(f"SCHEDULE: disturbance {record}", flush=True)
 
-    def record_track(self, east: float, north: float, up: float) -> None:
-        """Append the Drone's position (Urban ENU) to the track CSV at most every TRACK_PERIOD_SEC
-        of simulation time, written as it goes (a flight that ends in a crash keeps its track)."""
+    def hit(self, state: dict) -> None:
+        """Another contact after the fault (the wall again, the ground): recorded only; printed
+        at most every 0.5 s (a Drone lying on the ground keeps touching it)."""
+        east, north, up = state["enu"]
+        record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(east, 2), round(north, 2), round(up, 2)],
+                  "collisions": state["collisions"], "speed_m_s": round(state["speed"], 2)}
+        self.summary.setdefault("hits", []).append(record)
+        if self.clock() - self.last_hit_print >= 0.5:
+            self.last_hit_print = self.clock()
+            print(f"SCHEDULE: hit {record}", flush=True)
+
+    def contact(self, state: dict) -> None:
+        """The Drone touched something in flight for the first time: stop the rotor on the
+        wall side (the way the wind blows; without wind, the way it moves) and keep it stopped."""
+        towards = self.events.last_wind.towards_deg if self.events.last_wind is not None else state["heading_deg"]
+        rotor = flight_events.wall_side_rotor(self.rotors, state["yaw_rad"], towards)
+        self.contact_rotor = rotor
+        self.events.hold_fault(rotor, self.contact_fault["scale"])
+        east, north, up = state["enu"]
+        record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(east, 2), round(north, 2), round(up, 2)],
+                  "collisions": state["collisions"], "rotor": rotor, "towards_deg": round(towards, 1),
+                  "speed_m_s": round(state["speed"], 2)}
+        self.summary.setdefault("contacts", []).append(record)
+        print(f"SCHEDULE: contact {record}", flush=True)
+        change = self.events.update(east, north, up, force=True)
+        if change is not None:
+            self.send_events(change, (east, north, up))
+
+    def record_track(self, east: float, north: float, up: float, speed: float | None = None,
+                     collisions: int | None = None) -> None:
+        """Append the Drone's position (Urban ENU), speed and contact count to the track CSV at
+        most every TRACK_PERIOD_SEC of simulation time, written as it goes (a flight that ends
+        in a crash keeps its track)."""
         if self.track is None:
             return
         now = self.clock()
         if self.track_last is not None and now - self.track_last < TRACK_PERIOD_SEC:
             return
         self.track_last = now
-        self.track.write(f"{now:.2f},{east:.3f},{north:.3f},{up:.3f}\n")
+        speed_text = "" if speed is None else f"{speed:.3f}"
+        count_text = "" if collisions is None else str(collisions)
+        self.track.write(f"{now:.2f},{east:.3f},{north:.3f},{up:.3f},{speed_text},{count_text}\n")
         self.track.flush()
 
     def step_once(self) -> None:
@@ -510,13 +573,29 @@ class Runner:
         self.pending = self._submit(step)
 
 
-def drone_position(client) -> tuple[float, float, float]:
-    """The Drone's position in Urban ENU from its pos PDU (geometry_msgs/Twist,
-    ROS frame as the RPC's: x north, y west, z up)."""
+def drone_state(client) -> dict:
+    """Position (Urban ENU), yaw (ROS, rad), speed, heading of travel (Urban yaw, deg) and the
+    status PDU's contact count (None without one) of the Drone."""
     from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_conv_Twist import pdu_to_py_Twist
 
-    linear = pdu_to_py_Twist(client.get_raw_pdu("pos")).linear
-    return -float(linear.y), float(linear.x), float(linear.z)
+    pose = pdu_to_py_Twist(client.get_raw_pdu("pos"))
+    east, north, up = -float(pose.linear.y), float(pose.linear.x), float(pose.linear.z)
+    speed, heading = 0.0, 0.0
+    try:
+        velocity = pdu_to_py_Twist(client.get_raw_pdu("velocity")).linear
+        speed = math.sqrt(float(velocity.x) ** 2 + float(velocity.y) ** 2 + float(velocity.z) ** 2)
+        heading = math.degrees(math.atan2(float(velocity.x), -float(velocity.y)))
+    except Exception:  # noqa: BLE001 - optional
+        pass
+    collisions = None
+    try:
+        from hakoniwa_pdu.pdu_msgs.hako_msgs.pdu_conv_DroneStatus import pdu_to_py_DroneStatus
+
+        collisions = int(pdu_to_py_DroneStatus(client.get_raw_pdu("status")).collided_counts)
+    except Exception:  # noqa: BLE001 - optional
+        pass
+    return {"enu": (east, north, up), "yaw_rad": float(pose.angular.z), "speed": speed,
+            "heading_deg": heading, "collisions": collisions}
 
 
 def send_disturbance(client, drone: str, wind, faults: dict[int, float]) -> None:
@@ -585,6 +664,8 @@ def parser() -> argparse.ArgumentParser:
     parser.add_argument("--service-config", type=Path, help="Drone Core RPC service config")
     parser.add_argument("--city-marker", type=Path, help="the City marker with the Drone's runtime spawn")
     parser.add_argument("--summary-json", type=Path)
+    parser.add_argument("--rotor-config", type=Path,
+                        help="Drone config with the rotor positions (contact_fault; default: the EAMS Hexa's)")
     parser.add_argument("--offset-path", type=Path, help="PDU offset files (default: the Workspace foundation's)")
     parser.add_argument("--poll-sec", type=float, default=0.01, help="wall-clock pause between steps")
     parser.add_argument("--land-settle-sec", type=float, default=20.0,
