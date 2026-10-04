@@ -505,7 +505,12 @@ def route_paths(composition_path: Path, ground=None) -> list[dict]:
         scenario = scenario_executor.load_scenario(path)
         if not isinstance(scenario, scenario_executor.RouteScenario):
             continue
-        points, _ = route_line.route_line([(point.east_m, point.north_m) for point in scenario.points], ground)
+        points, corners = route_line.route_line([(point.east_m, point.north_m) for point in scenario.points], ground)
+        # Each sample's road friction, for the Viewer to colour the line by it.
+        frictions = route_line.section_values(corners, [point.road_friction for point in scenario.points], len(points))
+        for point, friction in zip(points, frictions):
+            if friction is not None:
+                point["road_friction"] = friction
         paths.append({"route": scenario.name, "vehicles": names, "closed": True, "points": points})
     return paths
 

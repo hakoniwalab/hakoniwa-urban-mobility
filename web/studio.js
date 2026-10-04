@@ -1153,7 +1153,8 @@ async function refreshRouteLine(route) {
 function renderRoute3d() {
   const route = state.route;
   if (!route || !state.routeView) return;
-  state.routeView.setRoute(route.line3d?.points || [], route.line3d?.corners || [], state.routePoint, route.conflicts || []);
+  state.routeView.setRoute(route.line3d?.points || [], route.line3d?.corners || [], state.routePoint, route.conflicts || [],
+    route.scenario?.route?.points || []);
 }
 
 function addRoutePoint(east, north) {

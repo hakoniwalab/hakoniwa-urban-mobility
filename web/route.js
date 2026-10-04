@@ -6,6 +6,7 @@
 
 import * as THREE from "three";
 import { labelSprite } from "./flight.js";
+import { frictionColor, legFrictions } from "./friction.js";
 import { MapView } from "./map.js";
 import { PlacementView } from "./placement.js";
 
@@ -26,9 +27,18 @@ export class RouteMapView extends MapView {
       { color: "#d32f2f", weight: 6, dashArray: "8 6", interactive: false },
     ))).addTo(this.map) : null;
     const latlngs = points.map((point) => this.toLatLng(point.east_m, point.north_m));
-    this.line = latlngs.length > 1
-      ? L.polygon(latlngs, { color: "#2e7dd7", weight: 3, fill: false, interactive: false }).addTo(this.map)
-      : null;
+    const frictions = legFrictions(points);
+    if (latlngs.length > 1 && frictions.some((value) => value !== undefined)) {
+      // Each leg in its road friction's colour (friction.js).
+      this.line = L.layerGroup(latlngs.slice(0, latlngs.length > 2 ? undefined : -1).map((latlng, index) => L.polyline(
+        [latlng, latlngs[(index + 1) % latlngs.length]],
+        { color: frictionColor(frictions[index]), weight: 4, interactive: false },
+      ))).addTo(this.map);
+    } else {
+      this.line = latlngs.length > 1
+        ? L.polygon(latlngs, { color: "#2e7dd7", weight: 3, fill: false, interactive: false }).addTo(this.map)
+        : null;
+    }
     this.markers = points.map((point, index) => {
       const current = index === selected;
       const marker = L.marker(latlngs[index], {
@@ -56,8 +66,9 @@ export class RouteMapView extends MapView {
 
 // Route tab 3D view: the route on the World GLB at the height of the surface
 // under it (POST worlds/<id>/route-line: a road under a bridge stays on the
-// road), each route point a numbered ball, and the legs that run into a
-// building wall red.
+// road), each route point a numbered ball, the legs coloured by their road
+// friction when the route sets one (friction.js), and the legs that run into
+// a building wall red.
 export class RouteView3D extends PlacementView {
   constructor(container, { onSelect }) {
     super(container, { onSelect: () => {}, onMove: () => {}, onTurn: () => {} });
@@ -67,16 +78,28 @@ export class RouteView3D extends PlacementView {
   }
 
   // line: [{east_m, north_m, up_m}] (the loop, sampled); corners: the index in
-  // it of each route point; conflicts: [{from, to}] with 1-based point numbers.
-  setRoute(line, corners, selected, conflicts = []) {
+  // it of each route point; conflicts: [{from, to}] with 1-based point numbers;
+  // routePoints: the route's points (their road_friction).
+  setRoute(line, corners, selected, conflicts = [], routePoints = []) {
     this.routeGroup.clear();
     this.line = line;
     this.corners = corners;
     if (line.length < 2) return;
     const position = (point) => new THREE.Vector3(point.east_m, point.up_m, -point.north_m);
     const loop = [...line.map(position), position(line[0])];
-    this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loop),
-      new THREE.LineBasicMaterial({ color: 0x2e7dd7 })));
+    const frictions = legFrictions(routePoints);
+    if (corners.length === routePoints.length && frictions.some((value) => value !== undefined)) {
+      corners.forEach((start, index) => {
+        const end = index + 1 < corners.length ? corners[index + 1] : line.length;
+        const leg = loop.slice(start, end + 1);
+        if (leg.length < 2) return;
+        this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leg),
+          new THREE.LineBasicMaterial({ color: frictionColor(frictions[index]) })));
+      });
+    } else {
+      this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loop),
+        new THREE.LineBasicMaterial({ color: 0x2e7dd7 })));
+    }
     for (const conflict of conflicts) {
       // The samples of that leg, from its point to the next one (or round to the first).
       const start = corners[conflict.from - 1];

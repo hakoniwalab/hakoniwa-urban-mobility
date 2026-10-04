@@ -303,6 +303,11 @@ Guideline values for `road_friction` (sliding friction, rubber on the surface):
 | Snow | 0.2 - 0.3 |
 | Ice | 0.05 - 0.1 |
 
+The route line is drawn in the band's colour (Studio Route tab map and 3D
+view, and the Viewer's planned path): green dry (0.7 and up), yellow wet
+(0.35 and up), orange snow (0.15 and up), purple ice. A route without
+`road_friction` keeps its usual blue.
+
 `tire_grip` is the tire's share: 1.0 standard, about 1.2 for a high-grip
 tire, about 0.8 for a worn one. This is a simplification: a real tire's grip
 changes differently on each surface (a winter tire gains most on snow and
