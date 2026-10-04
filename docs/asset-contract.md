@@ -280,21 +280,29 @@ along the route; its placed spawn is not used. Route files are never modified.
 ### 4.4 Road friction and tire grip (Car routes)
 
 A Car route point may set `road_friction`: the road's friction coefficient
-on the leg from that point to the next one. A Car's `tire_grip` (Composition,
-section 5.1; default 1.0) multiplies it, and the route executor sends the
-product to that Car's tires as the `tire_friction` PDU (std_msgs/Float64)
-whenever the Car enters a leg with another value. A leg without
-`road_friction` has the model's tire friction (sent back when the Car leaves
-a leg that set one; the builder reads it from the vehicle model):
+on the leg from that point to the next one, in a band round the leg as wide
+as the road (`route.road_width_m`, default 6 m, i.e. 3 m each side of the
+line; a point's own `road_width_m` overrides it for its leg). The band's ends
+are round; where two bands overlap (a corner) the nearer leg's holds.
+
+The route executor watches where each Car actually is (its pose, not its
+route target): in such a band its tires get the road friction times the
+Car's `tire_grip` (Composition, section 5.1; default 1.0), sent as the
+`tire_friction` PDU (std_msgs/Float64) when the value changes. Anywhere
+else (a leg without `road_friction`, or off the road, e.g. after sliding
+out of the band) the tires have the model's friction again (the builder
+reads it from the vehicle model):
 
     tire friction = road_friction x tire_grip    (a leg with road_friction)
                   = the model's tire friction    (a leg without, e.g. 1.6)
 
 ```yaml
 route:
+  road_width_m: 6.0                # the band width for every leg (default 6)
   points:
     - {name: koen-dori-in, east_m: 120.0, north_m: -40.0, road_friction: 0.3}  # snow to the next point
-    - {name: koen-dori-mid, east_m: 170.0, north_m: -40.0, road_friction: 0.3} # snow on this leg too
+    - {name: koen-dori-mid, east_m: 170.0, north_m: -40.0, road_friction: 0.3,
+       road_width_m: 12.0}                                                     # a wider snowy square
     - {name: koen-dori-out, east_m: 220.0, north_m: -40.0}                     # the model's from here
 ```
 
@@ -310,10 +318,11 @@ Guideline values for `road_friction` (sliding friction, rubber on the surface):
 | Snow | 0.2 - 0.3 |
 | Ice | 0.05 - 0.1 |
 
-The route line is drawn in the band's colour (Studio Route tab map and 3D
-view, and the Viewer's planned path): green dry (0.7 and up), yellow wet
-(0.35 and up), orange snow (0.15 and up), purple ice. A leg without
-`road_friction` keeps its usual blue.
+The route line is drawn in the friction's colour and its band filled
+see-through in it (Studio Route tab map and 3D view, and the Viewer's
+planned path), so the wet or icy area shows: green dry (0.7 and up), yellow
+wet (0.35 and up), orange snow (0.15 and up), purple ice. A leg without
+`road_friction` keeps its usual blue line and no band.
 
 `tire_grip` is the tire's share: 1.0 standard, about 1.2 for a high-grip
 tire, about 0.8 for a worn one. This is a simplification: a real tire's grip

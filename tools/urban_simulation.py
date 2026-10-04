@@ -506,11 +506,16 @@ def route_paths(composition_path: Path, ground=None) -> list[dict]:
         if not isinstance(scenario, scenario_executor.RouteScenario):
             continue
         points, corners = route_line.route_line([(point.east_m, point.north_m) for point in scenario.points], ground)
-        # Each sample's road friction, for the Viewer to colour the line by it.
+        # Each sample's road friction and road width, for the Viewer to colour
+        # the line and fill the band where the road friction holds.
         frictions = route_line.section_values(corners, [point.road_friction for point in scenario.points], len(points))
-        for point, friction in zip(points, frictions):
+        widths = route_line.section_values(corners, [
+            scenario.road_width_m if point.road_width_m is None else point.road_width_m for point in scenario.points
+        ], len(points))
+        for point, friction, width in zip(points, frictions, widths):
             if friction is not None:
                 point["road_friction"] = friction
+                point["road_width_m"] = width
         paths.append({"route": scenario.name, "vehicles": names, "closed": True, "points": points})
     return paths
 

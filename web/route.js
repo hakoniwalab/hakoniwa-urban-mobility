@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { labelSprite } from "./flight.js";
-import { frictionColor, legFrictions } from "./friction.js";
+import { bandOutline, frictionColor, legFrictions, legWidths } from "./friction.js";
 import { MapView } from "./map.js";
 import { PlacementView } from "./placement.js";
 
@@ -16,11 +16,23 @@ export class RouteMapView extends MapView {
     this.line = null;
   }
 
-  setRoute(points, selected, conflicts = []) {
+  setRoute(points, selected, conflicts = [], roadWidth = 6) {
     if (!this.map) return;
     for (const marker of this.markers) marker.remove();
     this.line?.remove();
     this.blocked?.remove();
+    this.bands?.remove();
+    // Where each leg's road friction holds: its band, filled in its colour.
+    const frictionsForBands = legFrictions(points);
+    const widths = legWidths(points, roadWidth);
+    const legs = points.length > 2 ? points.length : points.length - 1;
+    this.bands = L.layerGroup(Array.from({ length: Math.max(0, legs) }, (_, index) => index)
+      .filter((index) => frictionsForBands[index] !== undefined)
+      .map((index) => L.polygon(
+        bandOutline(points[index], points[(index + 1) % points.length], widths[index])
+          .map(([east, north]) => this.toLatLng(east, north)),
+        { stroke: false, fillColor: frictionColor(frictionsForBands[index]), fillOpacity: 0.35, interactive: false },
+      ))).addTo(this.map);
     // Segments that run into a building wall (from the last save's check).
     this.blocked = conflicts.length ? L.layerGroup(conflicts.map((conflict) => L.polyline(
       [conflict.from - 1, conflict.to - 1].map((index) => this.toLatLng(points[index].east_m, points[index].north_m)),
@@ -64,6 +76,33 @@ export class RouteMapView extends MapView {
   }
 }
 
+// A leg's band in the 3D view: a strip widthM wide along the leg's samples
+// (scene frame), a little under the line, see-through.
+function bandMesh(leg, widthM, color) {
+  const first = leg[0];
+  const last = leg[leg.length - 1];
+  const along = new THREE.Vector3(last.x - first.x, 0, last.z - first.z).normalize();
+  const side = new THREE.Vector3(-along.z, 0, along.x).multiplyScalar(widthM / 2);
+  const positions = [];
+  for (const point of leg) {
+    const y = point.y - 0.2;
+    positions.push(point.x + side.x, y, point.z + side.z, point.x - side.x, y, point.z - side.z);
+  }
+  const indices = [];
+  for (let index = 0; index + 1 < leg.length; index += 1) {
+    const a = index * 2;
+    indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  mesh.renderOrder = 4;
+  return mesh;
+}
+
 // Route tab 3D view: the route on the World GLB at the height of the surface
 // under it (POST worlds/<id>/route-line: a road under a bridge stays on the
 // road), each route point a numbered ball, the legs coloured by their road
@@ -80,7 +119,7 @@ export class RouteView3D extends PlacementView {
   // line: [{east_m, north_m, up_m}] (the loop, sampled); corners: the index in
   // it of each route point; conflicts: [{from, to}] with 1-based point numbers;
   // routePoints: the route's points (their road_friction).
-  setRoute(line, corners, selected, conflicts = [], routePoints = []) {
+  setRoute(line, corners, selected, conflicts = [], routePoints = [], roadWidth = 6) {
     this.routeGroup.clear();
     this.line = line;
     this.corners = corners;
@@ -88,6 +127,7 @@ export class RouteView3D extends PlacementView {
     const position = (point) => new THREE.Vector3(point.east_m, point.up_m, -point.north_m);
     const loop = [...line.map(position), position(line[0])];
     const frictions = legFrictions(routePoints);
+    const widths = legWidths(routePoints, roadWidth);
     if (corners.length === routePoints.length && frictions.some((value) => value !== undefined)) {
       corners.forEach((start, index) => {
         const end = index + 1 < corners.length ? corners[index + 1] : line.length;
@@ -95,6 +135,9 @@ export class RouteView3D extends PlacementView {
         if (leg.length < 2) return;
         this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leg),
           new THREE.LineBasicMaterial({ color: frictionColor(frictions[index]) })));
+        if (frictions[index] !== undefined) {
+          this.routeGroup.add(bandMesh(leg, widths[index], frictionColor(frictions[index])));
+        }
       });
     } else {
       this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loop),

@@ -985,6 +985,27 @@ async function saveComposition() {
 
 const ROUTE_KIND = "car-route-scenario";
 // Pure-pursuit controller values that work for the Golf Cart; the Route tab edits only speed.
+// The route's road width when it sets none (apps/car/scenario_executor.py DEFAULT_ROAD_WIDTH_M).
+const DEFAULT_ROAD_WIDTH_M = 6.0;
+
+function routeRoadWidth(scenario) {
+  return scenario?.route?.road_width_m ?? DEFAULT_ROAD_WIDTH_M;
+}
+
+// A number cell that may be blank (the key is then left out of the point).
+function optionalCell(point, key, step, placeholder, parse) {
+  return el("td", {}, el("input", {
+    type: "number", step, min: "0", placeholder,
+    value: point[key] === undefined || point[key] === null ? "" : String(point[key]),
+    onchange: (event) => {
+      const raw = event.target.value.trim();
+      if (raw === "") delete point[key];
+      else point[key] = parse(raw);
+      renderRoute();
+    },
+  }));
+}
+
 const DEFAULT_ROUTE_CONTROL = { speed_m_s: 1.0, lookahead_m: 2.5, position_gain: 0.8, wheelbase_m: 1.55, max_steering_deg: 32.0 };
 
 function newRouteScenario(world) {
@@ -1154,7 +1175,7 @@ function renderRoute3d() {
   const route = state.route;
   if (!route || !state.routeView) return;
   state.routeView.setRoute(route.line3d?.points || [], route.line3d?.corners || [], state.routePoint, route.conflicts || [],
-    route.scenario?.route?.points || []);
+    route.scenario?.route?.points || [], routeRoadWidth(route.scenario));
 }
 
 function addRoutePoint(east, north) {
@@ -1184,6 +1205,8 @@ function renderRoute() {
   $("#route-loops").disabled = forever;
   $("#route-loops").value = forever ? "" : scenario.loop_count;
   $("#route-delay").value = scenario.start_delay_sec ?? 1.0;
+  $("#route-road-width").value = scenario.route.road_width_m ?? "";
+  $("#route-road-width").placeholder = String(DEFAULT_ROAD_WIDTH_M);
 
   $("#route-vehicles").replaceChildren(...scenario.vehicles.map((vehicle, index) => el("div", { class: "route-vehicle" },
     el("label", { class: "field" }, "名前", el("input", {
@@ -1210,17 +1233,10 @@ function renderRoute() {
       el("td", {}, String(index + 1)),
       el("td", {}, el("input", { value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); renderRoute(); } })),
       cell("east_m", "0.1"), cell("north_m", "0.1"), cell("dwell_sec", "0.5"),
-      // Road friction from this point on (blank: unchanged).
-      el("td", {}, el("input", {
-        type: "number", step: "0.05", min: "0", placeholder: "—",
-        value: point.road_friction === undefined || point.road_friction === null ? "" : String(point.road_friction),
-        onchange: (event) => {
-          const raw = event.target.value.trim();
-          if (raw === "") delete point.road_friction;
-          else point.road_friction = Math.max(0, routeNumber(raw, 1));
-          renderRoute();
-        },
-      })),
+      // Road friction on the leg to the next point (blank: the model's).
+      optionalCell(point, "road_friction", "0.05", "—", (raw) => Math.max(0, routeNumber(raw, 1))),
+      // That leg's road width (blank: the route's).
+      optionalCell(point, "road_width_m", "0.5", String(routeRoadWidth(scenario)), (raw) => Math.max(0.5, routeNumber(raw, 6))),
       el("td", {}, el("button", {
         class: "icon", title: "削除", onclick: () => {
           points.splice(index, 1);
@@ -1229,7 +1245,7 @@ function renderRoute() {
           renderRoute();
         },
       }, "✕")));
-  }) : [el("tr", {}, el("td", { colspan: 7, class: "hint" }, "点がありません"))]));
+  }) : [el("tr", {}, el("td", { colspan: 8, class: "hint" }, "点がありません"))]));
   const conflictList = $("#route-conflicts");
   const conflicts = route.conflicts || [];
   conflictList.hidden = !conflicts.length && route.checked;
@@ -1239,7 +1255,7 @@ function renderRoute() {
       + `（${conflict.at[0]}E, ${conflict.at[1]}N）`))
     : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりをチェックしています…")]));
   $("#route-clearance").textContent = clearanceText(route.clearance, "登録済みの車で一番幅が広いもの");
-  if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts);
+  if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts, routeRoadWidth(scenario));
   renderRoute3d();
 }
 
@@ -1358,6 +1374,10 @@ async function initRoute() {
   bind("#route-forever", (route, input) => { route.scenario.loop_count = input.checked ? "forever" : 1; });
   bind("#route-loops", (route, input) => { route.scenario.loop_count = Math.max(1, Math.round(routeNumber(input.value, 1))); });
   bind("#route-delay", (route, input) => { route.scenario.start_delay_sec = Math.max(0, routeNumber(input.value, 1.0)); });
+  bind("#route-road-width", (route, input) => {
+    if (input.value.trim() === "") delete route.scenario.route.road_width_m;
+    else route.scenario.route.road_width_m = Math.max(0.5, routeNumber(input.value, DEFAULT_ROAD_WIDTH_M));
+  });
 }
 
 // Compose -> Route: edit the route a Car uses.

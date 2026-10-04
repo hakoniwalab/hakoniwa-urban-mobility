@@ -177,18 +177,28 @@ vehicles:
         self.assertIsNone(scenario_executor.hold_for_slowest({"Car-1": 1.0, "Car-2": -2.0}, 7.5))
         self.assertIsNone(scenario_executor.hold_for_slowest({}, 7.5))
 
-    def test_a_point_sets_the_road_friction_of_its_leg(self):
+    def test_the_road_friction_holds_in_its_legs_band(self):
+        # A 50 m square; b sets 0.4 on b->c (east side, 10 m wide), d sets 0 on d->a (west side, the route's 6 m).
         points = (
             scenario_executor.RoutePoint("a", 0.0, 0.0),
-            scenario_executor.RoutePoint("b", 50.0, 0.0, road_friction=0.4),
+            scenario_executor.RoutePoint("b", 50.0, 0.0, road_friction=0.4, road_width_m=10.0),
             scenario_executor.RoutePoint("c", 50.0, 50.0),
             scenario_executor.RoutePoint("d", 0.0, 50.0, road_friction=0.0),
         )
         tires = {"Car-2": scenario_executor.Tire(grip=1.5, model_friction=1.6)}
-        friction = scenario_executor.TireFriction(scenario_executor.RouteGeometry(points), tires)  # 200 m loop
-        # Only the leg from b to c and the one from d back to a.
-        self.assertEqual([friction.value_at(s) for s in (10, 50, 90, 120, 160, 190, 210)],
-                         [None, 0.4, 0.4, None, 0.0, 0.0, None])
+        friction = scenario_executor.TireFriction(scenario_executor.RouteGeometry(points), 6.0, tires)
+        value = friction.value_at
+        self.assertEqual(value(50.0, 25.0), 0.4)   # on the east leg
+        self.assertEqual(value(54.5, 25.0), 0.4)   # 4.5 m off it: inside its 10 m band
+        self.assertIsNone(value(56.0, 25.0))       # outside it: the model's
+        self.assertIsNone(value(25.0, 0.0))        # the south leg sets none
+        self.assertEqual(value(2.5, 25.0), 0.0)    # the west leg's 6 m band
+        self.assertIsNone(value(3.5, 25.0))
+        # At corner c both bands overlap: the nearer leg's.
+        self.assertEqual(value(52.0, 49.0), 0.4)   # 2 m from the east leg, 2.2 m from the north one
+        self.assertIsNone(value(49.0, 52.0))       # 2 m from the north leg (none), 2.2 m from the east one
+        self.assertEqual(value(50.0, 54.0), 0.4)   # 4 m past c: in the east band's round end, outside the north one
+        self.assertIsNone(value(30.0, 49.0))       # on the north leg, nearest to it
         sent = []
 
         class Fleet:
@@ -196,19 +206,39 @@ vehicles:
                 sent.append((robot, pdu, value))
                 return True
 
-        for s in (10, 20, 60, 70, 120, 160, 210):
-            friction.update(Fleet(), 0.0, "Car-1", s)
+        pose = lambda east, north: scenario_executor.VehiclePose(east, north, 0.5, 0.0)
+        for east, north in ((10, 0), (20, 0), (50, 10), (50, 20), (60, 30), (30, 50), (0, 30)):
+            friction.update(Fleet(), 0.0, "Car-1", pose(east, north))
         # Sent once per change, as the PDU the runtime's geom_friction takes;
-        # a leg without road_friction gets the model's tire friction back
-        # (nothing at the start: the tires have it already).
-        self.assertEqual([value for _, _, value in sent], [0.4, 1.6, 0.0, 1.6])
+        # out of a band the model's tire friction comes back (nothing at the
+        # start: the tires have it already). Sliding off the band counts too.
+        self.assertEqual([value for _, _, value in sent], [0.4, 1.6, 0.0])
         self.assertEqual({(robot, pdu) for robot, pdu, _ in sent}, {("Car-1", "tire_friction")})
         # The tires get the road's friction times the vehicle's grip.
-        friction.update(Fleet(), 0.0, "Car-2", 60)
+        friction.update(Fleet(), 0.0, "Car-2", pose(50, 10))
         self.assertEqual(sent[-1], ("Car-2", "tire_friction", 0.4 * 1.5))
         quiet = scenario_executor.TireFriction(self.square_route())
-        quiet.update(Fleet(), 0.0, "Car-2", 10)
-        self.assertEqual(len(sent), 5)  # no road_friction on the route: nothing is sent
+        quiet.update(Fleet(), 0.0, "Car-2", pose(10, 0))
+        self.assertEqual(len(sent), 4)  # no road_friction on the route: nothing is sent
+
+    def test_the_road_width_is_the_routes_unless_a_point_sets_its_own(self):
+        scenario = scenario_executor.load_scenario(ROOT / "recipes/scenarios/golf-cart-demo-loop.yaml")
+        self.assertEqual(scenario.road_width_m, scenario_executor.DEFAULT_ROAD_WIDTH_M)
+        with tempfile.TemporaryDirectory() as directory:
+            import yaml
+
+            data = yaml.safe_load((ROOT / "recipes/scenarios/golf-cart-demo-loop.yaml").read_text(encoding="utf-8"))
+            data["route"]["road_width_m"] = 8.0
+            data["route"]["points"][1]["road_width_m"] = 3.0
+            path = Path(directory) / "route.yaml"
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+            scenario = scenario_executor.load_scenario(path)
+            self.assertEqual((scenario.road_width_m, scenario.points[1].road_width_m, scenario.points[0].road_width_m),
+                             (8.0, 3.0, None))
+            data["route"]["road_width_m"] = 0
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+            with self.assertRaises(scenario_executor.ScenarioError):
+                scenario_executor.load_scenario(path)
 
     def test_tires_come_from_the_builders_json(self):
         with tempfile.TemporaryDirectory() as directory:

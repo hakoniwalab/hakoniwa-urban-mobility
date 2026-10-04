@@ -74,6 +74,9 @@ class RouteVehicle:
     lateral_offset_m: float = 0.0
 
 
+DEFAULT_ROAD_WIDTH_M = 6.0
+
+
 @dataclass(frozen=True)
 class RouteScenario:
     name: str
@@ -83,6 +86,9 @@ class RouteScenario:
     vehicles: tuple[RouteVehicle, ...]
     points: tuple[RoutePoint, ...]
     control: RouteControl
+    # The width of the road along the route: each leg's road_friction holds
+    # in a band this wide round it (TireFriction).
+    road_width_m: float = DEFAULT_ROAD_WIDTH_M
 
 
 class RouteCursor:
@@ -192,6 +198,9 @@ def load_route_scenario(root: dict) -> RouteScenario:
     route = root.get("route")
     if not isinstance(route, dict) or route.get("closed") is not True:
         raise ScenarioError("route.closed must be true")
+    road_width_m = finite_number(route.get("road_width_m", DEFAULT_ROAD_WIDTH_M), "route.road_width_m")
+    if road_width_m <= 0.0:
+        raise ScenarioError("route.road_width_m must be positive")
     point_inputs = route.get("points")
     if not isinstance(point_inputs, list) or len(point_inputs) < 3:
         raise ScenarioError("route.points must contain at least three points")
@@ -212,8 +221,13 @@ def load_route_scenario(root: dict) -> RouteScenario:
             road_friction = finite_number(item["road_friction"], f"route.points[{index}].road_friction")
             if road_friction < 0.0:
                 raise ScenarioError(f"route.points[{index}].road_friction must not be negative")
+        road_width = None
+        if item.get("road_width_m") is not None:
+            road_width = finite_number(item["road_width_m"], f"route.points[{index}].road_width_m")
+            if road_width <= 0.0:
+                raise ScenarioError(f"route.points[{index}].road_width_m must be positive")
         point_names.add(point_name)
-        points.append(RoutePoint(point_name, east_m, north_m, dwell_sec, road_friction))
+        points.append(RoutePoint(point_name, east_m, north_m, dwell_sec, road_friction, road_width))
 
     control_input = root.get("control")
     if not isinstance(control_input, dict):
@@ -245,6 +259,7 @@ def load_route_scenario(root: dict) -> RouteScenario:
         vehicles=tuple(vehicles),
         points=tuple(points),
         control=control,
+        road_width_m=road_width_m,
     )
 
 
@@ -512,39 +527,37 @@ class Tire:
 
 
 class TireFriction:
-    """The tires' friction by route leg, sent to each vehicle as it goes.
+    """The tires' friction by where each vehicle is, sent as it changes.
 
-    A point's road_friction is the road's friction on the leg from that point
-    to the next one; a vehicle's tires get it times the vehicle's tire grip.
-    A leg without one keeps the model's tire friction (sent back when a
-    vehicle leaves a leg that set one). A vehicle takes a leg's value when its
-    route target (the cursor plus its offset; the vehicle is a few metres
-    behind) enters the leg, so the change follows the route and does not jump
-    when a sliding vehicle is closer to another part of it. Nothing is sent
-    for a route without road_friction.
+    A point's road_friction is the road's on the leg from that point to the
+    next one: a band round the leg as wide as the point's road_width_m, else
+    the route's (round at its ends; at a corner the nearest leg's). A vehicle whose position is in such a band gets
+    the road friction times its tire grip; anywhere else (a leg without one,
+    or off the road) its tires have the model's friction, sent back when it
+    leaves a band. Nothing is sent for a route without road_friction.
     """
 
-    def __init__(self, geometry: RouteGeometry, tires: dict[str, Tire] | None = None):
+    def __init__(self, geometry: RouteGeometry, road_width_m: float = 6.0,
+                 tires: dict[str, Tire] | None = None):
+        self.geometry = geometry
+        # Each leg's width: its point's road_width_m, else the route's.
+        self.widths = [road_width_m if point.road_width_m is None else point.road_width_m
+                       for point in geometry.points]
         self.tires = dict(tires or {})
-        self.length = geometry.length
-        self.starts = [0.0]
-        for length in geometry.segment_lengths[:-1]:
-            self.starts.append(self.starts[-1] + length)
         self.values = [point.road_friction for point in geometry.points]
         self.any = any(value is not None for value in self.values)
         self.sent: dict[str, float] = {}
 
-    def value_at(self, distance_m: float) -> float | None:
-        """The road friction of the leg at distance_m round the loop (None: the model's)."""
-        s = distance_m % self.length
-        leg = max(index for index, start in enumerate(self.starts) if start <= s + 1e-9)
-        return self.values[leg]
+    def value_at(self, east_m: float, north_m: float) -> float | None:
+        """The road friction where a vehicle is (None: the model's)."""
+        leg = self.geometry.leg_at(east_m, north_m, self.widths)
+        return None if leg is None else self.values[leg]
 
-    def update(self, fleet, simulation_time: float, name: str, distance_m: float) -> None:
+    def update(self, fleet, simulation_time: float, name: str, pose: VehiclePose) -> None:
         if not self.any:
             return
         tire = self.tires.get(name, Tire())
-        road = self.value_at(distance_m)
+        road = self.value_at(pose.east_m, pose.north_m)
         value = tire.model_friction if road is None else road * tire.grip
         # Until something is sent the tires have the model's friction.
         if self.sent.get(name, tire.model_friction) == value:
@@ -574,7 +587,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire]
         period = 1.0 / scenario.rate_hz
         previous_lap = 0
         max_lead = max_route_lead_m(scenario.control)
-        friction = TireFriction(geometry, tires)
+        friction = TireFriction(geometry, scenario.road_width_m, tires)
         waiting_for: str | None = None
         yielding: dict[str, tuple[str, float] | None] = {}
         next_status = last_simulation_time
@@ -641,7 +654,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire]
                         f"for {cursor.hold_remaining_sec:g}s | {positions}"
                     )
                 for vehicle in scenario.vehicles:
-                    friction.update(fleet, simulation_time, vehicle.name, cursor.distance_m + vehicle.offset_m)
+                    friction.update(fleet, simulation_time, vehicle.name, poses[vehicle.name])
                     speed, steering = route_command(
                         geometry, cursor, vehicle, poses[vehicle.name], scenario.control
                     )
