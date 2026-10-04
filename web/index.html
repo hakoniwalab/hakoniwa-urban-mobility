@@ -215,6 +215,8 @@
             <label class="field">開始待ち (s)<input id="flight-delay" type="number" step="0.5" min="0"></label>
             <label class="field">速度 (m/s)<input id="flight-speed" type="number" step="0.1" min="0.1"></label>
             <label class="field">周回数<input id="flight-loops" type="number" step="1" min="1"></label>
+            <label class="field" title="風・故障の箱の幅（区間の線から左右半分ずつ）。経由点ごとに変えられます">風・故障の箱の幅 (m)<input id="flight-zone-width" type="number" step="0.5" min="0.5" placeholder="2"></label>
+            <label class="field" title="風・故障の箱の高さ（区間の線から上下半分ずつ）。経由点ごとに変えられます">箱の高さ (m)<input id="flight-zone-height" type="number" step="0.5" min="0.5" placeholder="2"></label>
             <label class="field">着陸<select id="flight-land">
               <option value="takeoff">離陸地点に戻る</option>
               <option value="elsewhere">別の場所</option>
@@ -237,13 +239,14 @@
             </div>
           </div>
           <div id="flight-3d" class="placement-view"></div>
-          <p class="hint">青い線が航路、点から下への破線がその点の高さ（地面・屋上から）です。建物などにぶつかる区間は赤で、ぶつかる場所に赤い玉が出ます（左右 1.5 m・上 1 m・下 1.5 m の余裕で判定）。</p>
+          <p class="hint">青い線が航路、点から下への破線がその点の高さ（地面・屋上から）です。建物などにぶつかる区間は赤で、ぶつかる場所に赤い玉が出ます（左右 1.5 m・上 1 m・下 1.5 m の余裕で判定）。風が吹く範囲は水色、故障する範囲は赤の半透明の箱で、風は矢印の向きに吹きます（経由点を選ぶと下で設定できます）。</p>
           <div class="row between">
             <h3>経由点</h3>
             <button id="flight-add-point" class="secondary">点を追加</button>
           </div>
           <ul id="flight-conflicts" class="conflicts" hidden></ul>
           <table class="grid" id="flight-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>高さ (地面から m)</th><th>高度 (m)</th><th>速度 (m/s)</th><th>待ち (s)</th><th>向き (°)</th><th></th></tr></thead><tbody></tbody></table>
+          <div id="flight-point-events" class="flight-point-events" hidden></div>
           <div class="row between footer">
             <div id="flight-status" class="status" role="status"></div>
             <div class="row">

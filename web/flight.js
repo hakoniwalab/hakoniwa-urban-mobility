@@ -6,9 +6,12 @@
 // stem down to the top of the World under it (its height above the ground),
 // and a leg that meets the World is red, with a red ball where it meets it.
 // Both take the flight's line: [{east_m, north_m, up_m, ground_m, label, kind}]
-// where kind is "takeoff", "waypoint" (with its waypoint index) or "land".
+// where kind is "takeoff", "waypoint" (with its waypoint index) or "land",
+// and the wind / fault zones (flight_zones.js): see-through boxes (cyan wind
+// with an arrow where it blows, red fault), their footprints on the map.
 
 import * as THREE from "three";
+import { zoneColor, zoneText } from "./flight_zones.js";
 import { MapView } from "./map.js";
 import { PlacementView } from "./placement.js";
 
@@ -50,11 +53,16 @@ export class FlightMapView extends MapView {
 
   // points: the map markers [{east_m, north_m, label, kind, index}]; line: the
   // flight's [east, north] in order; blocked: [[from, to]] pairs of line points.
-  setFlight(points, line, selected, blocked = []) {
+  setFlight(points, line, selected, blocked = [], zones = []) {
     if (!this.map) return;
     for (const marker of this.markers) marker.remove();
     this.line?.remove();
     this.blocked?.remove();
+    this.zones?.remove();
+    this.zones = L.layerGroup(zones.map((zone) => L.polygon(
+      zone.corners.slice(0, 4).map(([east, north]) => this.toLatLng(east, north)),
+      { color: zoneColor(zone), weight: 2, fillColor: zoneColor(zone), fillOpacity: 0.2, interactive: false },
+    ).bindTooltip(zoneText(zone)))).addTo(this.map);
     this.blocked = blocked.length ? L.layerGroup(blocked.map(([from, to]) => L.polyline(
       [from, to].map((point) => this.toLatLng(point[0], point[1])),
       { color: "#d32f2f", weight: 6, dashArray: "8 6", interactive: false },
@@ -87,6 +95,41 @@ export class FlightMapView extends MapView {
   }
 }
 
+// The faces and edges of a zone's box: corners 0-3 the bottom face, 4-7 the top.
+const BOX_FACES = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+const BOX_EDGES = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+
+// A zone in the 3D view: its see-through box, coloured edges, the wind's arrow.
+function addZone(group, zone) {
+  const color = zoneColor(zone);
+  const corners = zone.corners.map(([east, north, up]) => new THREE.Vector3(east, up, -north));
+  const positions = BOX_FACES.flatMap(([a, b, c, d]) => [a, b, c, a, c, d].flatMap((index) => corners[index].toArray()));
+  const box = new THREE.BufferGeometry();
+  box.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  fill.renderOrder = 3;
+  group.add(fill);
+  const edges = new THREE.BufferGeometry().setFromPoints(BOX_EDGES.flatMap(([a, b]) => [corners[a], corners[b]]));
+  group.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color })));
+  const centre = corners.reduce((sum, corner) => sum.add(corner), new THREE.Vector3()).multiplyScalar(1 / 8);
+  if (zone.wind) {
+    const theta = (Number(zone.wind.towards_deg) * Math.PI) / 180;
+    const ends = [corners[0].clone().add(corners[1]).multiplyScalar(0.5), corners[2].clone().add(corners[3]).multiplyScalar(0.5)];
+    const length = Math.max(1, Math.min(4, Math.hypot(ends[1].x - ends[0].x, ends[1].z - ends[0].z)));
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(Math.cos(theta), 0, -Math.sin(theta)),
+      centre.clone().sub(new THREE.Vector3(Math.cos(theta), 0, -Math.sin(theta)).multiplyScalar(length / 2)),
+      length, 0x26c6da, Math.min(1, length * 0.3), Math.min(0.6, length * 0.2));
+    arrow.renderOrder = 6;
+    group.add(arrow);
+  }
+  const label = labelSprite(zone.fault ? "!" : "風", color);
+  label.scale.set(1.4, 1.4, 1);
+  label.position.copy(centre).add(new THREE.Vector3(0, Math.max(...corners.map((corner) => corner.y)) - centre.y + 1.0, 0));
+  group.add(label);
+}
+
 export class FlightView extends PlacementView {
   constructor(container, { onSelect }) {
     super(container, { onSelect: () => {}, onMove: () => {}, onTurn: () => {} });
@@ -97,10 +140,11 @@ export class FlightView extends PlacementView {
 
   // line: [{east_m, north_m, up_m, ground_m, label, kind, index}];
   // conflicts: [{from, to, at: [e, n, u]}] with 1-based line point numbers.
-  setFlight(line, selected, conflicts = []) {
+  setFlight(line, selected, conflicts = [], zones = []) {
     this.flightGroup.clear();
     this.line = line;
     if (!line.length) return;
+    for (const zone of zones) addZone(this.flightGroup, zone);
     const position = (point) => new THREE.Vector3(point.east_m, point.up_m, -point.north_m);
     const blocked = new Set(conflicts.map((conflict) => conflict.from));
     for (let index = 0; index + 1 < line.length; index += 1) {

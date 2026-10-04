@@ -340,6 +340,43 @@ model's own value, which already won over the World's 1.0), and so does an
 `rc` Car (no route). The value is
 written in one Hakoniwa step and applies from the next physics step.
 
+### 4.5 Wind and rotor faults (Drone schedules)
+
+A waypoint of a Drone schedule (`apps/drone/drone_schedule.py`, the
+`schedule` control) may set a wind and/or a rotor fault on the leg from it
+to the next point the Drone flies to:
+
+```yaml
+drones:
+  - name: Drone-1
+    zone_width_m: 2.0            # the zones round the legs (default 2 x 2 m)
+    zone_height_m: 2.0
+    waypoints:
+      - {name: road-south, east_m: 20.2, north_m: -30.0, up_m: 35.0,
+         wind: {towards_deg: 0.0, speed_m_s: 8.0},      # blows east on this leg
+         zone_width_m: 8.0, zone_height_m: 6.0}         # this leg's zone
+      - {name: road-north, east_m: 2.2, north_m: 60.0, up_m: 35.0,
+         fault: {rotors: [0], scale: 0.0}}              # rotor 0 stops on this leg
+```
+
+The zone is a box round the leg: `zone_width_m` across it, `zone_height_m`
+round its line (sheared along a climbing leg), half its width longer at
+each end so a Drone holding at the waypoint is inside it. The schedule
+watches the Drone's position (its `pos` PDU) and writes its `disturb` PDU
+(hako_msgs/Disturbance; `apps/drone/flight_events.py`) when what applies
+changes:
+
+- wind: blows while the Drone is in the zone and stops when it leaves.
+  `towards_deg` is where it blows to (Urban yaw: east 0, counter-clockwise).
+- fault: the listed rotors (from 0, as the Viewer's fault panel numbers them)
+  get the thrust `scale` (0 stopped, 1 nominal) once the Drone enters the
+  zone, until the flight ends.
+
+The Viewer's fault panel writes the same PDU, so leave it alone while a
+schedule with zones flies. The zones are drawn see-through (cyan wind with
+an arrow where it blows, red fault) on the Studio Flight tab map and 3D view
+and in the Viewer's planned path.
+
 ## 5. Composition
 
 ### 5.1 Fields
