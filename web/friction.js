@@ -1,7 +1,8 @@
 // Road friction colours for the route lines (Route tab map and 3D view).
 //
-// A route point's road_friction holds to the next point that sets one, round
-// the loop (apps/car/scenario_executor.py TireFriction). The bands follow the
+// A route point's road_friction is that of the leg from it to the next point
+// (apps/car/scenario_executor.py TireFriction); a leg without one keeps the
+// model's tire friction and the usual blue line. The bands follow the
 // guideline table (docs/asset-contract.md section 4.4), from grippy to
 // slippery; the Viewer uses the same colours (hakoniwa-threejs-drone
 // src/flight_path.js). Ice is purple, not red: red marks legs into a wall.
@@ -13,19 +14,16 @@ export const FRICTION_BANDS = [
   { min: 0, color: "#8e24aa", label: "氷" },
 ];
 
+export const ROUTE_COLOR = "#2e7dd7";  // a leg without road_friction
+
 export function frictionColor(value) {
-  return FRICTION_BANDS.find((band) => value >= band.min)?.color;
+  if (!Number.isFinite(value)) return ROUTE_COLOR;
+  return FRICTION_BANDS.find((band) => value >= band.min).color;
 }
 
-// The road friction of each leg (the leg from point i to the next one), or
-// all undefined when no point sets one.
+// The road friction of each leg (the leg from point i to the next one):
+// undefined where the point sets none, all undefined when no point does.
 export function legFrictions(points) {
-  const set = (point) => typeof point?.road_friction === "number" && Number.isFinite(point.road_friction);
-  const marked = points.filter(set);
-  if (!marked.length) return points.map(() => undefined);
-  let current = Number(marked[marked.length - 1].road_friction);
-  return points.map((point) => {
-    if (set(point)) current = Number(point.road_friction);
-    return current;
-  });
+  return points.map((point) => (typeof point?.road_friction === "number" && Number.isFinite(point.road_friction)
+    ? point.road_friction : undefined));
 }

@@ -725,7 +725,7 @@ Schema version 2 is a closed ENU waypoint route: the executor reads
 pure-pursuit steering. A shared virtual route position plus each vehicle's
 `route_offset_m` preserves convoy spacing. Waypoint `dwell_sec` stops the whole
 formation, and `loop_count: forever` repeats until Ctrl-C. A waypoint's
-optional `road_friction` changes the road's friction from there on (times
+optional `road_friction` sets the road's friction on the leg to the next point (times
 each vehicle's `tire_grip`; docs/asset-contract.md section 4.4).
 
 `inputs.ackermann_vehicles.vehicles.generated_from_route` selects a catalogued

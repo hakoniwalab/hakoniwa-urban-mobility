@@ -1277,6 +1277,18 @@ def _materialize_vehicle_configs(work: Path, vehicle: dict) -> tuple[list[dict],
     return components, joints
 
 
+def _model_tire_friction(mjcf: object) -> float:
+    """The sliding friction of a vehicle model's tire (its front_left_tire geom,
+    else the model's default geom friction, else MuJoCo's 1.0)."""
+    root = ET.parse(mjcf).getroot()
+    tire = next((geom for geom in root.iter("geom") if geom.get("name") == TIRE_GEOMS[0]), None)
+    default = next((geom for geom in root.findall("default/geom")), None)
+    for geom in (tire, default):
+        if geom is not None and geom.get("friction"):
+            return float(geom.get("friction").split()[0])
+    return 1.0
+
+
 def materialize_runtime(
     runtime_model: Path,
     work: Path,
@@ -1512,9 +1524,13 @@ def materialize_runtime(
     }
     manifest_path = work / "urban-car-asset-manifest.json"
     write_json(manifest_path, manifest)
-    # Each vehicle's tire grip for the route executors (--tire-grip).
-    tire_grip_path = work / "urban-car-tire-grip.json"
-    write_json(tire_grip_path, {vehicle["name"]: vehicle.get("tire_grip", 1.0) for vehicle in vehicles})
+    # Each vehicle's tires for the route executors (--tires): its grip and
+    # the model's tire friction, which a leg without road_friction restores.
+    tires_path = work / "urban-car-tires.json"
+    write_json(tires_path, {vehicle["name"]: {
+        "tire_grip": vehicle.get("tire_grip", 1.0),
+        "model_friction": _model_tire_friction(vehicle["type_definition"]["mjcf"]),
+    } for vehicle in vehicles})
     return {
         "runtime": runtime_path,
         "pdu_def": pdu_def_path,
@@ -1523,7 +1539,7 @@ def materialize_runtime(
         "endpoint": endpoint_path,
         "comm": comm_path,
         "manifest": manifest_path,
-        "tire_grip": tire_grip_path,
+        "tires": tires_path,
     }
 
 
@@ -1902,7 +1918,7 @@ def materialize_launcher(
                 str(scenario_source["scenario"]),
                 "--pdu-def", str(runtime_files["pdu_def"]),
                 # Written next to the pdudef by materialize_runtime.
-                "--tire-grip", str(Path(runtime_files["pdu_def"]).with_name("urban-car-tire-grip.json")),
+                "--tires", str(Path(runtime_files["pdu_def"]).with_name("urban-car-tires.json")),
             ],
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,

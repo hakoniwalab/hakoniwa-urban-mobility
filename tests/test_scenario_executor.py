@@ -177,15 +177,18 @@ vehicles:
         self.assertIsNone(scenario_executor.hold_for_slowest({"Car-1": 1.0, "Car-2": -2.0}, 7.5))
         self.assertIsNone(scenario_executor.hold_for_slowest({}, 7.5))
 
-    def test_a_point_sets_the_road_friction_from_there_round_the_loop(self):
+    def test_a_point_sets_the_road_friction_of_its_leg(self):
         points = (
             scenario_executor.RoutePoint("a", 0.0, 0.0),
             scenario_executor.RoutePoint("b", 50.0, 0.0, road_friction=0.4),
             scenario_executor.RoutePoint("c", 50.0, 50.0),
-            scenario_executor.RoutePoint("d", 0.0, 50.0, road_friction=1.0),
+            scenario_executor.RoutePoint("d", 0.0, 50.0, road_friction=0.0),
         )
-        friction = scenario_executor.TireFriction(scenario_executor.RouteGeometry(points), {"Car-2": 1.5})  # 200 m loop
-        self.assertEqual([friction.value_at(s) for s in (10, 50, 120, 160, 190, 210)], [1.0, 0.4, 0.4, 1.0, 1.0, 1.0])
+        tires = {"Car-2": scenario_executor.Tire(grip=1.5, model_friction=1.6)}
+        friction = scenario_executor.TireFriction(scenario_executor.RouteGeometry(points), tires)  # 200 m loop
+        # Only the leg from b to c and the one from d back to a.
+        self.assertEqual([friction.value_at(s) for s in (10, 50, 90, 120, 160, 190, 210)],
+                         [None, 0.4, 0.4, None, 0.0, 0.0, None])
         sent = []
 
         class Fleet:
@@ -193,27 +196,31 @@ vehicles:
                 sent.append((robot, pdu, value))
                 return True
 
-        for s in (10, 20, 60, 70, 160):
+        for s in (10, 20, 60, 70, 120, 160, 210):
             friction.update(Fleet(), 0.0, "Car-1", s)
-        # Sent once per change, as the PDU the runtime's geom_friction takes.
-        self.assertEqual(sent, [("Car-1", "tire_friction", 1.0), ("Car-1", "tire_friction", 0.4),
-                                ("Car-1", "tire_friction", 1.0)])
+        # Sent once per change, as the PDU the runtime's geom_friction takes;
+        # a leg without road_friction gets the model's tire friction back
+        # (nothing at the start: the tires have it already).
+        self.assertEqual([value for _, _, value in sent], [0.4, 1.6, 0.0, 1.6])
+        self.assertEqual({(robot, pdu) for robot, pdu, _ in sent}, {("Car-1", "tire_friction")})
         # The tires get the road's friction times the vehicle's grip.
         friction.update(Fleet(), 0.0, "Car-2", 60)
         self.assertEqual(sent[-1], ("Car-2", "tire_friction", 0.4 * 1.5))
         quiet = scenario_executor.TireFriction(self.square_route())
         quiet.update(Fleet(), 0.0, "Car-2", 10)
-        self.assertEqual(len(sent), 4)  # no road_friction on the route: nothing is sent
+        self.assertEqual(len(sent), 5)  # no road_friction on the route: nothing is sent
 
-    def test_tire_grips_come_from_the_builders_json(self):
+    def test_tires_come_from_the_builders_json(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "grip.json"
-            path.write_text(json.dumps({"Car-1": 1.3, "Cart-1": 0.8}), encoding="utf-8")
-            self.assertEqual(scenario_executor.load_tire_grips(path), {"Car-1": 1.3, "Cart-1": 0.8})
-            path.write_text(json.dumps({"Car-1": 0}), encoding="utf-8")
+            path = Path(directory) / "tires.json"
+            path.write_text(json.dumps({"Car-1": {"tire_grip": 1.3, "model_friction": 1.6}, "Cart-1": {}}),
+                            encoding="utf-8")
+            self.assertEqual(scenario_executor.load_tires(path), {
+                "Car-1": scenario_executor.Tire(1.3, 1.6), "Cart-1": scenario_executor.Tire(1.0, 1.6)})
+            path.write_text(json.dumps({"Car-1": {"tire_grip": 0}}), encoding="utf-8")
             with self.assertRaises(scenario_executor.ScenarioError):
-                scenario_executor.load_tire_grips(path)
-        self.assertEqual(scenario_executor.load_tire_grips(None), {})
+                scenario_executor.load_tires(path)
+        self.assertEqual(scenario_executor.load_tires(None), {})
 
     def test_route_controller_drives_west_from_initial_spawn(self):
         scenario = scenario_executor.load_scenario(
