@@ -788,6 +788,11 @@ def world_info(world_id: str) -> dict:
     }
     if info["map"]:
         info["origin"] = {key: frame["origin"][key] for key in ("latitude", "longitude")}
+    # The GLB's size: the Assets page loads a small one as a City's preview.
+    try:
+        info["glb_bytes"] = world_glb(world_id).stat().st_size
+    except StudioError:
+        info["glb_bytes"] = None
     return info
 
 
@@ -854,6 +859,8 @@ def world_footprints(world_id: str) -> dict:
             # Courtyards: open ground inside the outline, drawn as holes.
             "holes": [ring for ring in item.get("interior_rings") or [] if len(ring) >= 3],
             "height_m": item.get("zmax"),
+            # The ground under the building (the Studio's 3D City preview stands it there).
+            "base_m": item.get("zmin"),
         }
         for item in data.get("polygons") or []
         if isinstance(item, dict) and len(item.get("vertices") or []) >= 3

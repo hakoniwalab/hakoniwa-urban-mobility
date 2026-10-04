@@ -494,6 +494,7 @@ class StudioServerTest(StudioTestBase):
         self.assertEqual(status, 200)
         self.assertEqual(info["half_extent_m"], {"north_south": 50, "east_west": 60})
         self.assertEqual(info["glb"], "/api/worlds/test-city/glb")
+        self.assertEqual(info["glb_bytes"], len(b"glTF-fake"))
         self.assertTrue(info["map"])
         self.assertEqual(info["origin"], {"latitude": 35.0, "longitude": 138.0})
         with urlopen(f"http://127.0.0.1:{self.port}{info['glb']}", timeout=10) as response:
@@ -503,7 +504,7 @@ class StudioServerTest(StudioTestBase):
     def test_city_footprints_come_from_the_lod1_outlines(self):
         self.fake_world()
         (self.work / "city-world-lod1.json").write_text(json.dumps({"polygons": [
-            {"id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]], "zmax": 12.0,
+            {"id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]], "zmin": 3.5, "zmax": 12.0,
              "interior_rings": [[[6, 1], [8, 1], [8, 2]]]},
             {"id": "degenerate", "vertices": [[0, 0], [1, 1]]},
         ]}), encoding="utf-8")
@@ -511,7 +512,7 @@ class StudioServerTest(StudioTestBase):
         self.assertEqual(status, 200)
         self.assertEqual(body["buildings"], [{
             "id": "bldg_a", "vertices": [[0, 0], [10, 0], [10, 5]],
-            "holes": [[[6, 1], [8, 1], [8, 2]]], "height_m": 12.0,
+            "holes": [[[6, 1], [8, 1], [8, 2]]], "height_m": 12.0, "base_m": 3.5,
         }])
 
     def test_plain_worlds_have_no_footprints(self):

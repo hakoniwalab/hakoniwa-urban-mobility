@@ -1,5 +1,6 @@
-// Asset previews: vehicles and plain Worlds turn slowly in 3D (drag to turn
-// them by hand); a City shows its building outlines as a small map.
+// Asset previews: vehicles, plain Worlds and Cities turn slowly in 3D (drag to
+// turn them by hand); a City's buildings are its outlines raised to their
+// heights (a flat map when it has none).
 //
 // Every 3D card shares one WebGL renderer: browsers allow only a few WebGL
 // contexts, so each frame is rendered offscreen and copied into the card's
@@ -7,6 +8,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const WIDTH = 240;
 const HEIGHT = 170;
@@ -56,11 +58,13 @@ function makeScene() {
 }
 
 function frame(card) {
-  const box = new THREE.Box3().setFromObject(card.model);
+  // A City frames its buildings (not its whole ground), a little tighter.
+  const box = new THREE.Box3().setFromObject(card.focus ?? card.model);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   card.model.position.sub(sphere.center);
-  const distance = sphere.radius / Math.sin(THREE.MathUtils.degToRad(card.camera.fov / 2)) * 1.05;
-  card.camera.position.set(0, Math.sin(ELEVATION_RAD) * distance, Math.cos(ELEVATION_RAD) * distance);
+  const distance = sphere.radius / Math.sin(THREE.MathUtils.degToRad(card.camera.fov / 2)) * (card.focus ? 0.9 : 1.05);
+  const elevation = card.elevation ?? ELEVATION_RAD;
+  card.camera.position.set(0, Math.sin(elevation) * distance, Math.cos(elevation) * distance);
   card.camera.near = distance / 100;
   card.camera.far = distance * 10;
   card.camera.lookAt(0, 0, 0);
@@ -124,7 +128,7 @@ function message(container, text) {
   container.replaceChildren(note);
 }
 
-function mountTurntable(container, model) {
+function mountTurntable(container, model, elevation = ELEVATION_RAD, focus = null) {
   try {
     sharedRenderer();
   } catch (error) {
@@ -134,7 +138,7 @@ function mountTurntable(container, model) {
   }
   const canvas = canvasFor(container);
   const card = {
-    canvas, model, dragging: false,
+    canvas, model, elevation, focus, dragging: false,
     scene: makeScene(),
     camera: new THREE.PerspectiveCamera(35, WIDTH / HEIGHT, 0.01, 1000),
     turntable: new THREE.Group(),
@@ -195,6 +199,81 @@ export async function mountWorldPreview(container, glbUrl) {
     console.warn("[AssetPreview] world preview failed:", error);
     message(container, "プレビューを表示できません");
   }
+}
+
+const CITY_ELEVATION_RAD = 0.62;
+
+// The City's ground (its extent) and its buildings: each outline raised from the
+// ground under it (base_m) to its top (height_m), courtyards left open. One
+// merged mesh, so a big City is still one draw call.
+function cityModel(footprints, halfExtent) {
+  const buildings = footprints.buildings.filter((b) => b.vertices.length >= 3 && Number.isFinite(b.height_m));
+  if (!buildings.length) return null;
+  const bases = buildings.map((b) => (Number.isFinite(b.base_m) ? b.base_m : b.height_m));
+  const ground = Math.min(...bases);
+  const shapeOf = (ring) => new THREE.Shape(ring.map(([east, north]) => new THREE.Vector2(east, north)));
+  const geometries = [];
+  buildings.forEach((building, index) => {
+    const base = Number.isFinite(building.base_m) ? building.base_m : ground;
+    const height = Math.max(building.height_m - base, 1);
+    const shape = shapeOf(building.vertices);
+    shape.holes = (building.holes || []).filter((ring) => ring.length >= 3).map(shapeOf);
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+    // Shape plane (east, north) -> three.js: east = x, north = -z, up = y.
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate(0, bases[index] - ground, 0);
+    geometries.push(geometry);
+  });
+  const merged = mergeGeometries(geometries, false);
+  geometries.forEach((geometry) => geometry.dispose());
+  if (!merged) return null;
+  const model = new THREE.Group();
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(2 * halfExtent.east_west, 2 * halfExtent.north_south),
+    new THREE.MeshStandardMaterial({ color: 0xdfe5ec, roughness: 1 }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  model.add(floor);
+  const buildingsMesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ color: 0x8c99ab, roughness: 0.85 }));
+  model.add(buildingsMesh);
+  model.userData.focus = buildingsMesh;
+  model.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(merged, 30),
+    new THREE.LineBasicMaterial({ color: 0x4d5868, transparent: true, opacity: 0.35 }),
+  ));
+  return model;
+}
+
+// A City without building outlines (a World made in the Environment Studio) shows
+// its display GLB instead, when that is small enough for a card.
+const CITY_GLB_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * A City World's buildings (GET /api/worlds/<id>/footprints) in 3D, turning slowly.
+ * Without outlines: its display GLB (glbUrl, glbBytes from GET /api/worlds/<id>) if small enough, else a note.
+ */
+export async function mountCityPreview(container, footprints, halfExtent, glbUrl, glbBytes) {
+  let model = null;
+  try {
+    model = cityModel(footprints, halfExtent);
+  } catch (error) {
+    console.warn("[AssetPreview] city model failed:", error);
+  }
+  if (model) {
+    mountTurntable(container, model, CITY_ELEVATION_RAD, model.userData.focus);
+    return;
+  }
+  if (glbUrl && glbBytes > 0 && glbBytes <= CITY_GLB_MAX_BYTES) {
+    try {
+      message(container, "読み込み中…");
+      const gltf = await loader.loadAsync(glbUrl);
+      mountTurntable(container, gltf.scene, CITY_ELEVATION_RAD);
+      return;
+    } catch (error) {
+      console.warn("[AssetPreview] city GLB preview failed:", error);
+    }
+  }
+  message(container, "プレビューなし（建物の外形データがありません）");
 }
 
 /** A City World's building outlines (GET /api/worlds/<id>/footprints) as a map. */
