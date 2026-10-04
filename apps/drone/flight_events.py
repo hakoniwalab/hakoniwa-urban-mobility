@@ -21,7 +21,9 @@ d_user_custom[1] one scale per rotor (urban_fault_injection.py).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import math
+from pathlib import Path
 from typing import Any
 
 DEFAULT_ZONE_WIDTH_M = 2.0
@@ -125,8 +127,14 @@ class EventState:
         self.zones = zones
         self.faults: dict[int, float] = {}  # rotor -> scale, held once entered
         self.sent: tuple | None = None
+        self.last_wind: Wind | None = None  # the latest wind the Drone was in
 
-    def update(self, east_m: float, north_m: float, up_m: float) -> tuple[Wind | None, dict[int, float]] | None:
+    def hold_fault(self, rotor: int, scale: float) -> None:
+        """A fault that holds from now on (e.g. a rotor that touched a wall)."""
+        self.faults[rotor] = min(self.faults.get(rotor, 1.0), scale)
+
+    def update(self, east_m: float, north_m: float, up_m: float,
+               force: bool = False) -> tuple[Wind | None, dict[int, float]] | None:
         wind = None
         for zone in self.zones:
             if not zone.contains(east_m, north_m, up_m):
@@ -136,11 +144,41 @@ class EventState:
             if zone.fault is not None:
                 for rotor in zone.fault.rotors:
                     self.faults[rotor] = min(self.faults.get(rotor, 1.0), zone.fault.scale)
+        if wind is not None:
+            self.last_wind = wind
         state = (wind, tuple(sorted(self.faults.items())))
-        if state == (self.sent or (None, ())):
+        if not force and state == (self.sent or (None, ())):
             return None
         self.sent = state
         return wind, dict(self.faults)
+
+
+# The EAMS Hexa's drone config (rotor positions, FRD body frame: x forward, y right).
+HEXA_CONFIG = Path(__file__).resolve().parents[2] / "config" / "drone" / "hexa" / "drone_config_0.json"
+
+
+def rotor_arms(config_path: Path | None = None) -> list[tuple[float, float]]:
+    """Each rotor's position (x forward, y right; metres) in the Drone's body frame (FRD)."""
+    config = json.loads(Path(config_path or HEXA_CONFIG).read_text(encoding="utf-8"))
+    return [(float(r["position"][0]), float(r["position"][1]))
+            for r in config["components"]["thruster"]["rotorPositions"]]
+
+
+def wall_side_rotor(arms: list[tuple[float, float]], yaw_ros_rad: float, towards_deg: float) -> int:
+    """The rotor whose arm points most the way towards_deg (Urban yaw: east 0, counter-
+    clockwise) for a Drone heading yaw_ros_rad (ROS: north 0, counter-clockwise): the rotor
+    on the side the wind pushes it to, i.e. the wall side. Roll and pitch are left out."""
+    want = (math.cos(math.radians(towards_deg)), math.sin(math.radians(towards_deg)))
+    best, best_dot = 0, -math.inf
+    for index, (x, y) in enumerate(arms):
+        # FRD -> FLU (y left), turned by the yaw into ROS (x north, y west), then ENU.
+        fx, fy = x, -y
+        north = fx * math.cos(yaw_ros_rad) - fy * math.sin(yaw_ros_rad)
+        west = fx * math.sin(yaw_ros_rad) + fy * math.cos(yaw_ros_rad)
+        dot = (-west) * want[0] + north * want[1]
+        if dot > best_dot:
+            best, best_dot = index, dot
+    return best
 
 
 def rotor_scales(faults: dict[int, float]) -> list[float]:

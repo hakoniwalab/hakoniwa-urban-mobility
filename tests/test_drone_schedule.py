@@ -1,4 +1,5 @@
 import itertools
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -279,7 +280,7 @@ class DroneScheduleTest(unittest.TestCase):
 
         args = type("Args", (), {"drone": "Drone-1", "summary_json": None})()
         runner = schedule_module.Runner(args, self.zoned(), (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: 1.0)
-        with unittest.mock.patch.object(schedule_module, "drone_position", lambda client: next(positions)), \
+        with unittest.mock.patch.object(schedule_module, "drone_state", lambda client: {"enu": next(positions), "yaw_rad": 0.0, "speed": 1.5, "heading_deg": 0.0, "collisions": None}), \
                 unittest.mock.patch.object(schedule_module, "send_disturbance",
                                            lambda client, drone, wind, faults: sent.append((drone, wind, faults))):
             for _ in range(3):
@@ -293,12 +294,45 @@ class DroneScheduleTest(unittest.TestCase):
         args = type("Args", (), {"drone": "Drone-1", "summary_json": self.directory / "summary.json"})()
         runner = schedule_module.Runner(args, schedule_module.load_schedule(self.write(SCHEDULE), "Drone-1"),
                                         (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: next(times))
-        with unittest.mock.patch.object(schedule_module, "drone_position", lambda client: next(positions)):
+        with unittest.mock.patch.object(schedule_module, "drone_state", lambda client: {"enu": next(positions), "yaw_rad": 0.0, "speed": 1.5, "heading_deg": 0.0, "collisions": None}):
             for _ in range(3):
                 runner.watch_events()
         lines = (self.directory / "summary-track.csv").read_text(encoding="utf-8").splitlines()
         # Every TRACK_PERIOD_SEC of simulation time: the second sample (0.05 s later) is left out.
-        self.assertEqual(lines, ["simulation_sec,east_m,north_m,up_m", "1.00,1.000,2.000,3.000", "1.20,1.200,2.000,3.000"])
+        self.assertEqual(lines, ["simulation_sec,east_m,north_m,up_m,speed_m_s,collisions",
+                                 "1.00,1.000,2.000,3.000,1.500,", "1.20,1.200,2.000,3.000,1.500,"])
+
+    def test_a_contact_in_flight_stops_the_wall_side_rotor(self):
+        import flight_events
+
+        text = SCHEDULE.replace("    loop_count: 2\n", "    loop_count: 2\n    contact_fault: {scale: 0.0}\n")
+        schedule = schedule_module.load_schedule(self.write(text), "Drone-1")
+        self.assertEqual(schedule["contact_fault"], {"scale": 0.0})
+        sent = []
+        counts = iter([3, 3, 4, 4, 6, 7])  # 3 at the spawn; +1 in flight (the wall); +2 (the wall again); +1 on landing
+        args = type("Args", (), {"drone": "Drone-1", "summary_json": None})()
+        runner = schedule_module.Runner(args, schedule, (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: 1.0)
+        state = lambda client: {"enu": (500.0, 500.0, 300.0), "yaw_rad": 0.0, "speed": 2.0, "heading_deg": 0.0,
+                                "collisions": next(counts)}
+        with unittest.mock.patch.object(schedule_module, "drone_state", state), \
+                unittest.mock.patch.object(schedule_module, "send_disturbance",
+                                           lambda client, drone, wind, faults: sent.append(dict(faults))):
+            runner.watch_events()            # on the ground: not armed
+            runner.airborne = True
+            runner.watch_events()            # flying, no new contact
+            runner.watch_events()            # touched something: heading north, moving east -> right arm (rotor 4)
+            runner.watch_events()
+            runner.watch_events()            # hit again: recorded, no other rotor stops
+            runner.airborne = False          # landing
+            runner.watch_events()            # touching down does not count
+        self.assertEqual(sent, [{4: 0.0}])
+        self.assertEqual(runner.summary["contacts"][0]["rotor"], 4)
+        self.assertEqual(len(runner.summary["contacts"]), 1)
+        self.assertEqual(runner.summary["hits"][0]["collisions"], 6)
+        # The rotor whose arm points the way the wind blows (FRD body frame, ROS yaw).
+        arms = flight_events.rotor_arms()
+        self.assertEqual([flight_events.wall_side_rotor(arms, 0.0, deg) for deg in (0.0, 180.0)], [4, 1])
+        self.assertEqual(flight_events.wall_side_rotor(arms, math.pi / 2, 90.0), 4)  # facing west: north is the right arm
 
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):
         import urban_assets
