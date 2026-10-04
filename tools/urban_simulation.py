@@ -231,7 +231,7 @@ def viewer_url(selected: Plan) -> str | None:
     import drone_one
 
     # As tools/drone_one.py open-viewer with its default bottom-left map layout.
-    return drone_one.base.viewer_url(1, map_viewer=True) + "&layout=three-main"
+    return drone_one.base.viewer_url(1, map_viewer=True) + drone_one.map_origin_query() + "&layout=three-main"
 
 
 def pacer_log(selected: Plan) -> Path:
