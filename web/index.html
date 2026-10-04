@@ -155,6 +155,7 @@
             <label class="field">周回数<input id="route-loops" type="number" step="1" min="1"></label>
             <label class="field">繰り返し続ける<input id="route-forever" type="checkbox"></label>
             <label class="field">開始待ち (s)<input id="route-delay" type="number" step="0.5" min="0"></label>
+            <label class="field" title="路面摩擦が効く帯の幅（ルートの線を中心に左右半分ずつ）。点ごとの「幅」で区間ごとに変えられます">路面の幅 (m)<input id="route-road-width" type="number" step="0.5" min="0.5"></label>
           </div>
           <div class="row between">
             <h3>走る車（先頭からの間隔）</h3>
@@ -173,15 +174,15 @@
             </div>
           </div>
           <div id="route-3d" class="placement-view"></div>
-          <p class="hint">青い線がルートで、その下の面（道路・橋の上）の高さに沿って描きます。橋の下を通るところは道路の高さです。路面摩擦を設定したルートは、区間ごとに滑りやすさの色（緑 乾燥・黄 濡れ・橙 雪・紫 氷）で描きます。建物の壁にぶつかる区間は赤です。</p>
+          <p class="hint">青い線がルートで、その下の面（道路・橋の上）の高さに沿って描きます。橋の下を通るところは道路の高さです。路面摩擦を設定した区間は、滑りやすさの色（緑 乾燥・黄 濡れ・橙 雪・紫 氷）で線を描き、効く範囲（路面の幅）を半透明で塗ります。建物の壁にぶつかる区間は赤です。</p>
           <div class="row between">
             <h3>点</h3>
             <button id="route-add-point" class="secondary">点を追加</button>
           </div>
           <ul id="route-conflicts" class="conflicts" hidden></ul>
           <p id="route-clearance" class="hint"></p>
-          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th title="この点から次の点までの区間の路面の摩擦係数（空欄の区間はモデルの摩擦のまま）。目安: 乾いた舗装 0.8〜1.0、濡れた舗装 0.4〜0.6、雪 0.2〜0.3、氷 0.05〜0.1。タイヤには車両のタイヤグリップを掛けた値が入ります">路面摩擦</th><th></th></tr></thead><tbody></tbody></table>
-          <p class="hint">路面摩擦の目安（線の色）: <span class="friction-swatch" style="background:#43a047"></span>乾いた舗装 0.8〜1.0（0.7 以上）、<span class="friction-swatch" style="background:#fdd835"></span>濡れた舗装 0.4〜0.6（0.35 以上）、<span class="friction-swatch" style="background:#fb8c00"></span>雪 0.2〜0.3（0.15 以上）、<span class="friction-swatch" style="background:#8e24aa"></span>氷 0.05〜0.1。実際にタイヤに効くのは「路面摩擦 × 車両のタイヤグリップ（Composition、既定 1.0）」です。空欄の区間は、タイヤはモデルの摩擦のまま（車・カートは 1.6）です。0 は摩擦なしで、その区間では進むことも曲がることもできません。</p>
+          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th title="この点から次の点までの区間の路面の摩擦係数（空欄の区間はモデルの摩擦のまま）。車がその区間の帯（路面の幅）の中にいる間だけ効きます。目安: 乾いた舗装 0.8〜1.0、濡れた舗装 0.4〜0.6、雪 0.2〜0.3、氷 0.05〜0.1。タイヤには車両のタイヤグリップを掛けた値が入ります">路面摩擦</th><th title="この区間の路面の幅 (m)。空欄はルート共通の「路面の幅」">幅 (m)</th><th></th></tr></thead><tbody></tbody></table>
+          <p class="hint">路面摩擦の目安（線の色）: <span class="friction-swatch" style="background:#43a047"></span>乾いた舗装 0.8〜1.0（0.7 以上）、<span class="friction-swatch" style="background:#fdd835"></span>濡れた舗装 0.4〜0.6（0.35 以上）、<span class="friction-swatch" style="background:#fb8c00"></span>雪 0.2〜0.3（0.15 以上）、<span class="friction-swatch" style="background:#8e24aa"></span>氷 0.05〜0.1。実際にタイヤに効くのは「路面摩擦 × 車両のタイヤグリップ（Composition、既定 1.0）」です。車がその区間の帯（「路面の幅」、点ごとの「幅」で変更可）の中にいる間だけ効き、地図と 3D では帯を半透明で塗ります。帯の外や空欄の区間は、タイヤはモデルの摩擦のまま（車・カートは 1.6）です。0 は摩擦なしで、その区間では進むことも曲がることもできません。</p>
           <div class="row between footer">
             <div id="route-status" class="status" role="status"></div>
             <div class="row">

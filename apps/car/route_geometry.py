@@ -12,11 +12,14 @@ class RoutePoint:
     east_m: float
     north_m: float
     dwell_sec: float = 0.0
-    # The road's friction on the leg from this point to the next one, or None
-    # (the model's tire friction). Times the vehicle's tire grip it is sent as the
+    # The road's friction on the leg from this point to the next one (a band
+    # the route's road width wide round it), or None (the model's tire
+    # friction). Times the vehicle's tire grip it is sent as the
     # vehicle's tire_friction PDU (a Robot Runtime geom_friction directive,
     # hakoniwa-robot-runtime; docs/asset-contract.md section 4.4).
     road_friction: float | None = None
+    # That leg's road width, or None (the route's road_width_m).
+    road_width_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,22 @@ class RouteGeometry:
         if error > self.length / 2.0:
             error -= self.length
         return error
+
+    def leg_distance(self, index: int, east_m: float, north_m: float) -> float:
+        """Distance from a point to the leg from points[index] to the next point."""
+        start = self.points[index]
+        end = self.points[(index + 1) % len(self.points)]
+        dx, dy = end.east_m - start.east_m, end.north_m - start.north_m
+        length = self.segment_lengths[index]
+        ratio = max(0.0, min(1.0, ((east_m - start.east_m) * dx + (north_m - start.north_m) * dy) / (length * length)))
+        return math.hypot(east_m - (start.east_m + ratio * dx), north_m - (start.north_m + ratio * dy))
+
+    def leg_at(self, east_m: float, north_m: float, widths_m) -> int | None:
+        """The leg whose band (widths_m[leg] wide, round ends) a point is in;
+        the nearest one where bands overlap (at a corner); None outside all."""
+        distances = [(self.leg_distance(index, east_m, north_m), index) for index in range(len(self.segment_lengths))]
+        inside = [(distance, index) for distance, index in distances if distance <= widths_m[index] / 2.0]
+        return min(inside)[1] if inside else None
 
 
 def expand_route_vehicles(value: object) -> tuple[RouteVehicleSpec, ...]:

@@ -206,6 +206,8 @@ class DroneScheduleTest(unittest.TestCase):
             [path] = urban_simulation.route_paths(composition.path, Ground())
         frictions = {(point["east_m"], point["north_m"]): point.get("road_friction") for point in path["points"]}
         self.assertEqual((frictions[(0.0, 0.0)], frictions[(10.0, 0.0)], frictions[(20.0, 2.0)]), (None, None, 0.1))
+        widths = {point.get("road_width_m") for point in path["points"]}
+        self.assertEqual(widths, {None, 6.0})  # the route's default, only where the friction holds
         import route_line
 
         # Corners at samples 0, 3, 6 of 8; points 2 and 3 set 0.4 and 0.9.
