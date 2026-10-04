@@ -180,7 +180,8 @@
           </div>
           <ul id="route-conflicts" class="conflicts" hidden></ul>
           <p id="route-clearance" class="hint"></p>
-          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th></th></tr></thead><tbody></tbody></table>
+          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th title="この点から次に設定した点までの路面の摩擦係数（空欄は変えない）。目安: 乾いた舗装 0.8〜1.0、濡れた舗装 0.4〜0.6、雪 0.2〜0.3、氷 0.05〜0.1。タイヤには車両のタイヤグリップを掛けた値が入ります">路面摩擦</th><th></th></tr></thead><tbody></tbody></table>
+          <p class="hint">路面摩擦の目安: 乾いた舗装 0.8〜1.0、濡れた舗装 0.4〜0.6、雪 0.2〜0.3、氷 0.05〜0.1。実際にタイヤに効くのは「路面摩擦 × 車両のタイヤグリップ（Composition、既定 1.0）」です。どの点にも設定しなければ、タイヤはモデルの摩擦のままです。</p>
           <div class="row between footer">
             <div id="route-status" class="status" role="status"></div>
             <div class="row">

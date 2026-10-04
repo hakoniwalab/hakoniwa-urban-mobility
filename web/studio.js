@@ -834,6 +834,22 @@ function spawnInput(vehicle, label, key, step) {
   }, step);
 }
 
+// A Car's tire grip: multiplies the road friction its route sets (blank: 1.0).
+function tireGripInput(vehicle) {
+  return el("label", { class: "field", title: "ルートの路面摩擦に掛ける倍率。標準 1.0、高性能タイヤ 1.2 前後、すり減ったタイヤ 0.8 前後" },
+    "タイヤグリップ",
+    el("input", {
+      type: "number", step: "0.05", min: "0.05", placeholder: "1.0",
+      value: vehicle.tire_grip === undefined ? "" : String(vehicle.tire_grip),
+      onchange: (event) => {
+        const raw = event.target.value.trim();
+        const value = Number(raw);
+        if (raw === "" || !Number.isFinite(value) || value <= 0) delete vehicle.tire_grip;
+        else vehicle.tire_grip = value;
+      },
+    }));
+}
+
 function renderVehicle(vehicle, index) {
   const composition = state.current.composition;
   const asset = assetById(vehicle.asset);
@@ -896,6 +912,7 @@ function renderVehicle(vehicle, index) {
       spawnInput(vehicle, "east (m)", "east_m", "0.1"),
       spawnInput(vehicle, "north (m)", "north_m", "0.1"),
       spawnInput(vehicle, "yaw (°)", "yaw_deg", "1"),
+      asset?.category === "car" ? tireGripInput(vehicle) : null,
       height,
       mirror,
       el("button", {
@@ -1192,6 +1209,17 @@ function renderRoute() {
       el("td", {}, String(index + 1)),
       el("td", {}, el("input", { value: point.name || "", onchange: (event) => { point.name = event.target.value.trim(); renderRoute(); } })),
       cell("east_m", "0.1"), cell("north_m", "0.1"), cell("dwell_sec", "0.5"),
+      // Road friction from this point on (blank: unchanged).
+      el("td", {}, el("input", {
+        type: "number", step: "0.05", min: "0", placeholder: "—",
+        value: point.road_friction === undefined || point.road_friction === null ? "" : String(point.road_friction),
+        onchange: (event) => {
+          const raw = event.target.value.trim();
+          if (raw === "") delete point.road_friction;
+          else point.road_friction = Math.max(0, routeNumber(raw, 1));
+          renderRoute();
+        },
+      })),
       el("td", {}, el("button", {
         class: "icon", title: "削除", onclick: () => {
           points.splice(index, 1);
@@ -1200,7 +1228,7 @@ function renderRoute() {
           renderRoute();
         },
       }, "✕")));
-  }) : [el("tr", {}, el("td", { colspan: 6, class: "hint" }, "点がありません"))]));
+  }) : [el("tr", {}, el("td", { colspan: 7, class: "hint" }, "点がありません"))]));
   const conflictList = $("#route-conflicts");
   const conflicts = route.conflicts || [];
   conflictList.hidden = !conflicts.length && route.checked;

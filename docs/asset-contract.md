@@ -277,6 +277,47 @@ adding unnamed Cars 6 m behind, the leading Car at offset 0), and the Cars use
 it. A Car on a route starts at the route start set back by its offset, facing
 along the route; its placed spawn is not used. Route files are never modified.
 
+### 4.4 Road friction and tire grip (Car routes)
+
+A Car route point may set `road_friction`: the road's friction coefficient
+from that point to the next point that sets one (round the loop). A Car's
+`tire_grip` (Composition, section 5.1; default 1.0) multiplies it, and the
+route executor sends the product to that Car's tires as the `tire_friction`
+PDU (std_msgs/Float64) whenever the Car enters a section with another value:
+
+    tire friction = road_friction x tire_grip
+
+```yaml
+route:
+  points:
+    - {name: koen-dori-in, east_m: 120.0, north_m: -40.0, road_friction: 0.3}  # snow from here
+    - {name: koen-dori-out, east_m: 220.0, north_m: -40.0, road_friction: 0.9} # dry again
+```
+
+Guideline values for `road_friction` (sliding friction, rubber on the surface):
+
+| Surface | road_friction |
+|---|---|
+| Dry asphalt / concrete | 0.8 - 1.0 |
+| Wet asphalt | 0.4 - 0.6 |
+| Snow | 0.2 - 0.3 |
+| Ice | 0.05 - 0.1 |
+
+`tire_grip` is the tire's share: 1.0 standard, about 1.2 for a high-grip
+tire, about 0.8 for a worn one. This is a simplification: a real tire's grip
+changes differently on each surface (a winter tire gains most on snow and
+ice), whereas here one factor scales every surface.
+
+How it is applied: the builder gives a Car on such a route a Robot Runtime
+`geom_friction` component (hakoniwa-robot-runtime, configuration.md 3.2.5)
+for its four tire collision geoms and writes `priority="1"` on those geoms in
+the fleet MJCF. MuJoCo otherwise takes the larger friction of two touching
+geoms (the World's surfaces are 1.0), so a lower value would have no effect;
+with the priority, the tire's friction is the contact's. A Car whose route
+sets no `road_friction` keeps the model unchanged (tire friction 1.6, the
+model's own value, which already won over the World's 1.0). The value is
+written in one Hakoniwa step and applies from the next physics step.
+
 ## 5. Composition
 
 ### 5.1 Fields
@@ -291,6 +332,7 @@ vehicles:
     control: rc | api
     params: { <param>: <value> }          # optional, section 4.1
     spawn: { east_m, north_m, yaw_deg }   # section 5.4
+    tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port }    # optional
 ```

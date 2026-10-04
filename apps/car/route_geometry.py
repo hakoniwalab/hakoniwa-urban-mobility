@@ -12,6 +12,11 @@ class RoutePoint:
     east_m: float
     north_m: float
     dwell_sec: float = 0.0
+    # The road's friction from this point on (to the next point that sets
+    # one), or None. Times the vehicle's tire grip it is sent as the
+    # vehicle's tire_friction PDU (a Robot Runtime geom_friction directive,
+    # hakoniwa-robot-runtime; docs/asset-contract.md section 4.4).
+    road_friction: float | None = None
 
 
 @dataclass(frozen=True)

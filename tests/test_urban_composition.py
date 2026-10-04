@@ -124,6 +124,17 @@ class CompositionTest(Fixture):
         with self.assertRaisesRegex(urban_composition.CompositionError, "unique"):
             self.load(self.composition(vehicles=[vehicle, dict(vehicle)]))
 
+    def test_a_cars_tire_grip_reaches_the_car_config(self):
+        path = self.composition(vehicle={"tire_grip": 1.3})
+        [vehicle] = urban_composition.to_car_config(self.load(path), "grip")["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertEqual(vehicle["tire_grip"], 1.3)
+        [plain] = urban_composition.to_car_config(self.load(self.composition()), "grip")["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertNotIn("tire_grip", plain)
+        with self.assertRaisesRegex(urban_composition.CompositionError, "tire_grip must be positive"):
+            self.load(self.composition(vehicle={"tire_grip": 0}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "only for Cars"):
+            self.load(self.drone(tire_grip=1.2))
+
     def test_register_city_derives_the_id_from_the_city_world_job(self):
         receipt = self.work / "jobs" / CITY_ID / "build/world/city-world-receipt.json"
         receipt.parent.mkdir(parents=True)

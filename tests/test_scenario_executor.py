@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import math
 from pathlib import Path
 import sys
@@ -175,6 +176,44 @@ vehicles:
     def test_no_hold_while_every_vehicle_keeps_up(self):
         self.assertIsNone(scenario_executor.hold_for_slowest({"Car-1": 1.0, "Car-2": -2.0}, 7.5))
         self.assertIsNone(scenario_executor.hold_for_slowest({}, 7.5))
+
+    def test_a_point_sets_the_road_friction_from_there_round_the_loop(self):
+        points = (
+            scenario_executor.RoutePoint("a", 0.0, 0.0),
+            scenario_executor.RoutePoint("b", 50.0, 0.0, road_friction=0.4),
+            scenario_executor.RoutePoint("c", 50.0, 50.0),
+            scenario_executor.RoutePoint("d", 0.0, 50.0, road_friction=1.0),
+        )
+        friction = scenario_executor.TireFriction(scenario_executor.RouteGeometry(points), {"Car-2": 1.5})  # 200 m loop
+        self.assertEqual([friction.value_at(s) for s in (10, 50, 120, 160, 190, 210)], [1.0, 0.4, 0.4, 1.0, 1.0, 1.0])
+        sent = []
+
+        class Fleet:
+            def send_float64(self, robot, pdu, value):
+                sent.append((robot, pdu, value))
+                return True
+
+        for s in (10, 20, 60, 70, 160):
+            friction.update(Fleet(), 0.0, "Car-1", s)
+        # Sent once per change, as the PDU the runtime's geom_friction takes.
+        self.assertEqual(sent, [("Car-1", "tire_friction", 1.0), ("Car-1", "tire_friction", 0.4),
+                                ("Car-1", "tire_friction", 1.0)])
+        # The tires get the road's friction times the vehicle's grip.
+        friction.update(Fleet(), 0.0, "Car-2", 60)
+        self.assertEqual(sent[-1], ("Car-2", "tire_friction", 0.4 * 1.5))
+        quiet = scenario_executor.TireFriction(self.square_route())
+        quiet.update(Fleet(), 0.0, "Car-2", 10)
+        self.assertEqual(len(sent), 4)  # no road_friction on the route: nothing is sent
+
+    def test_tire_grips_come_from_the_builders_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "grip.json"
+            path.write_text(json.dumps({"Car-1": 1.3, "Cart-1": 0.8}), encoding="utf-8")
+            self.assertEqual(scenario_executor.load_tire_grips(path), {"Car-1": 1.3, "Cart-1": 0.8})
+            path.write_text(json.dumps({"Car-1": 0}), encoding="utf-8")
+            with self.assertRaises(scenario_executor.ScenarioError):
+                scenario_executor.load_tire_grips(path)
+        self.assertEqual(scenario_executor.load_tire_grips(None), {})
 
     def test_route_controller_drives_west_from_initial_spawn(self):
         scenario = scenario_executor.load_scenario(

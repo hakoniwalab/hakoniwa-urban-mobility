@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import math
 from pathlib import Path
 import time
@@ -206,8 +207,13 @@ def load_route_scenario(root: dict) -> RouteScenario:
                                   f"route.points[{index}].dwell_sec")
         if not point_name or point_name in point_names or dwell_sec < 0.0:
             raise ScenarioError("route point names must be unique and dwell non-negative")
+        road_friction = None
+        if item.get("road_friction") is not None:
+            road_friction = finite_number(item["road_friction"], f"route.points[{index}].road_friction")
+            if road_friction < 0.0:
+                raise ScenarioError(f"route.points[{index}].road_friction must not be negative")
         point_names.add(point_name)
-        points.append(RoutePoint(point_name, east_m, north_m, dwell_sec))
+        points.append(RoutePoint(point_name, east_m, north_m, dwell_sec, road_friction))
 
     control_input = root.get("control")
     if not isinstance(control_input, dict):
@@ -491,7 +497,53 @@ def yield_to(name: str, poses: dict[str, VehiclePose]) -> tuple[str, float] | No
     return other_name, distance
 
 
-def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
+TIRE_FRICTION_PDU = "tire_friction"
+
+
+class TireFriction:
+    """The tires' friction by route section, sent to each vehicle as it goes.
+
+    A point's road_friction holds from that point to the next point that sets
+    one (round the loop); a vehicle's tires get it times the vehicle's tire
+    grip (the Composition's tire_grip, default 1.0). A vehicle takes a section's value when its route
+    target (the cursor plus its offset; the vehicle is a few metres behind)
+    enters the section, so the change follows the route and does not jump
+    when a sliding vehicle is closer to another part of it. Nothing is sent
+    for a route without road_friction: the tires keep the model's friction.
+    """
+
+    def __init__(self, geometry: RouteGeometry, grips: dict[str, float] | None = None):
+        self.grips = dict(grips or {})
+        self.length = geometry.length
+        starts = [0.0]
+        for length in geometry.segment_lengths[:-1]:
+            starts.append(starts[-1] + length)
+        self.marks = [(start, point.road_friction)
+                      for start, point in zip(starts, geometry.points) if point.road_friction is not None]
+        self.sent: dict[str, float] = {}
+
+    def value_at(self, distance_m: float) -> float | None:
+        if not self.marks:
+            return None
+        s = distance_m % self.length
+        before = [value for start, value in self.marks if start <= s + 1e-9]
+        return before[-1] if before else self.marks[-1][1]  # before the first mark: the last one, round the loop
+
+    def update(self, fleet, simulation_time: float, name: str, distance_m: float) -> None:
+        road = self.value_at(distance_m)
+        if road is None:
+            return
+        grip = self.grips.get(name, 1.0)
+        value = road * grip
+        if self.sent.get(name) == value:
+            return
+        if fleet.send_float64(name, TIRE_FRICTION_PDU, value):
+            print(f"[{simulation_time:9.3f}] {name} tire friction {value:g} "
+                  f"(road {road:g} x grip {grip:g})", flush=True)
+            self.sent[name] = value
+
+
+def execute_route(scenario: RouteScenario, pdu_def: Path, tire_grips: dict[str, float] | None = None) -> None:
     robots = tuple(vehicle.name for vehicle in scenario.vehicles)
     geometry = RouteGeometry(scenario.points)
     cursor = RouteCursor(geometry, scenario.control.speed_m_s, scenario.loop_count)
@@ -510,6 +562,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
         period = 1.0 / scenario.rate_hz
         previous_lap = 0
         max_lead = max_route_lead_m(scenario.control)
+        friction = TireFriction(geometry, tire_grips)
         waiting_for: str | None = None
         yielding: dict[str, tuple[str, float] | None] = {}
         next_status = last_simulation_time
@@ -576,6 +629,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
                         f"for {cursor.hold_remaining_sec:g}s | {positions}"
                     )
                 for vehicle in scenario.vehicles:
+                    friction.update(fleet, simulation_time, vehicle.name, cursor.distance_m + vehicle.offset_m)
                     speed, steering = route_command(
                         geometry, cursor, vehicle, poses[vehicle.name], scenario.control
                     )
@@ -604,9 +658,25 @@ def execute_route(scenario: RouteScenario, pdu_def: Path) -> None:
     print("Route scenario finished; all vehicles stopped.")
 
 
-def execute(scenario: Scenario | RouteScenario, pdu_def: Path) -> None:
+def load_tire_grips(path: Path | None) -> dict[str, float]:
+    """{vehicle name: tire grip} from the builder's JSON (tools/multi_car.py); empty without one."""
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ScenarioError(f"{path}: tire grips must be a mapping of vehicle name to grip")
+    grips = {}
+    for name, value in data.items():
+        grip = finite_number(value, f"{path}: tire grip of {name}")
+        if grip <= 0.0:
+            raise ScenarioError(f"{path}: tire grip of {name} must be positive")
+        grips[str(name)] = grip
+    return grips
+
+
+def execute(scenario: Scenario | RouteScenario, pdu_def: Path, tire_grips: dict[str, float] | None = None) -> None:
     if isinstance(scenario, RouteScenario):
-        execute_route(scenario, pdu_def)
+        execute_route(scenario, pdu_def, tire_grips)
     else:
         execute_timed(scenario, pdu_def)
 
@@ -615,6 +685,10 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("scenario", type=Path)
     result.add_argument("--pdu-def", type=Path, default=DEFAULT_PDU_DEF)
+    result.add_argument(
+        "--tire-grip", type=Path,
+        help="JSON {vehicle name: tire grip}; a route's road_friction is multiplied by it",
+    )
     result.add_argument(
         "--dry-run", action="store_true",
         help="validate and summarize the scenario without connecting to Hakoniwa",
@@ -626,6 +700,7 @@ def main() -> int:
     args = parser().parse_args()
     scenario_path = args.scenario.expanduser().resolve()
     scenario = load_scenario(scenario_path)
+    tire_grips = load_tire_grips(args.tire_grip.expanduser().resolve() if args.tire_grip else None)
     if args.dry_run:
         if isinstance(scenario, RouteScenario):
             geometry = RouteGeometry(scenario.points)
@@ -643,7 +718,7 @@ def main() -> int:
                 f"duration={scenario.duration_sec:.2f}s rate={scenario.rate_hz:g}Hz"
             )
         return 0
-    execute(scenario, args.pdu_def.expanduser().resolve())
+    execute(scenario, args.pdu_def.expanduser().resolve(), tire_grips)
     return 0
 
 

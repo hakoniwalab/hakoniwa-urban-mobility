@@ -63,6 +63,7 @@ controls:
     program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
     scope: composition
     # One executor drives every api Car named in the scenario.
-    args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}"]
+    args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}",
+           "--tire-grip", "${runtime.tire_grip}"]
     params:
       scenario: {type: path, required: true, kinds: [car-route-scenario]}

@@ -276,6 +276,7 @@ def car_runtime(work: Path):
         values={
             "pdu_def": work / "config/car/urban-car-pdudef.json",
             "rc_config": ROOT / "config/car/dualsense-controller.json",
+            "tire_grip": work / "config/car/urban-car-tire-grip.json",
         },
         service_asset="urban-car-fleet-plant",
         python=str(multi_car.foundation_python()),

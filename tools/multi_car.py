@@ -45,6 +45,11 @@ DEFAULT_CONFIG = ROOT / "recipes/multi-car-viewer.yaml"
 FLEET_ASSET_NAME = "UrbanCarFleet"
 FLEET_PDU_ROBOT = "UrbanFleet"
 COMMAND_PDU = "ackermann_cmd"
+# A route's road friction times the vehicle's tire grip (apps/car/scenario_executor.py
+# TireFriction) reaches the runtime as this Float64 PDU; a Robot Runtime
+# geom_friction component applies it.
+TIRE_FRICTION_PDU = "tire_friction"
+TIRE_GEOMS = ("front_left_tire", "front_right_tire", "rear_left_tire", "rear_right_tire")
 CONTROL_MODES = {"external_python", "ps5"}
 
 
@@ -259,7 +264,11 @@ def resolve_explicit_route_scenario(value: object, vehicles: list[dict]) -> dict
         raise RecipeError(
             f"Car route scenario vehicles must use external_python control: {not_external}"
         )
-    return {"scenario": path, "auto_start_scenario": auto_start, "vehicles": sorted(names)}
+    # A route that sets road friction on its points needs the runtime to apply it.
+    tire_friction = any(getattr(point, "road_friction", None) is not None
+                        for point in getattr(scenario, "points", ()))
+    return {"scenario": path, "auto_start_scenario": auto_start, "vehicles": sorted(names),
+            "tire_friction": tire_friction}
 
 
 def expand_config_vehicle_inputs(
@@ -484,6 +493,7 @@ def resolve_config(config_path: Path) -> dict:
             height_key = "up_m" if has_absolute_height else "ground_clearance_m"
             height_value = float(spawn[height_key])
             yaw_deg = float(spawn["yaw_deg"])
+            tire_grip = float(vehicle_input.get("tire_grip", 1.0))
         except (KeyError, TypeError, ValueError) as error:
             raise RecipeError(f"invalid vehicle entry at index {index - 1}") from error
         if not name or name in names:
@@ -494,6 +504,8 @@ def resolve_config(config_path: Path) -> dict:
             east, north, height_value, yaw_deg
         )):
             raise RecipeError(f"spawn values must be finite for vehicle {name}")
+        if not math.isfinite(tire_grip) or tire_grip <= 0.0:
+            raise RecipeError(f"vehicle {name} tire_grip must be positive")
         if control_mode not in CONTROL_MODES:
             raise RecipeError(
                 f"vehicle {name} control_mode must be external_python or ps5"
@@ -506,6 +518,8 @@ def resolve_config(config_path: Path) -> dict:
             "type_definition": vehicle_types[type_name],
             "prefix": prefix,
             "control_mode": control_mode,
+            # Multiplies a route's road_friction (apps/car/scenario_executor.py).
+            "tire_grip": tire_grip,
             "spawn_enu": {
                 "frame": "city_origin_local_enu",
                 "east_m": east,
@@ -615,6 +629,11 @@ def resolve_config(config_path: Path) -> dict:
                     )
                 driven[name] = item["scenario"]
         route_scenario = route_scenarios[0] if len(route_scenarios) == 1 else None
+    for item in route_scenarios:
+        if item.get("tire_friction"):
+            for vehicle in vehicles:
+                if vehicle["name"] in item["vehicles"]:
+                    vehicle["tire_friction"] = True
     return {
         "raw": config,
         "path": config_path.resolve(),
@@ -993,6 +1012,21 @@ def materialize_vehicle_fleet_model(
         prefix = vehicle["prefix"]
         body = copy.deepcopy(template_body)
         _namespace_mjcf(body, names, prefix, asset_names, asset_prefix)
+        if vehicle.get("tire_friction"):
+            # Its route sets the tires' friction (a geom_friction component):
+            # MuJoCo takes the larger friction of two touching geoms unless one
+            # has the higher priority, so the tires get priority 1 over the
+            # World's 0 and their friction holds (the default 1.6 still does).
+            tires = {prefix + geom: None for geom in TIRE_GEOMS}
+            for geom in body.iter("geom"):
+                if geom.get("name") in tires:
+                    geom.set("priority", "1")
+                    tires[geom.get("name")] = geom
+            missing = sorted(name for name, geom in tires.items() if geom is None)
+            if missing:
+                raise RecipeError(
+                    f"vehicle {vehicle['name']} sets tire friction but its model has no tire geoms {missing}"
+                )
         # Vehicle spawn poses are runtime state, not model structure. Keeping
         # them out of MJCF lets the expensive City World MJB remain reusable.
         worldbody_output.append(body)
@@ -1223,6 +1257,23 @@ def _materialize_vehicle_configs(work: Path, vehicle: dict) -> tuple[list[dict],
         "config": str(controller_path),
         "pdu_robot": name,
     })
+    if vehicle.get("tire_friction"):
+        # Its route sets road friction: the four tires take the tire_friction
+        # PDU (and win over the World's friction by the geom priority the
+        # fleet MJCF gives them, materialize_vehicle_fleet_model).
+        friction_path = work / f"{key}-tire-friction.json"
+        write_json(friction_path, {
+            "schema_version": 1,
+            "spec": {"geoms": [prefix + geom for geom in TIRE_GEOMS]},
+            "input": {"pdu_name": TIRE_FRICTION_PDU, "message_type": "std_msgs/Float64"},
+        })
+        components.append({
+            "id": prefix + "tire_friction",
+            "kind": "controller",
+            "type": "geom_friction",
+            "config": str(friction_path),
+            "pdu_robot": name,
+        })
     return components, joints
 
 
@@ -1255,6 +1306,8 @@ def materialize_runtime(
         {"channel_id": 3, "pdu_size": 32, "name": "rear_left_wheel_target",
          "type": "std_msgs/Float64"},
         {"channel_id": 4, "pdu_size": 32, "name": "rear_right_wheel_target",
+         "type": "std_msgs/Float64"},
+        {"channel_id": 5, "pdu_size": 32, "name": TIRE_FRICTION_PDU,
          "type": "std_msgs/Float64"},
     ]
     state_pdu_types = [
@@ -1301,7 +1354,8 @@ def materialize_runtime(
         *[{
             "name": vehicle["name"],
             "pdu": [
-                {"name": item["name"], "notify_on_recv": item["name"] == COMMAND_PDU}
+                # The runtime takes these on receive events.
+                {"name": item["name"], "notify_on_recv": item["name"] in (COMMAND_PDU, TIRE_FRICTION_PDU)}
                 for item in command_pdu_types
             ],
         } for vehicle in vehicles],
@@ -1458,6 +1512,9 @@ def materialize_runtime(
     }
     manifest_path = work / "urban-car-asset-manifest.json"
     write_json(manifest_path, manifest)
+    # Each vehicle's tire grip for the route executors (--tire-grip).
+    tire_grip_path = work / "urban-car-tire-grip.json"
+    write_json(tire_grip_path, {vehicle["name"]: vehicle.get("tire_grip", 1.0) for vehicle in vehicles})
     return {
         "runtime": runtime_path,
         "pdu_def": pdu_def_path,
@@ -1466,6 +1523,7 @@ def materialize_runtime(
         "endpoint": endpoint_path,
         "comm": comm_path,
         "manifest": manifest_path,
+        "tire_grip": tire_grip_path,
     }
 
 
@@ -1843,6 +1901,8 @@ def materialize_launcher(
                 str(source["scenario_executor"]),
                 str(scenario_source["scenario"]),
                 "--pdu-def", str(runtime_files["pdu_def"]),
+                # Written next to the pdudef by materialize_runtime.
+                "--tire-grip", str(Path(runtime_files["pdu_def"]).with_name("urban-car-tire-grip.json")),
             ],
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,
