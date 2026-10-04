@@ -42,3 +42,19 @@ def route_line(corners: Sequence[tuple[float, float]], ground: Callable[[float, 
         up = height
         points.append({"east_m": round(east, 2), "north_m": round(north, 2), "up_m": round(height + CLEARANCE_M, 2)})
     return points, corner_index
+
+
+def section_values(corner_index: Sequence[int], values: Sequence[float | None], count: int) -> list[float | None]:
+    """The value each of count samples is in: a route point's value holds to the
+    next point that sets one, round the loop (as apps/car/scenario_executor.py
+    TireFriction); all None when no point sets one."""
+    marks = [(at, value) for at, value in zip(corner_index, values) if value is not None]
+    if not marks:
+        return [None] * count
+    result, current, next_mark = [], marks[-1][1], 0
+    for index in range(count):
+        while next_mark < len(marks) and marks[next_mark][0] <= index:
+            current = marks[next_mark][1]
+            next_mark += 1
+        result.append(current)
+    return result

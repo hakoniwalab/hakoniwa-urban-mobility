@@ -173,14 +173,15 @@
             </div>
           </div>
           <div id="route-3d" class="placement-view"></div>
-          <p class="hint">青い線がルートで、その下の面（道路・橋の上）の高さに沿って描きます。橋の下を通るところは道路の高さです。建物の壁にぶつかる区間は赤です。</p>
+          <p class="hint">青い線がルートで、その下の面（道路・橋の上）の高さに沿って描きます。橋の下を通るところは道路の高さです。路面摩擦を設定したルートは、区間ごとに滑りやすさの色（緑 乾燥・黄 濡れ・橙 雪・紫 氷）で描きます。建物の壁にぶつかる区間は赤です。</p>
           <div class="row between">
             <h3>点</h3>
             <button id="route-add-point" class="secondary">点を追加</button>
           </div>
           <ul id="route-conflicts" class="conflicts" hidden></ul>
           <p id="route-clearance" class="hint"></p>
-          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th></th></tr></thead><tbody></tbody></table>
+          <table class="grid" id="route-points"><thead><tr><th>#</th><th>名前</th><th>east (m)</th><th>north (m)</th><th>停車 (s)</th><th title="この点から次に設定した点までの路面の摩擦係数（空欄は変えない）。目安: 乾いた舗装 0.8〜1.0、濡れた舗装 0.4〜0.6、雪 0.2〜0.3、氷 0.05〜0.1。タイヤには車両のタイヤグリップを掛けた値が入ります">路面摩擦</th><th></th></tr></thead><tbody></tbody></table>
+          <p class="hint">路面摩擦の目安（線の色）: <span class="friction-swatch" style="background:#43a047"></span>乾いた舗装 0.8〜1.0（0.7 以上）、<span class="friction-swatch" style="background:#fdd835"></span>濡れた舗装 0.4〜0.6（0.35 以上）、<span class="friction-swatch" style="background:#fb8c00"></span>雪 0.2〜0.3（0.15 以上）、<span class="friction-swatch" style="background:#8e24aa"></span>氷 0.05〜0.1。実際にタイヤに効くのは「路面摩擦 × 車両のタイヤグリップ（Composition、既定 1.0）」です。どの点にも設定しなければ、タイヤはモデルの摩擦のままです。</p>
           <div class="row between footer">
             <div id="route-status" class="status" role="status"></div>
             <div class="row">

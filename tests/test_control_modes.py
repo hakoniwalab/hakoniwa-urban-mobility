@@ -408,6 +408,48 @@ class ControlModeTest(unittest.TestCase):
         self.assertEqual(sorted(joint["name"] for joint in joints), sorted(f"{vehicle['name']}/{name}" for name in (
             "front_left_steering_joint", "front_right_steering_joint", "rear_left_wheel_joint", "rear_right_wheel_joint")))
 
+    def test_a_car_on_a_route_with_tire_friction_gets_a_friction_component(self):
+        [vehicle, *_] = multi_car.resolve_config(ROOT / "recipes/multi-car-viewer.yaml")["vehicles"]
+        with tempfile.TemporaryDirectory() as directory:
+            components, _ = multi_car._materialize_vehicle_configs(Path(directory), vehicle)
+            self.assertNotIn("geom_friction", [item["type"] for item in components])
+            components, _ = multi_car._materialize_vehicle_configs(Path(directory), {**vehicle, "tire_friction": True})
+            [friction] = [item for item in components if item["type"] == "geom_friction"]
+            self.assertEqual((friction["kind"], friction["pdu_robot"]), ("controller", vehicle["name"]))
+            config = json.loads(Path(friction["config"]).read_text(encoding="utf-8"))
+        # Priority is the model's (below), not the runtime's.
+        self.assertEqual(config["spec"], {"geoms": [vehicle["prefix"] + geom for geom in multi_car.TIRE_GEOMS]})
+        self.assertEqual(config["input"], {"pdu_name": "tire_friction", "message_type": "std_msgs/Float64"})
+
+    def test_the_tires_of_a_friction_car_win_by_geom_priority_in_the_fleet_model(self):
+        import xml.etree.ElementTree as ET
+
+        resolved = multi_car.resolve_config(ROOT / "recipes/multi-car-viewer.yaml")
+        first, *others = resolved["vehicles"]
+        vehicles = [{**first, "tire_friction": True}, *others]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "fleet.xml"
+            multi_car.materialize_vehicle_fleet_model(output, vehicles)
+            priorities = {geom.get("name"): geom.get("priority") for geom in ET.parse(output).getroot().iter("geom")}
+        for geom in multi_car.TIRE_GEOMS:
+            self.assertEqual(priorities[first["prefix"] + geom], "1")
+            self.assertEqual(priorities[first["prefix"] + geom + "_visual"], None)
+            for other in others:
+                self.assertIsNone(priorities[other["prefix"] + geom])
+
+    def test_a_vehicles_tire_grip_defaults_to_one_and_must_be_positive(self):
+        import yaml
+
+        recipe = ROOT / "recipes/experiments/urban-car-one.yaml"
+        config = yaml.safe_load(recipe.read_text(encoding="utf-8"))
+        self.assertTrue(all(vehicle["tire_grip"] == 1.0 for vehicle in multi_car.resolve_config(recipe)["vehicles"]))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "grip.yaml"
+            config["inputs"]["ackermann_vehicles"]["vehicles"][0]["tire_grip"] = -1
+            path.write_text(yaml.safe_dump(config), encoding="utf-8")
+            with self.assertRaisesRegex(multi_car.RecipeError, "tire_grip must be positive"):
+                multi_car.resolve_config(path)
+
     def test_a_vehicle_takes_its_types_front_camera(self):
         shared = {"position": [1.25, 0.0, 1.25]}
         own = {"position": [1.15, 0.0, 0.80]}
@@ -440,6 +482,10 @@ class ControlModeTest(unittest.TestCase):
                  if item["kind"] == "state_output"],
                 ["UrbanFleet", "UrbanFleet"],
             )
+            # Every car can take a tire friction (only a friction route sends one).
+            command_types = json.loads(files["command_pdu_types"].read_text(encoding="utf-8"))
+            self.assertIn(("tire_friction", "std_msgs/Float64"),
+                          [(item["name"], item["type"]) for item in command_types])
             state_pdu_types = json.loads(
                 files["state_pdu_types"].read_text(encoding="utf-8")
             )

@@ -253,6 +253,28 @@ class AckermannFleetClient:
                 )
             time.sleep(min(0.002, 0.25 / self.rate_hz))
 
+    def send_float64(self, robot: str, pdu: str, value: float) -> bool:
+        """Write one std_msgs/Float64 PDU of a managed robot (e.g. tire_friction);
+        False when the robot has no such PDU."""
+        if robot not in self.robots:
+            raise ValueError(f"robot is not managed by this client: {robot}")
+        if self._transport is None:
+            raise AckermannClientError("client is not connected")
+        from pdu.python.std_msgs.pdu_conv_Float64 import py_to_pdu_Float64
+        from pdu.python.std_msgs.pdu_pytype_Float64 import Float64
+
+        message = Float64()
+        message.data = float(value)
+        payload = py_to_pdu_Float64(message)
+        deadline = time.monotonic() + self.publish_timeout_sec
+        while not self._transport.send(robot, pdu, payload):
+            if self._transport._channels.get_pdu_channel_id(robot, pdu) < 0:
+                return False
+            if time.monotonic() >= deadline:
+                raise AckermannClientError(f"timed out publishing {robot}/{pdu}")
+            time.sleep(min(0.002, 0.25 / self.rate_hz))
+        return True
+
     def vehicle_poses(
         self,
         state_robot: str = "UrbanFleet",

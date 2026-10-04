@@ -23,8 +23,10 @@ set(HAKONIWA_PDU_REGISTRY_ROOT "${_pdu_registry_default}" CACHE PATH
 set(HAKONIWA_FOUNDATION_PREFIX "${_foundation_default}" CACHE PATH
     "Hakoniwa Foundation installation")
 option(HAKO_URBAN_ENABLE_VIEWER "Build the native MuJoCo viewer" ON)
+# Builds the opt-in Robot Runtime Plant Directive path (Mirror + geom friction)
+# by defining HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE.
 option(HAKO_URBAN_ENABLE_MIRROR
-    "Build the opt-in Robot Runtime Mirror extension" OFF)
+    "Build the opt-in Robot Runtime Plant Directive extension (Mirror, geom friction)" OFF)
 
 foreach(required_path IN ITEMS
     "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src/runtime/actuator_runtime.cpp"
@@ -119,8 +121,10 @@ if(HAKO_URBAN_ENABLE_MIRROR)
     target_sources(urban-car-hakoniwa-asset PRIVATE
         ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
         ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
         ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp
         ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp
         ${RUNTIME_SRC}/adapters/endpoint/mirror_body_twist_pdu_reader.cpp
         ${RUNTIME_SRC}/adapters/endpoint/impulse_collision_pdu_writer.cpp)
 endif()
@@ -137,7 +141,7 @@ endif()
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
-    HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
+    HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
     ${RUNTIME_INCLUDE}
@@ -191,7 +195,7 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
     target_compile_features(hako-mirror-mujoco-plant-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-mujoco-plant-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
     target_include_directories(hako-mirror-mujoco-plant-test PRIVATE
         ${RUNTIME_INCLUDE}
         ${RUNTIME_SRC}
@@ -214,10 +218,11 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
         ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
         ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp)
+        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp)
     target_compile_features(hako-mirror-configuration-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-configuration-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
     target_include_directories(hako-mirror-configuration-test PRIVATE
         ${RUNTIME_INCLUDE}
         ${RUNTIME_SRC}
@@ -232,8 +237,70 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp)
     target_compile_features(hako-mirror-runtime-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-runtime-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_MIRROR=1)
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
     target_include_directories(hako-mirror-runtime-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC})
+
+    add_executable(hako-geom-friction-mujoco-plant-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_mujoco_plant.cpp
+        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
+    target_compile_features(hako-geom-friction-mujoco-plant-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-geom-friction-mujoco-plant-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+    target_include_directories(hako-geom-friction-mujoco-plant-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC}
+        ${HAKO_MUJOCO_ROOT}/src
+        ${HAKO_MUJOCO_ROOT}/include)
+    target_include_directories(hako-geom-friction-mujoco-plant-test SYSTEM PRIVATE
+        ${HAKO_MUJOCO_INCLUDE})
+    if(HAKO_MUJOCO_LIB_DIR)
+        target_link_directories(hako-geom-friction-mujoco-plant-test PRIVATE
+            ${HAKO_MUJOCO_LIB_DIR})
+    endif()
+    target_link_libraries(hako-geom-friction-mujoco-plant-test PRIVATE
+        mujoco-common
+        ${HAKO_MUJOCO_LIBRARY})
+
+    add_executable(hako-geom-friction-configuration-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_configuration.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_manifest.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_actuator.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp)
+    target_compile_features(hako-geom-friction-configuration-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-geom-friction-configuration-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+    target_include_directories(hako-geom-friction-configuration-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC}
+        ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
+
+    add_executable(hako-geom-friction-runtime-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_runtime.cpp
+        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
+        ${RUNTIME_SRC}/runtime/runtime_factory.cpp
+        ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp
+        ${RUNTIME_SRC}/runtime/source/joint_trajectory_command_source.cpp
+        ${RUNTIME_SRC}/runtime/source/joy_command_source.cpp
+        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
+        ${RUNTIME_SRC}/runtime/controller/scalar_pdu_command_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/joint_trajectory_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/manual_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/hold_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
+        ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
+        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
+        ${RUNTIME_SRC}/runtime/publisher/joint_state_publisher.cpp
+        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp)
+    target_compile_features(hako-geom-friction-runtime-test PRIVATE cxx_std_20)
+    target_compile_definitions(hako-geom-friction-runtime-test PRIVATE
+        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+    target_include_directories(hako-geom-friction-runtime-test PRIVATE
         ${RUNTIME_INCLUDE}
         ${RUNTIME_SRC})
 
@@ -267,6 +334,12 @@ if(BUILD_TESTING)
         COMMAND hako-mirror-mujoco-plant-test)
     add_test(NAME hako-mirror-configuration-contract
         COMMAND hako-mirror-configuration-test)
+    add_test(NAME hako-geom-friction-runtime-contract
+        COMMAND hako-geom-friction-runtime-test)
+    add_test(NAME hako-geom-friction-mujoco-plant-contract
+        COMMAND hako-geom-friction-mujoco-plant-test)
+    add_test(NAME hako-geom-friction-configuration-contract
+        COMMAND hako-geom-friction-configuration-test)
     add_test(NAME urban-car-control-mode-contract
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"

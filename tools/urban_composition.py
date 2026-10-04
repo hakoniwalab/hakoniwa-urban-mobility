@@ -79,6 +79,8 @@ class Vehicle:
     # Composition replacement of the manifest control program (section 5.2).
     program: str | None = None
     args: tuple[str, ...] | None = None
+    # Cars only: multiplies a route's road_friction (section 5.1); None is 1.0.
+    tire_grip: float | None = None
 
 
 @dataclass(frozen=True)
@@ -173,9 +175,16 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
         if not isinstance(args, list) or not all(isinstance(arg, (str, int, float)) for arg in args):
             raise CompositionError(f"vehicle {name} args must be a list of scalars")
         args = tuple(str(arg) for arg in args)
+    tire_grip = entry.get("tire_grip")
+    if tire_grip is not None:
+        if asset.category != "car":
+            raise CompositionError(f"vehicle {name}: tire_grip is only for Cars")
+        tire_grip = _finite(tire_grip, f"vehicle {name} tire_grip")
+        if tire_grip <= 0.0:
+            raise CompositionError(f"vehicle {name} tire_grip must be positive")
     return Vehicle(
         name=name, asset=asset, control=control, params=params, spawn=spawn,
-        program=program, args=args,
+        program=program, args=args, tire_grip=tire_grip,
     )
 
 
@@ -600,6 +609,7 @@ def _car_inputs(
                     # plus the Asset clearance (section 5.4).
                     "up_m": _spawn_up(car, ground),
                 },
+                **({"tire_grip": car.tire_grip} if car.tire_grip is not None else {}),
             }
             for car in cars
         ],

@@ -189,5 +189,6 @@ button.active { outline: 2px solid #ffb300; }
 .asset-card-meta { color: var(--muted); font-size: 12px; display: grid; gap: 1px; margin-top: 4px; }
 .asset-card-meta code { font-size: 11px; }
 .hint.warn { color: var(--danger); }
+.friction-swatch { display: inline-block; width: 18px; height: 4px; margin: 0 4px 2px 2px; border-radius: 2px; vertical-align: middle; }
 .vehicle.fleet { border-style: dashed; }
 button.danger { color: var(--danger); border-color: var(--danger); }
