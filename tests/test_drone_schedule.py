@@ -154,15 +154,49 @@ class DroneScheduleTest(unittest.TestCase):
         car = SimpleNamespace(name="Car-1", control="api", params={})
         composition = self.directory / "composition.yaml"
         with mock.patch.object(urban_simulation, "load_composition", return_value=SimpleNamespace(vehicles=[car, drone])):
-            urban_simulation.write_viewer_flight_paths([viewer], composition, marker)
+            urban_simulation.write_viewer_planned_paths([viewer], composition, marker)
         written = json.loads(viewer.read_text(encoding="utf-8"))
         self.assertEqual(written["ui"], {})
         self.assertEqual([path["drone"] for path in written["flightPaths"]], ["Drone-1"])
         self.assertEqual(written["flightPaths"][0]["points"][0]["east_m"], 82.0)
         # Without a schedule Drone the path is cleared.
         with mock.patch.object(urban_simulation, "load_composition", return_value=SimpleNamespace(vehicles=[car])):
-            urban_simulation.write_viewer_flight_paths([viewer], composition, marker)
+            urban_simulation.write_viewer_planned_paths([viewer], composition, marker)
         self.assertNotIn("flightPaths", json.loads(viewer.read_text(encoding="utf-8")))
+
+    def test_a_car_route_for_the_viewer_stays_on_the_road_under_a_bridge(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import urban_simulation
+
+        route = self.directory / "loop.yaml"
+        route.write_text(textwrap.dedent("""
+            schema_version: 2
+            name: Loop
+            rate_hz: 50
+            loop_count: forever
+            vehicles: [{name: Car-1, route_offset_m: 0}]
+            control: {speed_m_s: 3, lookahead_m: 4, position_gain: 0.8, wheelbase_m: 1.55, max_steering_deg: 32}
+            route: {closed: true, points: [{east_m: 0, north_m: 0}, {east_m: 20, north_m: 0}, {east_m: 20, north_m: 4}]}
+        """), encoding="utf-8")
+
+        class Ground:  # a road at 4.5 m with a bridge deck at 11 m over east 8..12
+            def __call__(self, east, north):
+                return 11.0 if 8 <= east <= 12 else 4.5
+
+            def ground_below(self, east, north, from_up):
+                return 11.0 if 8 <= east <= 12 and from_up > 11.0 else 4.5
+
+        car = SimpleNamespace(name="Car-1", control="api", params={"scenario": str(route)},
+                              asset=SimpleNamespace(category="car"))
+        composition = SimpleNamespace(vehicles=[car], path=self.directory / "composition.yaml")
+        with mock.patch.object(urban_simulation, "load_composition", return_value=composition):
+            [path] = urban_simulation.route_paths(composition.path, Ground())
+        self.assertEqual((path["route"], path["vehicles"], path["closed"]), ("Loop", ["Car-1"], True))
+        under = [point for point in path["points"] if 8 <= point["east_m"] <= 12 and point["north_m"] == 0]
+        self.assertTrue(under)
+        self.assertEqual({point["up_m"] for point in under}, {4.8})  # the road, not the bridge
 
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):
         import urban_assets

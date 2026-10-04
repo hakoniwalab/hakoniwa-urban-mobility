@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -465,20 +466,81 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     multi_car.write_json(launcher_path, launcher)
     if target.use_case == "drone-car-distributed":
-        write_viewer_flight_paths(
+        write_viewer_planned_paths(
             sorted((target.work / "config/threejs").glob("viewer-config*.json")),
             composition_path,
             drone_one._paths(target.recipe_id).recipe_config / "mujoco-city-fleet.json",
         )
 
 
-def write_viewer_flight_paths(viewer_configs: list[Path], composition_path: Path, city_marker: Path) -> list[dict]:
-    """Put the planned line of each schedule-flown Drone into the Viewer configs.
+# Route lines are drawn this far above the surface, sampled this often.
+ROUTE_PATH_CLEARANCE_M = 0.3
+ROUTE_PATH_STEP_M = 1.0
+# A route sample looks down from this far above the previous one, so under a
+# bridge it finds the road, not the bridge.
+ROUTE_PATH_LOOK_ABOVE_M = 2.0
 
-    The Viewer draws it on request ("Flight path" in its panel). The line comes
-    from the same steps the Drone flies (apps/drone/drone_schedule.py
-    flight_path) from its runtime spawn in the City marker. A Composition
-    without such a Drone clears it.
+
+def route_paths(composition_path: Path, ground=None) -> list[dict]:
+    """The routes the api Cars drive, as lines on the World for the Viewer.
+
+    Each route scenario once (the Cars that drive it listed), its loop sampled
+    every ROUTE_PATH_STEP_M with the height of the surface under it: the first
+    point on the top of the World (where the Cars start), every next one looking
+    down from just above the previous (World heights ground_below), so a road
+    under a bridge stays on the road.
+    """
+    import urban_composition
+
+    composition = load_composition(composition_path)
+    routes: dict[Path, list[str]] = {}
+    for vehicle in composition.vehicles:
+        if vehicle.control == "api" and vehicle.params.get("scenario") and vehicle.asset.category == "car":
+            path = urban_composition._param_path(composition, vehicle.params["scenario"])
+            routes.setdefault(path, []).append(vehicle.name)
+    if not routes:
+        return []
+    if ground is None:
+        ground = urban_composition._ground(composition, None)
+    below = getattr(ground, "ground_below", None)
+    sys.path.insert(0, str(ROOT / "apps/car"))
+    try:
+        import scenario_executor
+    finally:
+        sys.path.remove(str(ROOT / "apps/car"))
+    paths = []
+    for path, names in routes.items():
+        scenario = scenario_executor.load_scenario(path)
+        if not isinstance(scenario, scenario_executor.RouteScenario):
+            continue
+        corners = [(point.east_m, point.north_m) for point in scenario.points]
+        samples = []
+        for (e0, n0), (e1, n1) in zip(corners, corners[1:] + corners[:1]):  # a loop
+            steps = max(1, int(math.dist((e0, n0), (e1, n1)) // ROUTE_PATH_STEP_M))
+            samples += [(e0 + (e1 - e0) * k / steps, n0 + (n1 - n0) * k / steps) for k in range(steps)]
+        points, up = [], None
+        for east, north in samples:
+            if up is None or below is None:
+                height = float(ground(east, north))
+            else:
+                found = below(east, north, up + ROUTE_PATH_LOOK_ABOVE_M)
+                height = up if found is None else float(found)
+            up = height
+            points.append({"east_m": round(east, 2), "north_m": round(north, 2),
+                           "up_m": round(height + ROUTE_PATH_CLEARANCE_M, 2)})
+        paths.append({"route": scenario.name, "vehicles": names, "closed": True, "points": points})
+    return paths
+
+
+def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Path, city_marker: Path,
+                               ground=None) -> dict:
+    """Put the planned paths into the Viewer configs: the line of each
+    schedule-flown Drone (flightPaths) and each api Car route (routePaths).
+
+    The Viewer draws them on request ("Planned path" in its panel). A Drone's
+    line comes from the same steps it flies (apps/drone/drone_schedule.py
+    flight_path) from its runtime spawn in the City marker; a route from
+    route_paths. A Composition without them clears them.
     """
     import multi_car
     import urban_assets
@@ -500,14 +562,16 @@ def write_viewer_flight_paths(viewer_configs: list[Path], composition_path: Path
         except (urban_assets.AssetError, drone_schedule.ScheduleError, OSError) as exc:
             raise SimulationError(f"{vehicle.name}: no flight path for the Viewer: {exc}") from exc
         paths.append({"drone": vehicle.name, "points": drone_schedule.flight_path(schedule, spawn, yaw)})
+    routes = route_paths(composition_path, ground)
     for path in viewer_configs:
         viewer = multi_car.load_json(path, "Viewer config")
-        if paths:
-            viewer["flightPaths"] = paths
-        else:
-            viewer.pop("flightPaths", None)
+        for key, value in (("flightPaths", paths), ("routePaths", routes)):
+            if value:
+                viewer[key] = value
+            else:
+                viewer.pop(key, None)
         multi_car.write_json(path, viewer)
-    return paths
+    return {"flightPaths": paths, "routePaths": routes}
 
 
 # --- Drone route (tools/drone_one.py) --------------------------------------------------

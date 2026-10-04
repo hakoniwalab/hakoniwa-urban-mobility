@@ -328,6 +328,16 @@ class WorldHeight:
             point[2] = hit - 1.0e-6
         raise WorldHeightError(f"too many non-colliding geoms above east={east_m} m, north={north_m} m")
 
+    def ground_below(self, east_m: float, north_m: float, from_up_m: float) -> float | None:
+        """The top of the World under a point looking down from from_up_m, so
+        under a bridge it is the road, not the bridge; None when nothing is below."""
+        hits = [
+            hit for hit in (self._hit(model, data, east_m, north_m, mask, min(from_up_m, start))
+                            for model, data, mask, start in zip(self.models, self.datas, self.masks, self.ray_starts))
+            if hit is not None
+        ]
+        return max(hits) if hits else None
+
     def first_hit(self, start_enu, end_enu) -> tuple[float, str] | None:
         """The first colliding geom on the segment start -> end (Urban ENU metres):
         (distance from start in metres, geom name), or None when the way is clear.
