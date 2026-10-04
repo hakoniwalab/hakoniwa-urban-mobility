@@ -280,19 +280,26 @@ along the route; its placed spawn is not used. Route files are never modified.
 ### 4.4 Road friction and tire grip (Car routes)
 
 A Car route point may set `road_friction`: the road's friction coefficient
-from that point to the next point that sets one (round the loop). A Car's
-`tire_grip` (Composition, section 5.1; default 1.0) multiplies it, and the
-route executor sends the product to that Car's tires as the `tire_friction`
-PDU (std_msgs/Float64) whenever the Car enters a section with another value:
+on the leg from that point to the next one. A Car's `tire_grip` (Composition,
+section 5.1; default 1.0) multiplies it, and the route executor sends the
+product to that Car's tires as the `tire_friction` PDU (std_msgs/Float64)
+whenever the Car enters a leg with another value. A leg without
+`road_friction` has the model's tire friction (sent back when the Car leaves
+a leg that set one; the builder reads it from the vehicle model):
 
-    tire friction = road_friction x tire_grip
+    tire friction = road_friction x tire_grip    (a leg with road_friction)
+                  = the model's tire friction    (a leg without, e.g. 1.6)
 
 ```yaml
 route:
   points:
-    - {name: koen-dori-in, east_m: 120.0, north_m: -40.0, road_friction: 0.3}  # snow from here
-    - {name: koen-dori-out, east_m: 220.0, north_m: -40.0, road_friction: 0.9} # dry again
+    - {name: koen-dori-in, east_m: 120.0, north_m: -40.0, road_friction: 0.3}  # snow to the next point
+    - {name: koen-dori-mid, east_m: 170.0, north_m: -40.0, road_friction: 0.3} # snow on this leg too
+    - {name: koen-dori-out, east_m: 220.0, north_m: -40.0}                     # the model's from here
 ```
+
+0 is no friction at all: the wheels spin in place and the Car cannot drive
+or steer on that leg (it only coasts through on its speed).
 
 Guideline values for `road_friction` (sliding friction, rubber on the surface):
 
@@ -305,7 +312,7 @@ Guideline values for `road_friction` (sliding friction, rubber on the surface):
 
 The route line is drawn in the band's colour (Studio Route tab map and 3D
 view, and the Viewer's planned path): green dry (0.7 and up), yellow wet
-(0.35 and up), orange snow (0.15 and up), purple ice. A route without
+(0.35 and up), orange snow (0.15 and up), purple ice. A leg without
 `road_friction` keeps its usual blue.
 
 `tire_grip` is the tire's share: 1.0 standard, about 1.2 for a high-grip
@@ -320,7 +327,8 @@ the fleet MJCF. MuJoCo otherwise takes the larger friction of two touching
 geoms (the World's surfaces are 1.0), so a lower value would have no effect;
 with the priority, the tire's friction is the contact's. A Car whose route
 sets no `road_friction` keeps the model unchanged (tire friction 1.6, the
-model's own value, which already won over the World's 1.0). The value is
+model's own value, which already won over the World's 1.0), and so does an
+`rc` Car (no route). The value is
 written in one Hakoniwa step and applies from the next physics step.
 
 ## 5. Composition

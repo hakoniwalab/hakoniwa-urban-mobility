@@ -199,18 +199,18 @@ class DroneScheduleTest(unittest.TestCase):
         self.assertEqual({point["up_m"] for point in under}, {4.8})  # the road, not the bridge
         self.assertTrue(all("road_friction" not in point for point in path["points"]))  # none set
 
-        # A point's road friction holds to the next point that sets one, round the loop.
+        # A point's road friction is its leg's: here the one from (20, 0) to (20, 4).
         route.write_text(route.read_text(encoding="utf-8").replace(
             "{east_m: 20, north_m: 0}", "{east_m: 20, north_m: 0, road_friction: 0.1}"), encoding="utf-8")
         with mock.patch.object(urban_simulation, "load_composition", return_value=composition):
             [path] = urban_simulation.route_paths(composition.path, Ground())
-        frictions = {(point["east_m"], point["north_m"]): point["road_friction"] for point in path["points"]}
-        self.assertEqual({frictions[(0.0, 0.0)], frictions[(10.0, 0.0)], frictions[(20.0, 2.0)]}, {0.1})
+        frictions = {(point["east_m"], point["north_m"]): point.get("road_friction") for point in path["points"]}
+        self.assertEqual((frictions[(0.0, 0.0)], frictions[(10.0, 0.0)], frictions[(20.0, 2.0)]), (None, None, 0.1))
         import route_line
 
         # Corners at samples 0, 3, 6 of 8; points 2 and 3 set 0.4 and 0.9.
         self.assertEqual(route_line.section_values([0, 3, 6], [None, 0.4, 0.9], 8),
-                         [0.9, 0.9, 0.9, 0.4, 0.4, 0.4, 0.9, 0.9])
+                         [None, None, None, 0.4, 0.4, 0.4, 0.9, 0.9])
         self.assertEqual(route_line.section_values([0, 3], [None, None], 4), [None] * 4)
 
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):

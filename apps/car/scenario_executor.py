@@ -500,50 +500,62 @@ def yield_to(name: str, poses: dict[str, VehiclePose]) -> tuple[str, float] | No
 TIRE_FRICTION_PDU = "tire_friction"
 
 
-class TireFriction:
-    """The tires' friction by route section, sent to each vehicle as it goes.
+# The tires' own friction in the hakoniwa car and cart models; the builder
+# gives each vehicle's from its model (load_tires), this is only the fallback.
+MODEL_TIRE_FRICTION = 1.6
 
-    A point's road_friction holds from that point to the next point that sets
-    one (round the loop); a vehicle's tires get it times the vehicle's tire
-    grip (the Composition's tire_grip, default 1.0). A vehicle takes a section's value when its route
-    target (the cursor plus its offset; the vehicle is a few metres behind)
-    enters the section, so the change follows the route and does not jump
+
+@dataclass(frozen=True)
+class Tire:
+    grip: float = 1.0                              # the Composition's tire_grip
+    model_friction: float = MODEL_TIRE_FRICTION    # the tires' friction in the model
+
+
+class TireFriction:
+    """The tires' friction by route leg, sent to each vehicle as it goes.
+
+    A point's road_friction is the road's friction on the leg from that point
+    to the next one; a vehicle's tires get it times the vehicle's tire grip.
+    A leg without one keeps the model's tire friction (sent back when a
+    vehicle leaves a leg that set one). A vehicle takes a leg's value when its
+    route target (the cursor plus its offset; the vehicle is a few metres
+    behind) enters the leg, so the change follows the route and does not jump
     when a sliding vehicle is closer to another part of it. Nothing is sent
-    for a route without road_friction: the tires keep the model's friction.
+    for a route without road_friction.
     """
 
-    def __init__(self, geometry: RouteGeometry, grips: dict[str, float] | None = None):
-        self.grips = dict(grips or {})
+    def __init__(self, geometry: RouteGeometry, tires: dict[str, Tire] | None = None):
+        self.tires = dict(tires or {})
         self.length = geometry.length
-        starts = [0.0]
+        self.starts = [0.0]
         for length in geometry.segment_lengths[:-1]:
-            starts.append(starts[-1] + length)
-        self.marks = [(start, point.road_friction)
-                      for start, point in zip(starts, geometry.points) if point.road_friction is not None]
+            self.starts.append(self.starts[-1] + length)
+        self.values = [point.road_friction for point in geometry.points]
+        self.any = any(value is not None for value in self.values)
         self.sent: dict[str, float] = {}
 
     def value_at(self, distance_m: float) -> float | None:
-        if not self.marks:
-            return None
+        """The road friction of the leg at distance_m round the loop (None: the model's)."""
         s = distance_m % self.length
-        before = [value for start, value in self.marks if start <= s + 1e-9]
-        return before[-1] if before else self.marks[-1][1]  # before the first mark: the last one, round the loop
+        leg = max(index for index, start in enumerate(self.starts) if start <= s + 1e-9)
+        return self.values[leg]
 
     def update(self, fleet, simulation_time: float, name: str, distance_m: float) -> None:
-        road = self.value_at(distance_m)
-        if road is None:
+        if not self.any:
             return
-        grip = self.grips.get(name, 1.0)
-        value = road * grip
-        if self.sent.get(name) == value:
+        tire = self.tires.get(name, Tire())
+        road = self.value_at(distance_m)
+        value = tire.model_friction if road is None else road * tire.grip
+        # Until something is sent the tires have the model's friction.
+        if self.sent.get(name, tire.model_friction) == value:
             return
         if fleet.send_float64(name, TIRE_FRICTION_PDU, value):
-            print(f"[{simulation_time:9.3f}] {name} tire friction {value:g} "
-                  f"(road {road:g} x grip {grip:g})", flush=True)
+            source = "model" if road is None else f"road {road:g} x grip {tire.grip:g}"
+            print(f"[{simulation_time:9.3f}] {name} tire friction {value:g} ({source})", flush=True)
             self.sent[name] = value
 
 
-def execute_route(scenario: RouteScenario, pdu_def: Path, tire_grips: dict[str, float] | None = None) -> None:
+def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None) -> None:
     robots = tuple(vehicle.name for vehicle in scenario.vehicles)
     geometry = RouteGeometry(scenario.points)
     cursor = RouteCursor(geometry, scenario.control.speed_m_s, scenario.loop_count)
@@ -562,7 +574,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tire_grips: dict[str, 
         period = 1.0 / scenario.rate_hz
         previous_lap = 0
         max_lead = max_route_lead_m(scenario.control)
-        friction = TireFriction(geometry, tire_grips)
+        friction = TireFriction(geometry, tires)
         waiting_for: str | None = None
         yielding: dict[str, tuple[str, float] | None] = {}
         next_status = last_simulation_time
@@ -658,25 +670,26 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tire_grips: dict[str, 
     print("Route scenario finished; all vehicles stopped.")
 
 
-def load_tire_grips(path: Path | None) -> dict[str, float]:
-    """{vehicle name: tire grip} from the builder's JSON (tools/multi_car.py); empty without one."""
+def load_tires(path: Path | None) -> dict[str, Tire]:
+    """{vehicle name: Tire} from the builder's JSON (tools/multi_car.py); empty without one."""
     if path is None:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ScenarioError(f"{path}: tire grips must be a mapping of vehicle name to grip")
-    grips = {}
-    for name, value in data.items():
-        grip = finite_number(value, f"{path}: tire grip of {name}")
-        if grip <= 0.0:
-            raise ScenarioError(f"{path}: tire grip of {name} must be positive")
-        grips[str(name)] = grip
-    return grips
+    if not isinstance(data, dict) or not all(isinstance(item, dict) for item in data.values()):
+        raise ScenarioError(f"{path}: tires must map each vehicle name to {{tire_grip, model_friction}}")
+    tires = {}
+    for name, item in data.items():
+        grip = finite_number(item.get("tire_grip", 1.0), f"{path}: tire_grip of {name}")
+        model = finite_number(item.get("model_friction", MODEL_TIRE_FRICTION), f"{path}: model_friction of {name}")
+        if grip <= 0.0 or model < 0.0:
+            raise ScenarioError(f"{path}: tire_grip of {name} must be positive, model_friction not negative")
+        tires[str(name)] = Tire(grip, model)
+    return tires
 
 
-def execute(scenario: Scenario | RouteScenario, pdu_def: Path, tire_grips: dict[str, float] | None = None) -> None:
+def execute(scenario: Scenario | RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None) -> None:
     if isinstance(scenario, RouteScenario):
-        execute_route(scenario, pdu_def, tire_grips)
+        execute_route(scenario, pdu_def, tires)
     else:
         execute_timed(scenario, pdu_def)
 
@@ -686,8 +699,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("scenario", type=Path)
     result.add_argument("--pdu-def", type=Path, default=DEFAULT_PDU_DEF)
     result.add_argument(
-        "--tire-grip", type=Path,
-        help="JSON {vehicle name: tire grip}; a route's road_friction is multiplied by it",
+        "--tires", type=Path,
+        help="JSON {vehicle name: {tire_grip, model_friction}} from the builder (tools/multi_car.py)",
     )
     result.add_argument(
         "--dry-run", action="store_true",
@@ -700,7 +713,7 @@ def main() -> int:
     args = parser().parse_args()
     scenario_path = args.scenario.expanduser().resolve()
     scenario = load_scenario(scenario_path)
-    tire_grips = load_tire_grips(args.tire_grip.expanduser().resolve() if args.tire_grip else None)
+    tires = load_tires(args.tires.expanduser().resolve() if args.tires else None)
     if args.dry_run:
         if isinstance(scenario, RouteScenario):
             geometry = RouteGeometry(scenario.points)
@@ -718,7 +731,7 @@ def main() -> int:
                 f"duration={scenario.duration_sec:.2f}s rate={scenario.rate_hz:g}Hz"
             )
         return 0
-    execute(scenario, args.pdu_def.expanduser().resolve(), tire_grips)
+    execute(scenario, args.pdu_def.expanduser().resolve(), tires)
     return 0
 
 

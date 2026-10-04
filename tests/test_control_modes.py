@@ -437,6 +437,16 @@ class ControlModeTest(unittest.TestCase):
             for other in others:
                 self.assertIsNone(priorities[other["prefix"] + geom])
 
+    def test_the_executor_restores_the_models_tire_friction(self):
+        # A leg without road_friction gets the tire friction of the vehicle's model.
+        [vehicle, *_] = multi_car.resolve_config(ROOT / "recipes/multi-car-viewer.yaml")["vehicles"]
+        self.assertEqual(multi_car._model_tire_friction(vehicle["type_definition"]["mjcf"]), 1.6)
+        with tempfile.TemporaryDirectory() as directory:
+            plain = Path(directory) / "plain.xml"
+            plain.write_text("<mujoco><worldbody><geom name='front_left_tire' size='1'/></worldbody></mujoco>",
+                             encoding="utf-8")
+            self.assertEqual(multi_car._model_tire_friction(plain), 1.0)  # MuJoCo's default
+
     def test_a_vehicles_tire_grip_defaults_to_one_and_must_be_positive(self):
         import yaml
 
