@@ -208,15 +208,16 @@ class _MujocoRayScene:
     version). Only this geometric query uses it; the MJB the Drone service
     loads is still compiled with the Drone Core's own library.
 
-    Rays start just above the World's highest geom (world_height.ray_start):
-    MuJoCo's ray-mesh test misses a thin mesh, such as a 2 cm road slab, from
-    a few hundred metres away."""
+    Rays start just above the World's highest geom (world_height.ray_start)
+    and are cast in pieces (world_height.cast): MuJoCo's ray-mesh test misses
+    a flat mesh, such as a roof or a 2 cm road slab, from 128 m away."""
 
     def __init__(self, xml_path: Path):
         self.xml_path = xml_path.resolve()
         self.model = None
         self.data = None
         self.ray_origin_z = 0.0
+        self.ray_bottom_z = 0.0
 
     def __enter__(self) -> "_MujocoRayScene":
         import mujoco
@@ -228,6 +229,7 @@ class _MujocoRayScene:
         self.data = mujoco.MjData(self.model)
         mujoco.mj_forward(self.model, self.data)
         self.ray_origin_z = world_height.ray_start(self.model, self.data, mujoco)
+        self.ray_bottom_z = world_height.ray_bottom(self.model, self.data, mujoco)
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -240,16 +242,15 @@ class _MujocoRayScene:
 
         if self.model is None or self.data is None:
             raise FleetMujocoError("MuJoCo ray-query scene is not open")
-        geom_id = numpy.array([-1], dtype=numpy.int32)
-        distance = mujoco.mj_ray(
+        found = world_height.cast(
             self.model, self.data,
             numpy.array([x_m, y_m, self.ray_origin_z], dtype=numpy.float64),
             numpy.array([0.0, 0.0, -1.0], dtype=numpy.float64),
-            None, 1, -1, geom_id,
+            None, self.ray_origin_z - self.ray_bottom_z, mujoco,
         )
-        if distance < 0.0 or geom_id[0] < 0:
+        if found is None:
             raise FleetMujocoError(f"no collision surface below local point ({x_m:.3f}, {y_m:.3f})")
-        return self.ray_origin_z - float(distance)
+        return self.ray_origin_z - found[0]
 
 
 def _sha256(path: Path) -> str:
