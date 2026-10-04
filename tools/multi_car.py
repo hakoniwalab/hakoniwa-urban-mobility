@@ -34,6 +34,7 @@ sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 from route_geometry import RouteGeometry, RoutePoint, expand_route_vehicles  # noqa: E402
 import urban_lifecycle  # noqa: E402
+import urban_realtime  # noqa: E402
 from workdir import foundation_install as resolve_foundation_install  # noqa: E402
 from workdir import recipe_root as resolve_recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
@@ -49,6 +50,7 @@ COMMAND_PDU = "ackermann_cmd"
 # TireFriction) reaches the runtime as this Float64 PDU; a Robot Runtime
 # geom_friction component applies it.
 TIRE_FRICTION_PDU = "tire_friction"
+CAR_PLANT_ASSET = "urban-car-fleet-plant"
 TIRE_GEOMS = ("front_left_tire", "front_right_tire", "rear_left_tire", "rear_right_tire")
 CONTROL_MODES = {"external_python", "ps5"}
 
@@ -1873,6 +1875,8 @@ def materialize_launcher(
     plant_args = [
         "--manifest", str(runtime_files["manifest"]),
         "--realtime-sync-cycle-msec", str(realtime_sync_cycle_msec),
+        # Its Conductor's max_delay; the real-time pacer steps within it (tools/urban_realtime.py).
+        "--conductor-max-delay-msec", str(urban_realtime.CONDUCTOR_MAX_DELAY_MSEC[CAR_PLANT_ASSET]),
     ]
     if not native_mujoco_viewer:
         plant_args.append("--no-viewer")
