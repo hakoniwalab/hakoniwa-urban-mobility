@@ -325,13 +325,20 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
         config_path = urban_simulation.materialize(managed_target(context), selected)
     else:
         config_path = materialize_template(context, args)
+    resolved = multi_car.resolve_config(config_path)
+    # Road friction reaches the tires only through the Plant Directive path.
+    plant_directive = multi_car.needs_plant_directive(resolved)
     if not getattr(args, "reuse_built_asset", False):
-        multi_car.build_car_asset()
+        multi_car.build_car_asset(enable_mirror=plant_directive)
     elif not (ROOT / "build/bin/urban-car-hakoniwa-asset.exe").is_file():
         raise UrbanMobilityError(
             "--reuse-built-asset requires build/bin/urban-car-hakoniwa-asset.exe"
         )
-    resolved = multi_car.resolve_config(config_path)
+    elif plant_directive and not multi_car.built_with_plant_directive():
+        raise UrbanMobilityError(
+            "a route sets road_friction, but the built Urban Car plant has no Plant Directive path "
+            "(HAKO_URBAN_ENABLE_MIRROR=OFF) and would ignore it; configure without --reuse-built-asset"
+        )
     if multi_car.configure(resolved) != 0:
         return 1
     if selected is not None:

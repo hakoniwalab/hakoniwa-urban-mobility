@@ -161,6 +161,28 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "urban-car-hakoniwa-asset",
         )
 
+    def test_road_friction_needs_the_plant_directive_build(self):
+        multi_car = urban_composer.multi_car
+        self.assertTrue(multi_car.needs_plant_directive(
+            {"vehicles": [{"name": "Cart-1", "tire_friction": True}, {"name": "Car-1"}]}))
+        self.assertFalse(multi_car.needs_plant_directive({"vehicles": [{"name": "Car-1"}]}))
+        with mock.patch.object(multi_car.subprocess, "run") as runner:
+            multi_car.build_car_asset(enable_mirror=True)
+        self.assertIn("-DHAKO_URBAN_ENABLE_MIRROR=ON", runner.call_args_list[0].args[0])
+
+    def test_the_built_plant_says_whether_it_has_the_plant_directive(self):
+        multi_car = urban_composer.multi_car
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(multi_car, "ROOT", root):
+                self.assertIsNone(multi_car.built_with_plant_directive())
+                (root / "build").mkdir()
+                cache = root / "build/CMakeCache.txt"
+                cache.write_text("HAKO_URBAN_ENABLE_MIRROR:BOOL=OFF\n", encoding="utf-8")
+                self.assertFalse(multi_car.built_with_plant_directive())
+                cache.write_text("HAKO_URBAN_ENABLE_MIRROR:BOOL=ON\n", encoding="utf-8")
+                self.assertTrue(multi_car.built_with_plant_directive())
+
     def test_polling_transport_uses_windows_shakoc_dll(self):
         source = (
             urban_mobility.ROOT / "apps/car/urban_car.py"
