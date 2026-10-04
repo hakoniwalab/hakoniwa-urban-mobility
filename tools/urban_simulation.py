@@ -612,6 +612,20 @@ def write_drone_controls(composition_path: Path) -> Path:
     return path
 
 
+def write_drone_planned_paths(composition_path: Path) -> None:
+    """The flight path (and its wind / fault zones) of a schedule Drone into the
+    Viewer configs of tools/drone_one.py's embedded viewer, as for the integrated route."""
+    import drone_one
+
+    paths = drone_one._paths()
+    viewer_root = paths.recipe_root / "web/map-viewer/thirdparty/hakoniwa-threejs-drone/config"
+    write_viewer_planned_paths(
+        sorted(viewer_root.glob("viewer-config-fleets*.json")),
+        composition_path,
+        paths.recipe_config / "mujoco-city-fleet.json",
+    )
+
+
 def drone_command(command: str, composition_path: Path) -> int:
     """Run a City + one Drone Composition through tools/drone_one.py.
 
@@ -625,6 +639,7 @@ def drone_command(command: str, composition_path: Path) -> int:
         result = subprocess.run([*tool, "configure", "--recipe", str(recipe)], cwd=ROOT, check=False).returncode
         if result == 0:
             write_drone_controls(composition_path)
+            write_drone_planned_paths(composition_path)
         return result
     if command == "start":
         if not drone_recipe_path().is_file():
@@ -633,7 +648,11 @@ def drone_command(command: str, composition_path: Path) -> int:
         write_drone_controls(composition_path)
     if command not in {"start", "status", "stop", "open-viewer", "doctor", "prepare-native"}:
         raise SimulationError(f"{command} is not supported for a City + Drone Composition")
-    return subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
+    result = subprocess.run([*tool, command], cwd=ROOT, check=False).returncode
+    if command == "start" and result == 0:
+        # drone_one.py rewrites its Viewer configs at start; the Viewer reads them when it opens.
+        write_drone_planned_paths(composition_path)
+    return result
 
 
 # --- Fleet route (tools/drone_fleet.py) ---------------------------------------------------
