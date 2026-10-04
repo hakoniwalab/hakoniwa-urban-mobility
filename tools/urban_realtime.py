@@ -46,7 +46,10 @@ LEGACY_PACERS = {"fpv-realtime-pacer"}
 DELTA_MSEC = 10
 # The max_delay of each Conductor owner (asset name -> ms).
 CONDUCTOR_MAX_DELAY_MSEC = {
-    "urban-car-fleet-plant": 100,   # hakoniwa-robot-runtime hako_conductor_start(delta, 100000)
+    # The Car plant's own Conductor (--conductor-max-delay-msec, tools/multi_car.py):
+    # world time stays within 20 ms of the slowest asset. It must be at least
+    # every asset's own step: the pacer's 10 ms and the WebBridge's 20 ms.
+    "urban-car-fleet-plant": 20,
     "drone-service-1": 20,          # Drone Core built-in Conductor
     "fpv-drone-service": 20,
 }
@@ -63,6 +66,8 @@ def pacer_asset(python: str, conductor: str) -> dict:
     if conductor not in CONDUCTOR_MAX_DELAY_MSEC:
         raise RealtimeError(f"unknown Conductor owner for the pacer: {conductor}")
     max_delay = CONDUCTOR_MAX_DELAY_MSEC[conductor]
+    # The pacer's step must not exceed the Conductor's max_delay (deadlock-freedom).
+    delta = min(DELTA_MSEC, max_delay)
     return {
         "name": PACER_ASSET,
         # The pacer must register before hako-cmd start so the Conductor
@@ -71,7 +76,7 @@ def pacer_asset(python: str, conductor: str) -> dict:
         "command": python,
         "args": [
             "-u", str(PACER), str(PACER_CONFIG),
-            "--delta-msec", str(DELTA_MSEC), "--max-delay-msec", str(max_delay),
+            "--delta-msec", str(delta), "--max-delay-msec", str(max_delay),
         ],
         "cwd": str(ROOT),
         "depends_on": [conductor],

@@ -26,6 +26,8 @@ struct Options {
     bool view_model_only {false};
     bool validate_model_only {false};
     std::uint64_t realtime_sync_cycle_msec {2};
+    /** The local Conductor's max_delay (with its own Conductor only). */
+    std::uint64_t conductor_max_delay_msec {100};
 };
 
 void usage(const char* program)
@@ -38,6 +40,9 @@ void usage(const char* program)
         << "  --external-conductor    join a Conductor owned by another asset\n"
         << "  --realtime-sync-cycle-msec N\n"
         << "                          wall-clock sync cycle (0 disables)\n"
+        << "  --conductor-max-delay-msec N\n"
+        << "                          how far world time may run ahead of the slowest\n"
+        << "                          asset (own Conductor only; default 100)\n"
         << "  --view-model            inspect the model without Hakoniwa\n"
         << "  --validate-model        load the XML/MJB and exit\n";
 }
@@ -61,6 +66,17 @@ bool parse_options(int argc, char** argv, Options& options)
                 options.realtime_sync_cycle_msec = std::stoull(argv[++index]);
             } catch (const std::exception&) {
                 std::cerr << "Invalid realtime sync cycle\n";
+                return false;
+            }
+        } else if (argument == "--conductor-max-delay-msec" && index + 1 < argc) {
+            try {
+                options.conductor_max_delay_msec = std::stoull(argv[++index]);
+            } catch (const std::exception&) {
+                std::cerr << "Invalid Conductor max delay\n";
+                return false;
+            }
+            if (options.conductor_max_delay_msec == 0) {
+                std::cerr << "--conductor-max-delay-msec must be positive\n";
                 return false;
             }
         } else if (argument == "--view-model") {
@@ -125,7 +141,8 @@ int run_asset(const Options& options)
         hakoniwa::robot_runtime::factory::ManifestFactory::create(
             options.manifest,
             {options.asset_name, options.endpoint_name,
-                options.realtime_sync_cycle_msec, options.owns_conductor});
+                options.realtime_sync_cycle_msec, options.owns_conductor,
+                options.conductor_max_delay_msec * 1000});
     if (runner->start() != 0) {
         return 1;
     }

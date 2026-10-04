@@ -751,6 +751,16 @@ class ControlsTest(IntegratedFixture):
         self.assertSameProcess(generated, legacy[1])
         self.assertEqual(generated["name"], "control-car-1-rc")
 
+    def test_the_car_plant_conductor_keeps_within_20_ms_and_the_pacer_steps_within_it(self):
+        legacy = self.car_launcher(
+            self.work, [{"name": "Car-1", "prefix": "car_1_", "control_mode": "external_python"}])
+        plant = next(asset for asset in legacy if asset["name"] == "urban-car-fleet-plant")
+        args = plant["args"]
+        self.assertEqual(args[args.index("--conductor-max-delay-msec") + 1], "20")
+        pacer = urban_realtime.pacer_asset("/python", "urban-car-fleet-plant")["args"]
+        self.assertEqual(pacer[pacer.index("--delta-msec") + 1], "10")
+        self.assertEqual(pacer[pacer.index("--max-delay-msec") + 1], "20")
+
     def test_car_api_matches_the_multi_car_scenario_executor(self):
         # A route naming exactly these Cars is used as written (no derived copy).
         convoy = ROOT / "recipes/scenarios/golf-cart-demo-convoy.yaml"
@@ -902,7 +912,7 @@ class ControlsTest(IntegratedFixture):
         self.assertEqual([asset["name"] for asset in assets],
                          ["urban-car-fleet-plant", "urban-realtime-pacer", "control-car-1-rc", "urban-vehicle-web-bridge"])
         self.assertIn("1.5", assets[2]["args"])
-        self.assertEqual(assets[1]["args"][-1], "100", "the Car plant's Conductor max_delay")
+        self.assertEqual(assets[1]["args"][-1], "20", "the Car plant's Conductor max_delay")
 
 
 try:
@@ -1336,7 +1346,7 @@ class RealtimePacerTest(IntegratedFixture):
     """Every route runs the Urban real-time pacer beside its Conductor owner."""
 
     def test_pacer_delta_fits_each_conductor_max_delay(self):
-        for conductor, max_delay in (("urban-car-fleet-plant", "100"), ("drone-service-1", "20")):
+        for conductor, max_delay in (("urban-car-fleet-plant", "20"), ("drone-service-1", "20")):
             asset = urban_realtime.pacer_asset("/python", conductor)
             with self.subTest(conductor=conductor):
                 self.assertEqual(asset["activation_timing"], "before_start")
