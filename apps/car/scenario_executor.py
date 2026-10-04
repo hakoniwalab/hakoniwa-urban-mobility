@@ -444,6 +444,48 @@ def route_command(
 # Simulation seconds between per-vehicle status lines.
 STATUS_INTERVAL_SEC = 5.0
 
+# Simulation seconds between route track rows.
+TRACK_INTERVAL_SEC = 0.1
+
+
+class RouteTrack:
+    """Each vehicle's pose, speed and command every TRACK_INTERVAL_SEC (CSV), for
+    measuring a run afterwards: how slow it got on a slope, how far it ran past
+    a stop. The speed is the 3D distance between rows over their time."""
+
+    HEADER = "simulation_sec,vehicle,east_m,north_m,up_m,yaw_deg,speed_m_s,command_m_s,route_s_m\n"
+
+    def __init__(self, path: Path | None):
+        self.stream = None
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.stream = path.open("w", encoding="utf-8")
+            self.stream.write(self.HEADER)
+        self.last: dict[str, tuple[float, VehiclePose]] = {}
+
+    def record(self, simulation_time: float, name: str, pose: VehiclePose,
+               command_m_s: float, route_s_m: float) -> None:
+        if self.stream is None:
+            return
+        previous = self.last.get(name)
+        if previous is not None and simulation_time - previous[0] < TRACK_INTERVAL_SEC - 1e-6:
+            return
+        speed = 0.0
+        if previous is not None and simulation_time > previous[0]:
+            before = previous[1]
+            speed = math.dist((pose.east_m, pose.north_m, pose.up_m),
+                              (before.east_m, before.north_m, before.up_m)) / (simulation_time - previous[0])
+        self.last[name] = (simulation_time, pose)
+        self.stream.write(
+            f"{simulation_time:.2f},{name},{pose.east_m:.3f},{pose.north_m:.3f},{pose.up_m:.3f},"
+            f"{math.degrees(pose.yaw_rad):.1f},{speed:.3f},{command_m_s:.3f},{route_s_m:.2f}\n")
+        self.stream.flush()
+
+    def close(self) -> None:
+        if self.stream is not None:
+            self.stream.close()
+            self.stream = None
+
 
 def route_lag_m(geometry: RouteGeometry, cursor: "RouteCursor", vehicle: "RouteVehicle", pose: VehiclePose) -> float:
     """How far the vehicle is behind its target on the route (negative: ahead)."""
@@ -568,7 +610,8 @@ class TireFriction:
             self.sent[name] = value
 
 
-def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None) -> None:
+def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None,
+                  track_path: Path | None = None) -> None:
     robots = tuple(vehicle.name for vehicle in scenario.vehicles)
     geometry = RouteGeometry(scenario.points)
     cursor = RouteCursor(geometry, scenario.control.speed_m_s, scenario.loop_count)
@@ -592,6 +635,7 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire]
         yielding: dict[str, tuple[str, float] | None] = {}
         next_status = last_simulation_time
         commands: dict[str, float] = {}
+        track = RouteTrack(track_path)
         try:
             while not cursor.finished:
                 simulation_time = fleet.simulation_time_sec()
@@ -671,6 +715,9 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire]
                     yielding[vehicle.name] = blocker
                     commands[vehicle.name] = speed
                     fleet.send(vehicle.name, speed, steering)
+                    pose = poses[vehicle.name]
+                    track.record(simulation_time, vehicle.name, pose, speed,
+                                 geometry.project(pose.east_m, pose.north_m))
 
                 next_tick += period
                 delay = next_tick - time.monotonic()
@@ -680,6 +727,8 @@ def execute_route(scenario: RouteScenario, pdu_def: Path, tires: dict[str, Tire]
                     next_tick = time.monotonic()
         except KeyboardInterrupt:
             print("Route scenario interrupted; stopping all vehicles.")
+        finally:
+            track.close()
     print("Route scenario finished; all vehicles stopped.")
 
 
@@ -700,9 +749,10 @@ def load_tires(path: Path | None) -> dict[str, Tire]:
     return tires
 
 
-def execute(scenario: Scenario | RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None) -> None:
+def execute(scenario: Scenario | RouteScenario, pdu_def: Path, tires: dict[str, Tire] | None = None,
+            track_path: Path | None = None) -> None:
     if isinstance(scenario, RouteScenario):
-        execute_route(scenario, pdu_def, tires)
+        execute_route(scenario, pdu_def, tires, track_path)
     else:
         execute_timed(scenario, pdu_def)
 
@@ -714,6 +764,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--tires", type=Path,
         help="JSON {vehicle name: {tire_grip, model_friction}} from the builder (tools/multi_car.py)",
+    )
+    result.add_argument(
+        "--track", type=Path,
+        help="write each vehicle's pose, speed and command every 0.1 s (simulation) of a route scenario to this CSV",
     )
     result.add_argument(
         "--dry-run", action="store_true",
@@ -744,7 +798,8 @@ def main() -> int:
                 f"duration={scenario.duration_sec:.2f}s rate={scenario.rate_hz:g}Hz"
             )
         return 0
-    execute(scenario, args.pdu_def.expanduser().resolve(), tires)
+    execute(scenario, args.pdu_def.expanduser().resolve(), tires,
+            args.track.expanduser().resolve() if args.track else None)
     return 0
 
 

@@ -1919,6 +1919,8 @@ def materialize_launcher(
                 "--pdu-def", str(runtime_files["pdu_def"]),
                 # Written next to the pdudef by materialize_runtime.
                 "--tires", str(Path(runtime_files["pdu_def"]).with_name("urban-car-tires.json")),
+                # Each vehicle's pose and speed every 0.1 s (the same file as the Composition's car runtime).
+                "--track", str(Path(runtime_files["pdu_def"]).parents[2] / "validation/urban-car-route-track.csv"),
             ],
             "depends_on": ["urban-car-fleet-plant"],
             "delay_sec": 1,

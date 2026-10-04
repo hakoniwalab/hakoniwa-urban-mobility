@@ -277,6 +277,8 @@ def car_runtime(work: Path):
             "pdu_def": work / "config/car/urban-car-pdudef.json",
             "rc_config": ROOT / "config/car/dualsense-controller.json",
             "tires": work / "config/car/urban-car-tires.json",
+            # Each route vehicle's pose and speed every 0.1 s (apps/car/scenario_executor.py --track).
+            "track": work / "validation/urban-car-route-track.csv",
         },
         service_asset="urban-car-fleet-plant",
         python=str(multi_car.foundation_python()),

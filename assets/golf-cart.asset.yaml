@@ -68,6 +68,7 @@ controls:
     scope: composition
     # One executor drives every api Car named in the scenario.
     args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}",
-           "--tires", "${runtime.tires}"]
+           "--tires", "${runtime.tires}",
+           "--track", "${runtime.track}"]
     params:
       scenario: {type: path, required: true, kinds: [car-route-scenario]}

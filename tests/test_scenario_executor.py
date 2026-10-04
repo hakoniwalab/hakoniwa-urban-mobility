@@ -20,6 +20,29 @@ SPEC.loader.exec_module(scenario_executor)
 
 
 class ScenarioExecutorTest(unittest.TestCase):
+    def test_the_route_track_keeps_a_row_every_tenth_of_a_second_with_the_speed(self):
+        Pose = scenario_executor.VehiclePose
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "validation/track.csv"
+            track = scenario_executor.RouteTrack(path)
+            track.record(10.00, "Cart-1", Pose(0.0, 0.0, 5.0, 0.0), 3.0, 0.0)
+            track.record(10.05, "Cart-1", Pose(0.15, 0.0, 5.0, 0.0), 3.0, 0.15)  # too soon: skipped
+            track.record(10.10, "Cart-1", Pose(0.3, 0.0, 5.0, 0.0), 3.0, 0.3)
+            track.record(10.20, "Cart-1", Pose(0.3, 0.0, 5.0, math.pi / 2), 0.0, 0.3)
+            track.close()
+            rows = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(rows[0], scenario_executor.RouteTrack.HEADER.strip())
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[1].split(",")[6], "0.000")
+        self.assertAlmostEqual(float(rows[2].split(",")[6]), 3.0, places=3)
+        self.assertEqual(rows[3].split(",")[5], "90.0")
+        self.assertEqual(rows[3].split(",")[6], "0.000")
+
+    def test_without_a_path_the_route_track_writes_nothing(self):
+        track = scenario_executor.RouteTrack(None)
+        track.record(1.0, "Cart-1", scenario_executor.VehiclePose(0.0, 0.0, 0.0, 0.0), 1.0, 0.0)
+        track.close()
+
     def test_checked_in_convoy_is_staggered_and_valid(self):
         scenario = scenario_executor.load_scenario(
             ROOT / "recipes/scenarios/two-car-convoy.yaml"
