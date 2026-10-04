@@ -291,6 +291,18 @@ viewer:
             self.assertIn("layout=three-main", opened[0])
             self.assertIn("viewer-config-fleets-colliders.json", opened[1])
 
+    def test_the_viewer_map_starts_at_the_city_worlds_origin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config"
+            paths = types.SimpleNamespace(recipe_root=Path(directory), recipe_config=config)
+            # Before configure there is no marker: the URL goes without an origin.
+            self.assertEqual(drone_one.map_origin_query(paths), "")
+            config.mkdir()
+            (config / "mujoco-city-fleet.json").write_text(json.dumps({
+                "city_world": {"origin": {"latitude": 35.689245, "longitude": 139.690808}},
+            }), encoding="utf-8")
+            self.assertEqual(drone_one.map_origin_query(paths), "&originLat=35.689245&originLon=139.690808")
+
     def test_city_contact_policy_reduces_friction_and_enables_six_propellers(self):
         body = ET.fromstring(
             "<body name='drone_base'>"

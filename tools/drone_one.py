@@ -491,6 +491,18 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     return scene_path, viewer_path
 
 
+def map_origin_query(paths: object | None = None) -> str:
+    """The map viewer's origin (the City World's) as URL parameters, or "" before
+    configure: without it the map shows the viewer's default place."""
+    paths = paths or _paths()
+    try:
+        marker = json.loads((paths.recipe_config / "mujoco-city-fleet.json").read_text(encoding="utf-8"))
+        origin = marker["city_world"]["origin"]
+        return f"&originLat={float(origin['latitude'])}&originLon={float(origin['longitude'])}"
+    except (OSError, KeyError, TypeError, ValueError):
+        return ""
+
+
 def open_viewer(
     *, show_colliders: bool = False, map_layout: str = "bottom-left"
 ) -> int:
@@ -504,6 +516,7 @@ def open_viewer(
             "Collider viewer is not configured; run configure before open-viewer"
         )
     url = base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT)
+    url += map_origin_query(paths)
     if map_layout == "bottom-left":
         url += "&layout=three-main"
     if show_colliders:
