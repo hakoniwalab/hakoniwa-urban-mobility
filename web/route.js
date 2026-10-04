@@ -4,7 +4,10 @@
 // select it. Points are local ENU metres around the World origin (the same
 // frame as vehicle spawns); the loop closes from the last point to the first.
 
+import * as THREE from "three";
+import { labelSprite } from "./flight.js";
 import { MapView } from "./map.js";
+import { PlacementView } from "./placement.js";
 
 export class RouteMapView extends MapView {
   constructor(container, { onAdd, onSelect, onMove }) {
@@ -48,5 +51,80 @@ export class RouteMapView extends MapView {
       });
       return marker;
     });
+  }
+}
+
+// Route tab 3D view: the route on the World GLB at the height of the surface
+// under it (POST worlds/<id>/route-line: a road under a bridge stays on the
+// road), each route point a numbered ball, and the legs that run into a
+// building wall red.
+export class RouteView3D extends PlacementView {
+  constructor(container, { onSelect }) {
+    super(container, { onSelect: () => {}, onMove: () => {}, onTurn: () => {} });
+    this.onSelectPoint = onSelect;
+    this.routeGroup = new THREE.Group();
+    this.scene.add(this.routeGroup);
+  }
+
+  // line: [{east_m, north_m, up_m}] (the loop, sampled); corners: the index in
+  // it of each route point; conflicts: [{from, to}] with 1-based point numbers.
+  setRoute(line, corners, selected, conflicts = []) {
+    this.routeGroup.clear();
+    this.line = line;
+    this.corners = corners;
+    if (line.length < 2) return;
+    const position = (point) => new THREE.Vector3(point.east_m, point.up_m, -point.north_m);
+    const loop = [...line.map(position), position(line[0])];
+    this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loop),
+      new THREE.LineBasicMaterial({ color: 0x2e7dd7 })));
+    for (const conflict of conflicts) {
+      // The samples of that leg, from its point to the next one (or round to the first).
+      const start = corners[conflict.from - 1];
+      const end = conflict.to - 1 < corners.length && conflict.to > conflict.from ? corners[conflict.to - 1] : line.length;
+      if (start === undefined) continue;
+      const leg = loop.slice(start, end + 1);
+      if (leg.length < 2) continue;
+      this.routeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(leg),
+        new THREE.LineBasicMaterial({ color: 0xd32f2f })));
+    }
+    corners.forEach((at, index) => {
+      const point = line[at];
+      if (!point) return;
+      const current = index === selected;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(current ? 0.7 : 0.45, 16, 12),
+        new THREE.MeshStandardMaterial({ color: 0x2e7dd7, emissive: current ? 0x554400 : 0x000000 }));
+      ball.position.copy(position(point));
+      ball.userData.routePoint = index;
+      this.routeGroup.add(ball);
+      const label = labelSprite(String(index + 1), "#2e7dd7");
+      label.position.copy(position(point)).add(new THREE.Vector3(0, current ? 2.0 : 1.6, 0));
+      this.routeGroup.add(label);
+    });
+  }
+
+  focusPoint(index) {
+    const point = this.line?.[this.corners?.[index]];
+    if (point) this.focusOn(new THREE.Vector3(point.east_m, point.up_m, -point.north_m));
+  }
+
+  // The whole route in view.
+  focusRoute() {
+    if (!this.line?.length) return this.overview();
+    const box = new THREE.Box3();
+    for (const point of this.line) box.expandByPoint(new THREE.Vector3(point.east_m, point.up_m, -point.north_m));
+    const centre = box.getCenter(new THREE.Vector3());
+    const size = Math.max(20, box.getSize(new THREE.Vector3()).length());
+    this.flyTo(centre, centre.clone().add(new THREE.Vector3(-0.6, 0.7, 0.6).normalize().multiplyScalar(size * 1.1)));
+  }
+
+  pointerDown(event) {
+    this.ray(event);
+    const hit = this.raycaster.intersectObjects(this.routeGroup.children, false)
+      .find((intersection) => intersection.object.userData.routePoint !== undefined);
+    if (hit) {
+      this.onSelectPoint(hit.object.userData.routePoint);
+      return;
+    }
+    super.pointerDown(event);
   }
 }

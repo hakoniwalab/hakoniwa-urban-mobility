@@ -364,6 +364,25 @@ class StudioServerTest(StudioTestBase):
         status, _ = self.call("POST", "/api/worlds/plain-ground/flight-check", {"points": [{"east_m": 0}]})
         self.assertEqual(status, 400)
 
+    def test_a_route_line_for_the_3d_view_follows_the_road_under_a_bridge(self):
+        class Ground:  # a road at 4.5 m with a bridge deck at 11 m over east 8..12
+            def __call__(self, east, north):
+                return 11.0 if 8 <= east <= 12 else 4.5
+
+            def ground_below(self, east, north, from_up):
+                return 11.0 if 8 <= east <= 12 and from_up > 11.0 else 4.5
+
+        entry = (Ground(), threading.Lock(), True)
+        points = [{"east_m": 0, "north_m": 0}, {"east_m": 20, "north_m": 0}, {"east_m": 20, "north_m": 4}]
+        with mock.patch.object(urban_studio, "_world_ground", return_value=entry):
+            status, line = self.call("POST", "/api/worlds/plain-ground/route-line", {"points": points})
+        self.assertEqual(status, 200)
+        self.assertEqual(line["corners"], [0, 20, 24])  # where each route point is in the sampled loop
+        under = [point["up_m"] for point in line["points"] if 8 <= point["east_m"] <= 12 and point["north_m"] == 0]
+        self.assertEqual(set(under), {4.8})  # the road, not the bridge
+        status, _ = self.call("POST", "/api/worlds/plain-ground/route-line", {"points": [{"east_m": 0}]})
+        self.assertEqual(status, 400)
+
     def test_composition_summary_keeps_unknown_assets_recognisable(self):
         summary = urban_studio.composition_summary(
             {"world": "no-such-world", "vehicles": [{"name": "X", "asset": "no-such-asset", "control": "rc"}]}, {}

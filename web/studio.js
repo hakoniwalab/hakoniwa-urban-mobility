@@ -1035,11 +1035,13 @@ async function loadRouteWorld() {
     try {
       const info = await api("GET", `worlds/${worldId}`);
       hasMap = state.routeMap.setWorld(info);
+      await state.routeView?.setWorld(info);
     } catch (error) {
       setStatus($("#route-status"), error.message, "error");
     }
   }
   mapNode.hidden = !hasMap;
+  if (state.route) refreshRouteLine(state.route);
   $("#route-map-hint").textContent = hasMap
     ? "地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。"
     : "この World には地図がありません。「点を追加」で点を増やし、east / north を数値で入力してください（World の中心からのメートル）。";
@@ -1110,6 +1112,31 @@ async function checkRouteNow(route) {
   route.clearance = clearance;
   route.checked = true;
   renderRoute();
+  refreshRouteLine(route);
+}
+
+// The route on the World for the 3D view: the loop at the height of the surface under it.
+async function refreshRouteLine(route) {
+  const world = route.scenario.meta.world;
+  const points = route.scenario.route.points;
+  const version = (route.lineVersion = (route.lineVersion || 0) + 1);
+  let line = { points: [], corners: [] };
+  if (world && points.length >= 2) {
+    try {
+      line = await api("POST", `worlds/${world}/route-line`, { points });
+    } catch {
+      return; // the map still edits the route
+    }
+  }
+  if (state.route !== route || route.lineVersion !== version) return;
+  route.line3d = line;
+  renderRoute3d();
+}
+
+function renderRoute3d() {
+  const route = state.route;
+  if (!route || !state.routeView) return;
+  state.routeView.setRoute(route.line3d?.points || [], route.line3d?.corners || [], state.routePoint, route.conflicts || []);
 }
 
 function addRoutePoint(east, north) {
@@ -1184,6 +1211,7 @@ function renderRoute() {
     : route.checked ? [] : [el("li", { class: "hint" }, "建物との当たりをチェックしています…")]));
   $("#route-clearance").textContent = clearanceText(route.clearance, "登録済みの車で一番幅が広いもの");
   if (!$("#route-map").hidden) state.routeMap?.setRoute(points, state.routePoint, conflicts);
+  renderRoute3d();
 }
 
 async function saveRoute() {
@@ -1241,7 +1269,18 @@ async function deleteRoute() {
 }
 
 async function initRoute() {
-  const { RouteMapView } = await import("./route.js");
+  const { RouteMapView, RouteView3D } = await import("./route.js");
+  try {
+    state.routeView = new RouteView3D($("#route-3d"), {
+      onSelect: (index) => { state.routePoint = index; renderRoute(); },
+    });
+  } catch {
+    state.routeView = null; // no WebGL: the map still edits the route
+  }
+  $("#route-focus-all").addEventListener("click", () => state.routeView?.focusRoute());
+  $("#route-focus-point").addEventListener("click", () => {
+    if (state.routePoint >= 0) state.routeView?.focusPoint(state.routePoint);
+  });
   state.routeMap = new RouteMapView($("#route-map"), {
     onAdd: (east, north) => { if (state.route) addRoutePoint(east, north); },
     onSelect: (index) => { state.routePoint = index; renderRoute(); },
