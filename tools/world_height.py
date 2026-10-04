@@ -38,10 +38,15 @@ import urban_manifest
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = urban_manifest.work_dir() / "urban/cache/world-height"
 # Rays start this far above the World's highest geom (MJCF Z is up in
-# metres). Not from a fixed far height: MuJoCo's ray-mesh test misses a thin
-# mesh (a 2 cm road slab) from a few hundred metres away, and the height
-# would then be the terrain under the slab.
+# metres), and below it they are cast in pieces of at most RAY_PIECE_M.
 RAY_START_MARGIN_M = 1.0
+# MuJoCo's ray-mesh test misses a flat triangle (a roof, a 2 cm road slab)
+# when the ray starts 128 m or more from it: the BVH box of a flat triangle
+# is 1e-14 m thick, its slab test (mju_raySlab) needs tmin < tmax, and from
+# 128 m on both distances round to the same double. A ray from above a
+# 266 m tower missed the 84-168 m roofs of the building next to it, so
+# each mj_ray only trusts hits within this distance (see cast).
+RAY_PIECE_M = 64.0
 # A ray passes through at most this many non-colliding geoms before it
 # gives up; City Worlds contain none, so this only bounds a pathological model.
 MAX_PASS_THROUGH = 64
@@ -61,23 +66,61 @@ def ray_start(model, data, mujoco=None) -> float:
     point of the model's geoms (each geom's local bounding box, geom_aabb:
     centre and half sizes, turned into the world by its pose; a plane counts
     at its position). A bounding sphere is not tight enough: a large
-    terrain's radius would put the start hundreds of metres up again, where
-    MuJoCo's ray-mesh test misses thin meshes. Needs mj_forward first.
+    terrain's radius would put the start hundreds of metres up. Needs
+    mj_forward first.
     tools/drone_fleet_city.py uses it too."""
+    if model.ngeom == 0:
+        return RAY_START_MARGIN_M
+    return _geom_heights(model, data, mujoco)[1] + RAY_START_MARGIN_M
+
+
+def ray_bottom(model, data, mujoco=None) -> float:
+    """Below the lowest point of the model's geoms: a downward ray from
+    ray_start that reaches it without a hit has nothing below it."""
+    if model.ngeom == 0:
+        return -RAY_START_MARGIN_M
+    return _geom_heights(model, data, mujoco)[0] - RAY_START_MARGIN_M
+
+
+def _geom_heights(model, data, mujoco=None) -> tuple[float, float]:
+    """(lowest, highest) Z of the model's geoms, from their local bounding
+    boxes; a plane counts at its position. Needs mj_forward first."""
     if mujoco is None:
         import mujoco
     import numpy
 
-    if model.ngeom == 0:
-        return RAY_START_MARGIN_M
     centre = model.geom_aabb[:, :3]
     half = model.geom_aabb[:, 3:]
     rotation = data.geom_xmat.reshape(-1, 3, 3)
-    top = (data.geom_xpos[:, 2] + numpy.einsum("gj,gj->g", rotation[:, 2, :], centre)
-           + numpy.einsum("gj,gj->g", numpy.abs(rotation[:, 2, :]), half))
+    middle = data.geom_xpos[:, 2] + numpy.einsum("gj,gj->g", rotation[:, 2, :], centre)
+    reach = numpy.einsum("gj,gj->g", numpy.abs(rotation[:, 2, :]), half)
     planes = model.geom_type == mujoco.mjtGeom.mjGEOM_PLANE
-    top[planes] = data.geom_xpos[planes, 2]
-    return float(numpy.max(top)) + RAY_START_MARGIN_M
+    reach[planes] = 0.0
+    middle[planes] = data.geom_xpos[planes, 2]
+    return float(numpy.min(middle - reach)), float(numpy.max(middle + reach))
+
+
+def cast(model, data, point, direction, mask, length: float, mujoco=None) -> tuple[float, int] | None:
+    """The first geom on point + t * direction for 0 <= t <= length (direction
+    a unit vector): (t, geom id), or None.
+
+    One mj_ray from far away can miss a flat mesh triangle (RAY_PIECE_M), so
+    the ray is cast again every RAY_PIECE_M and only a hit within that piece
+    is taken. A piece never starts past a surface the piece before it could
+    hit, so it does not start inside a geom either."""
+    if mujoco is None:
+        import mujoco
+    import numpy
+
+    geom = numpy.array([-1], dtype=numpy.int32)
+    travelled = 0.0
+    while travelled <= length:
+        distance = mujoco.mj_ray(model, data, point + direction * travelled, direction, mask, 1, -1, geom)
+        if 0.0 <= distance <= RAY_PIECE_M:
+            hit = travelled + distance
+            return (hit, int(geom[0])) if hit <= length else None
+        travelled += RAY_PIECE_M
+    return None
 
 
 class WorldHeightError(RuntimeError):
@@ -285,6 +328,7 @@ class WorldHeight:
             mujoco.mj_forward(model, data)
         self.masks = [self._visual_only_left_out(model) for model in models]
         self.ray_starts = [self._ray_start(model, data) for model, data in zip(models, self.datas)]
+        self.ray_bottoms = [ray_bottom(model, data, mujoco) for model, data in zip(models, self.datas)]
 
     def _ray_start(self, model, data) -> float:
         return ray_start(model, data, self._mujoco)
@@ -311,29 +355,32 @@ class WorldHeight:
         mask[free] = 0
         return mask
 
-    def _hit(self, model, data, east_m: float, north_m: float, mask=None, start_m: float = 0.0) -> float | None:
+    def _hit(self, model, data, east_m: float, north_m: float, mask=None, start_m: float = 0.0,
+             bottom_m: float = 0.0) -> float | None:
         numpy = self._numpy
         point = numpy.array([north_m, -east_m, start_m], dtype=numpy.float64)
         down = numpy.array([0.0, 0.0, -1.0], dtype=numpy.float64)
-        geom = numpy.array([-1], dtype=numpy.int32)
         for _ in range(MAX_PASS_THROUGH):
-            distance = self._mujoco.mj_ray(model, data, point, down, mask, 1, -1, geom)
-            if distance < 0:
+            found = cast(model, data, point, down, mask, point[2] - bottom_m, self._mujoco)
+            if found is None:
                 return None
+            distance, index = found
             hit = point[2] - distance
-            index = int(geom[0])
             if model.geom_contype[index] or model.geom_conaffinity[index]:
                 return float(hit)
             # A visual-only geom: continue below it.
             point[2] = hit - 1.0e-6
         raise WorldHeightError(f"too many non-colliding geoms above east={east_m} m, north={north_m} m")
 
+    def _rays(self):
+        return zip(self.models, self.datas, self.masks, self.ray_starts, self.ray_bottoms)
+
     def ground_below(self, east_m: float, north_m: float, from_up_m: float) -> float | None:
         """The top of the World under a point looking down from from_up_m, so
         under a bridge it is the road, not the bridge; None when nothing is below."""
         hits = [
-            hit for hit in (self._hit(model, data, east_m, north_m, mask, min(from_up_m, start))
-                            for model, data, mask, start in zip(self.models, self.datas, self.masks, self.ray_starts))
+            hit for hit in (self._hit(model, data, east_m, north_m, mask, min(from_up_m, start), bottom)
+                            for model, data, mask, start, bottom in self._rays())
             if hit is not None
         ]
         return max(hits) if hits else None
@@ -350,15 +397,14 @@ class WorldHeight:
         if length < 1.0e-9:
             return None
         direction = (end - start) / length
-        geom = numpy.array([-1], dtype=numpy.int32)
         best: tuple[float, str] | None = None
         for model, data, mask in zip(self.models, self.datas, self.masks):
             travelled = 0.0
             for _ in range(MAX_PASS_THROUGH):
-                distance = mujoco.mj_ray(model, data, start + direction * travelled, direction, mask, 1, -1, geom)
-                if distance < 0 or travelled + distance > length:
+                found = cast(model, data, start + direction * travelled, direction, mask, length - travelled, mujoco)
+                if found is None:
                     break
-                index = int(geom[0])
+                distance, index = found
                 if model.geom_contype[index] or model.geom_conaffinity[index]:
                     hit = travelled + distance
                     if best is None or hit < best[0]:
@@ -372,8 +418,8 @@ class WorldHeight:
 
     def __call__(self, east_m: float, north_m: float) -> float:
         hits = [
-            hit for hit in (self._hit(model, data, east_m, north_m, mask, start)
-                            for model, data, mask, start in zip(self.models, self.datas, self.masks, self.ray_starts))
+            hit for hit in (self._hit(model, data, east_m, north_m, mask, start, bottom)
+                            for model, data, mask, start, bottom in self._rays())
             if hit is not None
         ]
         if not hits:

@@ -138,6 +138,31 @@ class WorldHeightTest(unittest.TestCase):
         self.assertAlmostEqual(ground(0.0, 0.0), 2.455, places=6, msg="on the terrain")
 
     @needs_mujoco
+    def test_a_mesh_roof_far_below_the_ray_start_is_hit(self):
+        # A 266 m tower makes the ray start there; MuJoCo's ray-mesh test
+        # misses a flat mesh roof 128 m or more below a ray's start (the
+        # Tokyo Metropolitan Government Building No. 2's 84 m roofs beside
+        # No. 1), so a single ray found the terrain under the roof.
+        roof = ("-5 -5 84 5 -5 84 5 5 84 -5 5 84 "
+                "-5 -5 83.98 5 -5 83.98 5 5 83.98 -5 5 83.98")
+        world = f"""<mujoco><asset><mesh name="roof" vertex="{roof}"/></asset>
+<worldbody>
+  <geom name="terrain" type="box" size="100 100 1" pos="0 0 -1"/>
+  <geom name="tower" type="box" size="2 2 133" pos="50 50 133"/>
+  <geom name="roof" type="mesh" mesh="roof"/>
+</worldbody></mujoco>"""
+        with self.quiet():
+            ground = world_height.ray_ground(self.mjcf(world), cache_dir=self.work / "cache")
+        self.assertAlmostEqual(ground(0.0, 0.0), 84.0, places=4, msg="on the roof")
+        self.assertAlmostEqual(ground(-50.0, 50.0), 266.0, places=4, msg="on the tower")
+        self.assertAlmostEqual(ground(30.0, 0.0), 0.0, places=4, msg="on the terrain")
+        self.assertAlmostEqual(ground.ground_below(0.0, 0.0, 320.0), 84.0, places=4)
+        distance, name = ground.first_hit((0.0, 0.0, 320.0), (0.0, 0.0, -50.0))
+        self.assertEqual(name, "roof")
+        self.assertAlmostEqual(distance, 236.0, places=4)
+        self.assertIsNone(ground.first_hit((0.0, 0.0, 320.0), (0.0, 0.0, 85.0)), "the segment ends above the roof")
+
+    @needs_mujoco
     def test_ray_without_geometry_below_is_an_error(self):
         with self.quiet():
             ground = world_height.ray_ground(self.mjcf(FLOATING), cache_dir=self.work / "cache")
