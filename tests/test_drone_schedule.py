@@ -5,6 +5,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "drone"))
@@ -214,6 +215,77 @@ class DroneScheduleTest(unittest.TestCase):
         self.assertEqual(route_line.section_values([0, 3, 6], [None, 0.4, 0.9], 8),
                          [None, None, None, 0.4, 0.4, 0.4, 0.9, 0.9])
         self.assertEqual(route_line.section_values([0, 3], [None, None], 4), [None] * 4)
+
+    def zoned(self, extra: str = "") -> dict:
+        """A schedule whose second waypoint blows wind and stops rotor 2 on its leg."""
+        text = SCHEDULE.replace(
+            "{name: north, east_m: 100, north_m: 45, rise_m: 20}",
+            "{name: north, east_m: 100, north_m: 45, rise_m: 20, wind: {towards_deg: 90, speed_m_s: 8},"
+            " fault: {rotors: [2], scale: 0.0}" + extra + "}")
+        return schedule_module.load_schedule(self.write(text), "Drone-1")
+
+    def test_a_waypoints_wind_and_fault_act_in_a_box_round_its_leg(self):
+        import flight_events
+
+        schedule = self.zoned()
+        self.assertEqual((schedule["zone_width_m"], schedule["zone_height_m"]), (2.0, 2.0))
+        [zone] = schedule_module.event_zones(schedule, (0.0, 0.0, 240.0))
+        # From "north" (up 240 + 20) to the first waypoint again (loop_count 2).
+        self.assertEqual((zone.a, zone.b), ((100.0, 45.0, 260.0), (100.0, -5.0, 260.0)))
+        self.assertEqual((zone.wind, zone.fault), (flight_events.Wind(90.0, 8.0), flight_events.Fault((2,), 0.0)))
+        self.assertTrue(zone.contains(100.9, 20.0, 260.9))
+        self.assertFalse(zone.contains(101.1, 20.0, 260.0))   # 1.1 m across: out of the 2 m box
+        self.assertFalse(zone.contains(100.0, 20.0, 261.1))   # 1.1 m above the line
+        self.assertTrue(zone.contains(100.0, 45.9, 260.0))    # holding at the waypoint: inside (1 m margin)
+        self.assertFalse(zone.contains(100.0, 46.1, 260.0))   # more than half the width before the leg
+        # A waypoint's own size overrides the drone's.
+        [wide] = schedule_module.event_zones(self.zoned(", zone_width_m: 6, zone_height_m: 4"), (0.0, 0.0, 240.0))
+        self.assertEqual((wide.width_m, wide.height_m), (6.0, 4.0))
+        self.assertTrue(wide.contains(102.9, 20.0, 261.9))
+        # Its corners for the Viewer: the bottom face, then the top one.
+        corners = zone.viewer()["corners"]
+        self.assertEqual(len(corners), 8)
+        self.assertEqual({corner[2] for corner in corners[:4]}, {259.0})
+        self.assertEqual({corner[2] for corner in corners[4:]}, {261.0})
+
+    def test_the_wind_blows_in_the_zone_and_a_fault_holds_after_it(self):
+        import flight_events
+
+        state = flight_events.EventState(schedule_module.event_zones(self.zoned(), (0.0, 0.0, 240.0)))
+        self.assertIsNone(state.update(100.0, 60.0, 260.0))   # outside: nothing changes
+        wind, faults = state.update(100.0, 20.0, 260.0)       # in the zone
+        self.assertEqual((wind.speed_m_s, faults), (8.0, {2: 0.0}))
+        self.assertIsNone(state.update(100.0, 10.0, 260.0))   # still in it: nothing new to send
+        wind, faults = state.update(100.0, -20.0, 260.0)      # out: the wind stops, the fault holds
+        self.assertEqual((wind, faults), (None, {2: 0.0}))
+        self.assertEqual(flight_events.rotor_scales(faults), [1.0, 1.0, 0.0])
+        # The wind blows towards north: ROS x (north).
+        self.assertEqual([round(value, 6) for value in flight_events.Wind(90.0, 8.0).ros_vector()], [8.0, 0.0, 0.0])
+
+    def test_zones_reject_bad_wind_and_faults(self):
+        bad = {
+            "wind: {towards_deg: 90}": "wind takes",
+            "fault: {rotors: []}": "fault takes",
+            "fault: {rotors: [0], scale: 2}": "at most 1",
+            "zone_width_m: 0": "positive",
+        }
+        for item, message in bad.items():
+            text = SCHEDULE.replace("rise_m: 20}", f"rise_m: 20, {item}}}")
+            with self.subTest(item), self.assertRaisesRegex(schedule_module.ScheduleError, message):
+                schedule_module.load_schedule(self.write(text), "Drone-1")
+
+    def test_the_runner_sends_the_disturbance_when_it_changes(self):
+        sent, positions = [], iter([(100.0, 60.0, 260.0), (100.0, 20.0, 260.0), (100.0, 20.0, 260.0)])
+
+        args = type("Args", (), {"drone": "Drone-1", "summary_json": None})()
+        runner = schedule_module.Runner(args, self.zoned(), (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: 1.0)
+        with unittest.mock.patch.object(schedule_module, "drone_position", lambda client: next(positions)), \
+                unittest.mock.patch.object(schedule_module, "send_disturbance",
+                                           lambda client, drone, wind, faults: sent.append((drone, wind, faults))):
+            for _ in range(3):
+                runner.watch_events()
+        self.assertEqual([(drone, wind.speed_m_s, faults) for drone, wind, faults in sent], [("Drone-1", 8.0, {2: 0.0})])
+        self.assertEqual(runner.summary["events"][0]["rotor_scales"], [1.0, 1.0, 0.0])
 
     def test_the_hexa_has_a_schedule_control_on_the_rpc_service(self):
         import urban_assets

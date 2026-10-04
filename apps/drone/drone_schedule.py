@@ -18,7 +18,13 @@ the same.
         waypoints:
           - {name: over-bridge, east_m: -40.0, north_m: -70.0, up_m: 265.0,
              yaw_deg: 200.0, speed_m_s: 4.0, hold_sec: 20.0}
-          - {name: back, east_m: 82.0, north_m: -5.0, rise_m: 15.0, hold_sec: 5.0}
+          - {name: back, east_m: 82.0, north_m: -5.0, rise_m: 15.0, hold_sec: 5.0,
+             # optional, on the leg from this point to the next (apps/drone/flight_events.py):
+             wind: {towards_deg: 90.0, speed_m_s: 8.0},     # blows north while the Drone is in the zone
+             fault: {rotors: [0], scale: 0.0},             # rotor 0 stops once the Drone enters it
+             zone_width_m: 4.0, zone_height_m: 4.0}        # this leg's zone (else the drone's)
+        zone_width_m: 2.0         # the zones round the legs: width across, height round the line
+        zone_height_m: 2.0
         land: true                # after the last round: back over the takeoff point, land
         # or land elsewhere, approached rise_m (default takeoff.rise_m) above it;
         # up_m is the Drone's height when down there (as the spawn's):
@@ -48,6 +54,8 @@ from typing import Any, Iterator
 
 import yaml
 
+import flight_events
+
 
 class ScheduleError(RuntimeError):
     pass
@@ -55,9 +63,11 @@ class ScheduleError(RuntimeError):
 
 # --- The schedule ------------------------------------------------------------------
 
-DRONE_KEYS = {"name", "start_delay_sec", "speed_m_s", "tolerance_m", "hop_m", "loop_count", "takeoff", "waypoints", "land"}
+DRONE_KEYS = {"name", "start_delay_sec", "speed_m_s", "tolerance_m", "hop_m", "loop_count", "takeoff", "waypoints", "land",
+              "zone_width_m", "zone_height_m"}
 LAND_KEYS = {"east_m", "north_m", "up_m", "rise_m"}
-WAYPOINT_KEYS = {"name", "east_m", "north_m", "up_m", "rise_m", "yaw_deg", "speed_m_s", "hold_sec"}
+WAYPOINT_KEYS = {"name", "east_m", "north_m", "up_m", "rise_m", "yaw_deg", "speed_m_s", "hold_sec",
+                 "wind", "fault", "zone_width_m", "zone_height_m"}
 
 
 def _number(value: Any, where: str, *, positive: bool = False, minimum: float | None = None) -> float:
@@ -98,6 +108,11 @@ def check_schedule(entry: dict, where: str) -> dict:
         # loop does not hold long gotos). Off by default: the EAMS Hexa flies
         # long legs with its API tuning (config/drone/hexa/controller-api-tuning.txt).
         "hop_m": (_number(entry["hop_m"], f"{where}.hop_m", positive=True) if "hop_m" in entry else None),
+        # The wind / fault zones' size round each leg (apps/drone/flight_events.py).
+        "zone_width_m": _number(entry.get("zone_width_m", flight_events.DEFAULT_ZONE_WIDTH_M),
+                                f"{where}.zone_width_m", positive=True),
+        "zone_height_m": _number(entry.get("zone_height_m", flight_events.DEFAULT_ZONE_HEIGHT_M),
+                                 f"{where}.zone_height_m", positive=True),
     }
     loops = entry.get("loop_count", 1)
     if loops == "forever":
@@ -139,6 +154,25 @@ def check_schedule(entry: dict, where: str) -> dict:
             checked["rise_m"] = _number(point["rise_m"], f"{at}.rise_m")
         if "yaw_deg" in point:
             checked["yaw_deg"] = _number(point["yaw_deg"], f"{at}.yaw_deg")
+        for key in ("zone_width_m", "zone_height_m"):
+            if key in point:
+                checked[key] = _number(point[key], f"{at}.{key}", positive=True)
+        if "wind" in point:
+            wind = point["wind"]
+            if not isinstance(wind, dict) or set(wind) != {"towards_deg", "speed_m_s"}:
+                raise ScheduleError(f"{at}.wind takes towards_deg and speed_m_s")
+            checked["wind"] = flight_events.Wind(_number(wind["towards_deg"], f"{at}.wind.towards_deg"),
+                                                 _number(wind["speed_m_s"], f"{at}.wind.speed_m_s", minimum=0.0))
+        if "fault" in point:
+            fault = point["fault"]
+            rotors = fault.get("rotors") if isinstance(fault, dict) else None
+            if (not isinstance(fault, dict) or set(fault) - {"rotors", "scale"} or not isinstance(rotors, list) or not rotors
+                    or not all(isinstance(rotor, int) and not isinstance(rotor, bool) and rotor >= 0 for rotor in rotors)):
+                raise ScheduleError(f"{at}.fault takes rotors (numbers from 0) and optionally scale (0 stopped .. 1)")
+            scale = _number(fault.get("scale", 0.0), f"{at}.fault.scale", minimum=0.0)
+            if scale > 1.0:
+                raise ScheduleError(f"{at}.fault.scale must be at most 1")
+            checked["fault"] = flight_events.Fault(tuple(sorted(set(rotors))), scale)
         schedule["waypoints"].append(checked)
     land = entry.get("land", True)
     if isinstance(land, dict):
@@ -263,6 +297,31 @@ def flight_path(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw
     return line
 
 
+def event_zones(schedule: dict, spawn_enu: tuple[float, float, float], spawn_yaw_deg: float = 0.0) -> list:
+    """The wind / fault zones (flight_events.Zone) of the waypoints that set one:
+    each round the leg from the waypoint to the next point the Drone flies to
+    (the next waypoint, the first again for another round, or over the landing
+    point; the waypoint itself when it is the last place)."""
+    line = flight_path(schedule, spawn_enu, spawn_yaw_deg)
+    zones = []
+    for at, item in enumerate(line):
+        if item["kind"] != "waypoint" or item.get("again"):
+            continue
+        point = schedule["waypoints"][int(item["label"]) - 1]
+        if "wind" not in point and "fault" not in point:
+            continue
+        following = line[at + 1] if at + 1 < len(line) else item
+        zones.append(flight_events.Zone(
+            label=point["name"],
+            a=(item["east_m"], item["north_m"], item["up_m"]),
+            b=(following["east_m"], following["north_m"], following["up_m"]),
+            width_m=point.get("zone_width_m", schedule["zone_width_m"]),
+            height_m=point.get("zone_height_m", schedule["zone_height_m"]),
+            wind=point.get("wind"), fault=point.get("fault"),
+        ))
+    return zones
+
+
 def _hops(goto: dict, start: tuple[float, float, float], hop_m: float) -> Iterator[dict]:
     """A goto as hops of at most hop_m along the straight line (the last one is the goto)."""
     end = (goto["east_m"], goto["north_m"], goto["up_m"])
@@ -305,6 +364,8 @@ class Runner:
     def __init__(self, args: argparse.Namespace, schedule: dict, spawn_enu, spawn_yaw: float, client, clock) -> None:
         self.args = args
         self.flight = steps(schedule, spawn_enu, spawn_yaw)
+        self.events = flight_events.EventState(event_zones(schedule, spawn_enu, spawn_yaw))
+        self.position_warned = False
         self.spawn_enu = spawn_enu
         self.client = client
         self.clock = clock  # () -> simulation seconds
@@ -362,8 +423,31 @@ class Runner:
         self.summary["steps"].append(record)
         print(f"SCHEDULE: done {record}", flush=True)
 
+    def watch_events(self) -> None:
+        """Send the wind / rotor faults of the zone the Drone is in when they change."""
+        if not self.events.zones:
+            return
+        try:
+            east, north, up = drone_position(self.client)
+        except Exception as exc:  # not up yet: next time
+            if not self.position_warned:
+                print(f"SCHEDULE: no position for the wind / fault zones yet ({exc})", flush=True)
+                self.position_warned = True
+            return
+        change = self.events.update(east, north, up)
+        if change is None:
+            return
+        wind, faults = change
+        send_disturbance(self.client, self.args.drone, wind, faults)
+        record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(east, 2), round(north, 2), round(up, 2)],
+                  "wind": None if wind is None else {"towards_deg": wind.towards_deg, "speed_m_s": wind.speed_m_s},
+                  "rotor_scales": flight_events.rotor_scales(faults)}
+        self.summary.setdefault("events", []).append(record)
+        print(f"SCHEDULE: disturbance {record}", flush=True)
+
     def step_once(self) -> None:
         """Advance as far as the clock allows; returns at once."""
+        self.watch_events()
         if self.done:
             return
         if self.wait_until is not None:
@@ -397,6 +481,24 @@ class Runner:
             return
         print(f"SCHEDULE: start {step} at {self.clock():.2f} s", flush=True)
         self.pending = self._submit(step)
+
+
+def drone_position(client) -> tuple[float, float, float]:
+    """The Drone's position in Urban ENU from its pos PDU (geometry_msgs/Twist,
+    ROS frame as the RPC's: x north, y west, z up)."""
+    from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_conv_Twist import pdu_to_py_Twist
+
+    linear = pdu_to_py_Twist(client.get_raw_pdu("pos")).linear
+    return -float(linear.y), float(linear.x), float(linear.z)
+
+
+def send_disturbance(client, drone: str, wind, faults: dict[int, float]) -> None:
+    """Write the Drone's disturb PDU (the Viewer's fault panel writes the same one).
+    The RPC client's PDU manager is Drone Core's shared runtime; it has no
+    public write call, so its manager writes the PDU."""
+    raw = flight_events.disturbance_pdu(wind, faults)
+    if not client._runtime.manager.flush_pdu_raw_data_nowait(drone, flight_events.DISTURB_PDU, bytearray(raw)):
+        raise ScheduleError(f"cannot write {drone}'s {flight_events.DISTURB_PDU} PDU")
 
 
 def foundation_offsets() -> Path | None:

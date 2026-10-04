@@ -193,3 +193,5 @@ button.active { outline: 2px solid #ffb300; }
 .friction-swatch { display: inline-block; width: 18px; height: 4px; margin: 0 4px 2px 2px; border-radius: 2px; vertical-align: middle; }
 .vehicle.fleet { border-style: dashed; }
 button.danger { color: var(--danger); border-color: var(--danger); }
+.flight-point-events { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+.flight-point-events h4 { margin: 0 0 6px; }

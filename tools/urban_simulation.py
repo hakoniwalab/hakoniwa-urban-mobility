@@ -549,7 +549,12 @@ def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Pat
             spawn, yaw = drone_schedule.spawn_from_marker(city_marker)
         except (urban_assets.AssetError, drone_schedule.ScheduleError, OSError) as exc:
             raise SimulationError(f"{vehicle.name}: no flight path for the Viewer: {exc}") from exc
-        paths.append({"drone": vehicle.name, "points": drone_schedule.flight_path(schedule, spawn, yaw)})
+        path = {"drone": vehicle.name, "points": drone_schedule.flight_path(schedule, spawn, yaw)}
+        # Where the schedule's wind and rotor faults act (apps/drone/flight_events.py).
+        zones = [zone.viewer() for zone in drone_schedule.event_zones(schedule, spawn, yaw)]
+        if zones:
+            path["zones"] = zones
+        paths.append(path)
     routes = route_paths(composition_path, ground)
     for path in viewer_configs:
         viewer = multi_car.load_json(path, "Viewer config")

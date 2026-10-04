@@ -1644,6 +1644,9 @@ async function runCommand(command) {
 // (ground or roof); the backend turns them into the World heights the
 // schedule flies (POST worlds/<id>/flight-check) and checks every leg.
 
+// A waypoint's wind / fault on the leg from it, and that leg's zone size.
+const FLIGHT_EVENT_KEYS = ["wind", "fault", "zone_width_m", "zone_height_m"];
+
 // The EAMS Hexa's spawn ground_clearance_m: its height when standing on a surface.
 const HEXA_STAND_M = 0.5;
 const FLIGHT_CHECK_DELAY_MS = 400;
@@ -1700,6 +1703,8 @@ async function editableDrone(world, takeoff, drone) {
       name: point.name || `p${index + 1}`, east_m: point.east_m, north_m: point.north_m,
       agl_m: agl, _read: { east_m: point.east_m, north_m: point.north_m, agl_m: agl, up_m: up },
       speed_m_s: point.speed_m_s ?? "", hold_sec: point.hold_sec ?? "", yaw_deg: point.yaw_deg ?? "",
+      // The wind / fault on the leg from this point (apps/drone/flight_events.py), kept as read.
+      ...Object.fromEntries(FLIGHT_EVENT_KEYS.filter((key) => point[key] !== undefined).map((key) => [key, point[key]])),
     };
   });
   drone._land = land
@@ -1865,8 +1870,9 @@ function renderFlightViews() {
   const line = flight.line.length ? flight.line : flightLine();
   const xy = line.map((point) => [point.east_m, point.north_m]);
   const blocked = flight.conflicts.map((conflict) => [xy[conflict.from - 1], xy[conflict.to - 1]]).filter(([a, b]) => a && b);
-  if (!$("#flight-map").hidden) state.flightMap?.setFlight(markers, xy, flight.selected, blocked);
-  if (flight.line.length) state.flightView?.setFlight(flight.line, flight.selected, flight.conflicts);
+  const zones = flight.line.length && state.flightZoneTools ? state.flightZoneTools.flightZones(flight.line, drone._points, drone) : [];
+  if (!$("#flight-map").hidden) state.flightMap?.setFlight(markers, xy, flight.selected, blocked, zones);
+  if (flight.line.length) state.flightView?.setFlight(flight.line, flight.selected, flight.conflicts, zones);
 }
 
 function renderFlight() {
@@ -1889,6 +1895,9 @@ function renderFlight() {
   $("#flight-delay").value = drone.start_delay_sec ?? 5;
   $("#flight-speed").value = drone.speed_m_s ?? 2;
   $("#flight-loops").value = drone.loop_count === "forever" ? "" : drone.loop_count ?? 1;
+  $("#flight-zone-width").value = drone.zone_width_m ?? "";
+  $("#flight-zone-height").value = drone.zone_height_m ?? "";
+  renderFlightPointEvents(drone, flight.selected);
   const land = drone._land;
   $("#flight-land").value = land.mode;
   for (const node of document.querySelectorAll(".flight-land-at")) node.hidden = land.mode !== "elsewhere";
@@ -1981,6 +1990,56 @@ function renderFlight() {
   renderFlightViews();
 }
 
+// The selected waypoint's wind / fault on the leg from it to the next point.
+function renderFlightPointEvents(drone, selected) {
+  const box = $("#flight-point-events");
+  const point = typeof selected === "number" ? drone._points[selected] : null;
+  box.hidden = !point;
+  if (!point) return;
+  const edited = () => { flightEdited(); renderFlight(); };
+  const number = (label, value, step, placeholder, apply) => el("label", { class: "field" }, label, el("input", {
+    type: "number", step, placeholder, value: value ?? "",
+    onchange: (event) => { apply(event.target.value.trim() === "" ? undefined : Number(event.target.value)); edited(); },
+  }));
+  const wind = point.wind || {};
+  // A direction typed before the speed waits in _windTowards (not saved).
+  const towards = wind.towards_deg ?? point._windTowards;
+  const setWind = (key, value) => {
+    const next = { towards_deg: towards ?? 0, speed_m_s: wind.speed_m_s, [key]: value };
+    point._windTowards = next.towards_deg;
+    if (next.speed_m_s > 0) point.wind = { towards_deg: Number.isFinite(next.towards_deg) ? next.towards_deg : 0, speed_m_s: next.speed_m_s };
+    else delete point.wind;
+  };
+  const rotorsText = point.fault ? point.fault.rotors.join(",") : "";
+  const sizeHint = `空欄は共通（幅 ${drone.zone_width_m ?? 2} m・高さ ${drone.zone_height_m ?? 2} m）`;
+  box.replaceChildren(
+    el("h4", {}, `点${selected + 1}（${point.name}）から次の点までの区間`),
+    el("div", { class: "row" },
+      number("風の向き (°)", towards, "5", "0", (value) => setWind("towards_deg", value)),
+      number("風速 (m/s)", wind.speed_m_s, "0.5", "なし", (value) => setWind("speed_m_s", value)),
+      el("label", { class: "field" }, "故障ローター", el("input", {
+        placeholder: "例: 0,2", value: rotorsText,
+        onchange: (event) => {
+          const rotors = [...new Set(event.target.value.split(/[,\s]+/).filter(Boolean).map(Number)
+            .filter((rotor) => Number.isInteger(rotor) && rotor >= 0))].sort((a, b) => a - b);
+          if (!rotors.length) delete point.fault;
+          else point.fault = { rotors, scale: point.fault?.scale ?? 0 };
+          edited();
+        },
+      })),
+      number("出力 (0〜1)", point.fault?.scale, "0.1", "0", (value) => {
+        if (point.fault) point.fault.scale = Math.min(1, Math.max(0, value ?? 0));
+      }),
+      number("箱の幅 (m)", point.zone_width_m, "0.5", String(drone.zone_width_m ?? 2), (value) => {
+        if (value > 0) point.zone_width_m = value; else delete point.zone_width_m;
+      }),
+      number("箱の高さ (m)", point.zone_height_m, "0.5", String(drone.zone_height_m ?? 2), (value) => {
+        if (value > 0) point.zone_height_m = value; else delete point.zone_height_m;
+      })),
+    el("p", { class: "hint" }, "風の向きは風が吹いていく向き（東 0°・反時計回り、北 90°）。風は箱の中にいる間だけ吹きます。"
+      + "故障はローター番号（0 から、Viewer の故障パネルと同じ）と出力（0 で停止）で、箱に入ったら着陸まで続きます。" + sizeHint));
+}
+
 function selectFlightPoint(index) {
   if (!state.flight) return;
   state.flight.selected = index;
@@ -2057,6 +2116,7 @@ async function droneSchedule(world, takeoff, drone) {
     if (point.speed_m_s !== "" && point.speed_m_s !== undefined) waypoint.speed_m_s = Number(point.speed_m_s);
     if (point.hold_sec !== "" && point.hold_sec !== undefined && Number(point.hold_sec) > 0) waypoint.hold_sec = Number(point.hold_sec);
     if (point.yaw_deg !== "" && point.yaw_deg !== undefined) waypoint.yaw_deg = Number(point.yaw_deg);
+    for (const key of FLIGHT_EVENT_KEYS) if (point[key] !== undefined) waypoint[key] = point[key];
     return waypoint;
   });
   if (land.mode === "elsewhere") {
@@ -2114,6 +2174,7 @@ async function deleteFlight() {
 
 async function initFlight() {
   const { FlightMapView, FlightView } = await import("./flight.js");
+  state.flightZoneTools = await import("./flight_zones.js");
   state.flightMap = new FlightMapView($("#flight-map"), {
     onPick: flightMapPicked,
     onSelect: (marker) => selectFlightPoint(marker.kind === "waypoint" ? marker.index : marker.kind),
@@ -2169,6 +2230,13 @@ async function initFlight() {
   bind("#flight-speed", (flight, input) => { flightDrone().speed_m_s = Math.max(0.1, routeNumber(input.value, 2)); });
   bind("#flight-loops", (flight, input) => { flightDrone().loop_count = Math.max(1, Math.round(routeNumber(input.value, 1))); });
   bind("#flight-land", (flight, input) => { flightDrone()._land.mode = input.value; });
+  for (const [selector, key] of [["#flight-zone-width", "zone_width_m"], ["#flight-zone-height", "zone_height_m"]]) {
+    bind(selector, (flight, input) => {
+      const value = Number(input.value);
+      if (input.value.trim() === "" || !(value > 0)) delete flightDrone()[key];
+      else flightDrone()[key] = value;
+    });
+  }
 }
 
 // Compose: a Drone's schedule param picks a flight; the flight's takeoff point
