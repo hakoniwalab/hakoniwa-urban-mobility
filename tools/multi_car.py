@@ -161,8 +161,30 @@ def native_executable(path: Path) -> Path:
     return path
 
 
+def needs_plant_directive(resolved: dict) -> bool:
+    """Whether a resolved Car configuration needs the Robot Runtime Plant Directive
+    path in the plant: a route with road_friction sets the tires' friction through
+    it (geom_friction). Built without it, the plant ignores the friction."""
+    return any(vehicle.get("tire_friction") for vehicle in resolved["vehicles"])
+
+
+def built_with_plant_directive() -> bool | None:
+    """Whether the Urban Car plant in build/ was configured with the Plant Directive
+    path (HAKO_URBAN_ENABLE_MIRROR); None when there is no CMake cache."""
+    cache = ROOT / "build/CMakeCache.txt"
+    if not cache.is_file():
+        return None
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("HAKO_URBAN_ENABLE_MIRROR:"):
+            return line.split("=", 1)[1].strip().upper() in {"ON", "1", "TRUE", "YES"}
+    return False
+
+
 def build_car_asset(*, enable_mirror: bool = False) -> None:
-    """Build the host-native Urban Car plant from the selected sibling sources."""
+    """Build the host-native Urban Car plant from the selected sibling sources.
+
+    enable_mirror builds the Plant Directive path (Mirror, geom friction); a
+    configuration with road friction needs it (needs_plant_directive)."""
     subprocess.run(
         [
             "cmake",
