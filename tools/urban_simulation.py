@@ -473,22 +473,12 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         )
 
 
-# Route lines are drawn this far above the surface, sampled this often.
-ROUTE_PATH_CLEARANCE_M = 0.3
-ROUTE_PATH_STEP_M = 1.0
-# A route sample looks down from this far above the previous one, so under a
-# bridge it finds the road, not the bridge.
-ROUTE_PATH_LOOK_ABOVE_M = 2.0
-
-
 def route_paths(composition_path: Path, ground=None) -> list[dict]:
     """The routes the api Cars drive, as lines on the World for the Viewer.
 
-    Each route scenario once (the Cars that drive it listed), its loop sampled
-    every ROUTE_PATH_STEP_M with the height of the surface under it: the first
-    point on the top of the World (where the Cars start), every next one looking
-    down from just above the previous (World heights ground_below), so a road
-    under a bridge stays on the road.
+    Each route scenario once (the Cars that drive it listed), its loop with the
+    height of the surface under it (tools/route_line.py): a road under a
+    bridge stays on the road.
     """
     import urban_composition
 
@@ -502,7 +492,8 @@ def route_paths(composition_path: Path, ground=None) -> list[dict]:
         return []
     if ground is None:
         ground = urban_composition._ground(composition, None)
-    below = getattr(ground, "ground_below", None)
+    import route_line
+
     sys.path.insert(0, str(ROOT / "apps/car"))
     try:
         import scenario_executor
@@ -513,21 +504,7 @@ def route_paths(composition_path: Path, ground=None) -> list[dict]:
         scenario = scenario_executor.load_scenario(path)
         if not isinstance(scenario, scenario_executor.RouteScenario):
             continue
-        corners = [(point.east_m, point.north_m) for point in scenario.points]
-        samples = []
-        for (e0, n0), (e1, n1) in zip(corners, corners[1:] + corners[:1]):  # a loop
-            steps = max(1, int(math.dist((e0, n0), (e1, n1)) // ROUTE_PATH_STEP_M))
-            samples += [(e0 + (e1 - e0) * k / steps, n0 + (n1 - n0) * k / steps) for k in range(steps)]
-        points, up = [], None
-        for east, north in samples:
-            if up is None or below is None:
-                height = float(ground(east, north))
-            else:
-                found = below(east, north, up + ROUTE_PATH_LOOK_ABOVE_M)
-                height = up if found is None else float(found)
-            up = height
-            points.append({"east_m": round(east, 2), "north_m": round(north, 2),
-                           "up_m": round(height + ROUTE_PATH_CLEARANCE_M, 2)})
+        points, _ = route_line.route_line([(point.east_m, point.north_m) for point in scenario.points], ground)
         paths.append({"route": scenario.name, "vehicles": names, "closed": True, "points": points})
     return paths
 

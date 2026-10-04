@@ -18,7 +18,7 @@ const KIND_COLORS = { takeoff: "#2e9d4f", waypoint: "#2e7dd7", land: "#d0572a" }
 const isSelected = (point, selected) => (point.kind === "waypoint" ? point.index === selected : point.kind === selected);
 
 // A text label that always faces the camera.
-function labelSprite(text, color) {
+export function labelSprite(text, color) {
   const canvas = document.createElement("canvas");
   canvas.width = 64;
   canvas.height = 64;

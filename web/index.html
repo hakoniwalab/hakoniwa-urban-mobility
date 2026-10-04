@@ -166,6 +166,15 @@
           <div id="route-map" class="placement-view"></div>
           <p id="route-map-hint" class="hint">地図をクリックすると点を追加します。点はドラッグで移動、クリックで選択します。点は番号順に結ばれ、最後の点から最初の点へ戻るループになります（3点以上）。</p>
           <div class="row between">
+            <h3>3D で確認</h3>
+            <div class="row">
+              <button id="route-focus-all" class="secondary">全体</button>
+              <button id="route-focus-point" class="secondary">選択した点</button>
+            </div>
+          </div>
+          <div id="route-3d" class="placement-view"></div>
+          <p class="hint">青い線がルートで、その下の面（道路・橋の上）の高さに沿って描きます。橋の下を通るところは道路の高さです。建物の壁にぶつかる区間は赤です。</p>
+          <div class="row between">
             <h3>点</h3>
             <button id="route-add-point" class="secondary">点を追加</button>
           </div>

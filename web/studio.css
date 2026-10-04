@@ -147,6 +147,7 @@ code { font-family: ui-monospace, Consolas, monospace; }
 #flight-map { height: 420px; }
 #flight-map[hidden] { display: none; }
 #flight-3d { height: 420px; }
+#route-3d { height: 420px; }
 #flight-points input { width: 6em; }
 #flight-points tr.selected { background: rgba(255, 179, 0, 0.15); }
 #flight-points input.flight-name { width: 10em; }

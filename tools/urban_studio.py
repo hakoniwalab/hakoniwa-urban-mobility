@@ -40,6 +40,8 @@ API (all JSON):
   GET  /api/worlds/<id>/footprints       a City World's building outlines (collision walls)
   POST /api/worlds/<id>/route-check      segments of route points blocked by those walls
   GET  /api/worlds/<id>/height?east=&north=  ground height (terrain, roofs, obstacles)
+  POST /api/worlds/<id>/route-line       a Car route's loop with the height of the surface
+                                         under it (the Route tab's 3D view)
   POST /api/worlds/<id>/flight-check     a Drone flight's point heights (from the height above
                                          the ground) and the legs that meet the World
   GET  /api/flights                      Drone flights (files with a drones: section)
@@ -933,6 +935,34 @@ def check_flight(world_id: str, body: object) -> dict:
     return {"points": resolved, "conflicts": conflicts, "checked": first_hit is not None, **flight_check.margins()}
 
 
+def route_line_3d(world_id: str, body: object) -> dict:
+    """A Car route's loop on a World with the height of the surface under it
+    (tools/route_line.py), for the Route tab's 3D view.
+
+    body: {"points": [{east_m, north_m}, ...]}. Returns {"points": [{east_m,
+    north_m, up_m}], "corners": [the index of each route point in it]}.
+    """
+    import route_line
+
+    points = body.get("points") if isinstance(body, dict) else None
+    if not isinstance(points, list) or any(
+        not isinstance(point, dict) or not all(
+            isinstance(point.get(key), (int, float)) and not isinstance(point.get(key), bool) for key in ("east_m", "north_m"))
+        for point in points
+    ):
+        raise StudioError("the request body must be {points: [{east_m, north_m}, ...]}")
+    if len(points) < 2:
+        return {"points": [], "corners": []}
+    ground, lock, _ = _world_ground(world_id)
+    with lock:  # one MuJoCo query at a time per World model
+        try:
+            line, corners = route_line.route_line([(point["east_m"], point["north_m"]) for point in points], ground,
+                                                  closed=len(points) >= 3)
+        except Exception as exc:  # noqa: BLE001 - e.g. a point outside the World
+            raise StudioError(f"no ground under the route: {exc}") from exc
+    return {"points": line, "corners": corners}
+
+
 def world_height(world_id: str, east_m: float, north_m: float) -> dict:
     """Ground height (terrain, buildings, obstacles) under a point; the World model loads once."""
     ground, lock, rooftops = _world_ground(world_id)
@@ -1355,6 +1385,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 return self._json(cache_state(self.runner))
             if method == "POST" and parts == ["cache", "prune"]:
                 return self._json(prune_cache(self.runner).snapshot(), HTTPStatus.ACCEPTED)
+            if method == "POST" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "route-line":
+                return self._json(route_line_3d(parts[1], self._body()))
             if method == "POST" and len(parts) == 3 and parts[0] == "worlds" and parts[2] == "flight-check":
                 return self._json(check_flight(parts[1], self._body()))
             if method == "GET" and parts == ["flights"]:
