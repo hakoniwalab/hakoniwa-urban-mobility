@@ -618,19 +618,29 @@ class FoundationPythonTest(unittest.TestCase):
             self.assertTrue(urban_portable.foundation_python(root).is_file())
 
 
-class AsciiPathTest(unittest.TestCase):
-    """MuJoCo on Windows cannot open a path outside ASCII, so prepare refuses such a
-    folder with a way out; spaces are fine."""
+class PackagePathTest(unittest.TestCase):
+    """prepare refuses a package folder outside letters, digits and _ . -: MuJoCo on
+    Windows cannot open a path outside ASCII, and spaces and shell characters break
+    the bat entrypoints."""
 
-    def test_spaces_and_ampersands_are_fine(self):
-        urban_portable.check_ascii_path(Path("C:/hako demo & co/hako-urban-studio-win64"))
+    def test_letters_digits_and_a_few_marks_are_fine(self):
+        urban_portable.check_package_path(Path("C:/hako/hako-urban-studio-win64"))
+        urban_portable.check_package_path(Path("D:/work_2026/v1.0/hako-urban-studio-win64"))
 
     def test_a_japanese_folder_is_refused_with_the_characters_and_a_way_out(self):
         with self.assertRaises(urban_portable.PortableError) as raised:
-            urban_portable.check_ascii_path(Path("C:/Users/山田/Downloads/hako-urban-studio-win64"))
+            urban_portable.check_package_path(Path("C:/Users/山田/Downloads/hako-urban-studio-win64"))
         message = str(raised.exception)
-        self.assertIn("山田", message)
+        self.assertIn("山", message)
         self.assertIn("C:\\hako", message)
+
+    def test_spaces_and_shell_characters_are_refused(self):
+        for folder in ("C:/hako demo/pkg", "C:/hako&co/pkg", "C:/100%/pkg", "C:/hako!/pkg"):
+            with self.subTest(folder=folder), self.assertRaises(urban_portable.PortableError):
+                urban_portable.check_package_path(Path(folder))
+        with self.assertRaises(urban_portable.PortableError) as raised:
+            urban_portable.check_package_path(Path("C:/hako demo/pkg"))
+        self.assertIn("空白", str(raised.exception))
 
     def test_prepare_checks_the_package_folder_before_anything_else(self):
         with mock.patch.object(urban_portable, "portable_package", return_value=True), \

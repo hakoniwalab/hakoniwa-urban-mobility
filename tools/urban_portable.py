@@ -729,18 +729,26 @@ def read_bundle_manifest(bundle: Path) -> dict:
         raise PortableError(f"デモデータが壊れています: {bundle}: {exc}") from exc
 
 
-def check_ascii_path(folder: Path) -> None:
-    """MuJoCo (3.13, Windows) cannot open a file whose path has a character outside
-    ASCII: the World, the Car plant and Drone Core all load MJCF/MJB by path. A
-    Windows user name in Japanese puts Downloads and Desktop on such a path."""
+# The characters a package folder may use: MuJoCo (3.13, Windows) cannot open a file
+# whose path has a character outside ASCII, and a space or a shell character
+# (&, %, ^, !, ...) breaks the bat entrypoints and command lines.
+PACKAGE_PATH_CHARACTERS = re.compile(r"[A-Za-z0-9_.\-:\\/]")
+
+
+def check_package_path(folder: Path) -> None:
+    """Refuse a package folder outside letters, digits, _ . - (and the drive's : and
+    the separators): the World, the Car plant and Drone Core load MJCF/MJB by path,
+    and a Windows user name in Japanese puts Downloads and Desktop on such a path."""
     text = str(folder)
-    others = sorted({character for character in text if ord(character) > 127})
+    others = sorted({character for character in text if not PACKAGE_PATH_CHARACTERS.fullmatch(character)})
     if others:
+        shown = "、".join("空白" if character == " " else character for character in others)
         raise PortableError(
-            f"展開先のフォルダのパスに、英数字以外の文字（{''.join(others)}）が入っています: {text}\n"
-            "物理エンジン（MuJoCo）が、このようなパスのファイルを開けません。"
-            "C:\\hako のような、英数字だけのフォルダに展開し直してください"
-            "（空白は使えます。ユーザー名が日本語のときは、ダウンロードやデスクトップのフォルダも使えません）"
+            f"展開先のフォルダのパスに、使えない文字（{shown}）が入っています: {text}\n"
+            "使えるのは英数字と _ . - だけです（日本語・空白・記号は使えません。"
+            "物理エンジンがファイルを開けない、または起動の bat が崩れるため）。"
+            "C:\\hako のようなフォルダに展開し直してください"
+            "（ユーザー名が日本語や空白入りのときは、ダウンロードやデスクトップのフォルダも使えません）"
         )
 
 
@@ -860,7 +868,7 @@ def prepare() -> int:
             "prepare は展開したパッケージの中でだけ動きます（HAKONIWA_PORTABLE_WORKSPACE=1 と "
             ".hakoniwa-repository-root）。作成元の Workspace のデータは書き換えません"
         )
-    check_ascii_path(PACKAGE_ROOT)
+    check_package_path(PACKAGE_ROOT)
     relocate_foundation_receipts()
     relocate_core_config()
     result = prepare_workspace()

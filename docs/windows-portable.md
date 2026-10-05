@@ -34,7 +34,7 @@ ZIP は Business Pack の `tools/package_portable_workspace.py` が作ります�
 
 ### デモデータ
 
-デモの街は、パッケージを作る Windows の Workspace で作り直します（Mac で作ったデータは持ち運びません。[demos/README.md](../demos/README.md)）。`collect` は、`portable/demo-data.json` の `include` と、それらのファイルが参照する work の中のファイル（絶対パス、`${repo:hakoniwa-business-pack}/work/...`）を集めます。JSON・YAML・XML の中の作成元のパスは、プレースホルダー（work は `__HAKONIWA_PORTABLE_WORK__`、リポジトリを並べたフォルダは `__HAKONIWA_PORTABLE_ROOT__`）に置き換えます。`/`・`\`・JSON のエスケープ・XML のエスケープ・大文字小文字の違いを含めて置き換え、残っていれば `collect` は失敗します。`include` のどれかがこの Workspace になければ、`collect` は `urban_demo_worlds.py` を案内して止まります（前に作った ZIP は使いません）。`prepare` は展開先のパスで埋め戻します（空白・`&` を含んでもよい）。展開先のパスに英数字以外の文字（日本語など）があれば、`prepare` は止めて英数字のフォルダへの展開を案内します（MuJoCo 3.13 の Windows 版がそのパスのファイルを開けないため）。PLATEAU の元データ（`build\source`）、Environment Studio の cache、Urban の cache（World の高さモデル、初回に作り直す）は同梱しません。
+デモの街は、パッケージを作る Windows の Workspace で作り直します（Mac で作ったデータは持ち運びません。[demos/README.md](../demos/README.md)）。`collect` は、`portable/demo-data.json` の `include` と、それらのファイルが参照する work の中のファイル（絶対パス、`${repo:hakoniwa-business-pack}/work/...`）を集めます。JSON・YAML・XML の中の作成元のパスは、プレースホルダー（work は `__HAKONIWA_PORTABLE_WORK__`、リポジトリを並べたフォルダは `__HAKONIWA_PORTABLE_ROOT__`）に置き換えます。`/`・`\`・JSON のエスケープ・XML のエスケープ・大文字小文字の違いを含めて置き換え、残っていれば `collect` は失敗します。`include` のどれかがこの Workspace になければ、`collect` は `urban_demo_worlds.py` を案内して止まります（前に作った ZIP は使いません）。`prepare` は展開先のパスで埋め戻します。展開先のパスに英数字と `_` `.` `-` 以外の文字（日本語・空白・記号）があれば、`prepare` は止めて `C:\hako` のようなフォルダへの展開を案内します（MuJoCo 3.13 の Windows 版は英数字以外の文字を含むパスのファイルを開けない。空白や記号は bat とコマンドラインを崩す）。PLATEAU の元データ（`build\source`）、Environment Studio の cache、Urban の cache（World の高さモデル、初回に作り直す）は同梱しません。
 
 packager は `work\` と、同梱するリポジトリの中の `build\` を（明示したもの以外）外すので、デモデータは ZIP の中の ZIP（`build\portable-runtime\urban-demo-data.zip`）として運びます。作成時の検証で `prepare` が staging に展開したものは、`staging_cleanup` で消してから ZIP にします。
 
@@ -145,7 +145,7 @@ python tools\package_portable_workspace.py --profile urban-studio
 
 ### 8. 確かめる
 
-1. 空白を含む英数字の短いパス（例 `C:\hako demo\`）に展開し、`start-urban-studio.bat` を実行する。ブラウザに Urban Studio が開く。日本語のパス（例 `C:\箱庭 デモ\`）に展開したときは、`start` が「英数字以外の文字が入っています」と知らせて止まることも確かめる（MuJoCo 3.13 の Windows 版は、英数字以外の文字を含むパスのファイルを開けない）。
+1. 英数字だけの短いパス（例 `C:\hako\`）に展開し、`start-urban-studio.bat` を実行する。ブラウザに Urban Studio が開く。日本語や空白を含むパス（例 `C:\箱庭 デモ\`、`C:\hako demo\`）に展開したときは、`start` が「使えない文字が入っています」と知らせて止まることも確かめる。
 2. Simulation タブで、デモ 3-1〜3-5 をそれぞれ Configure → Start → Viewer を開く → Stop。黒いコンソール窓が開かないこと。3-4・3-5 で摩擦が効くこと（凍結で止まりきれない）。
 3. City タブの「Environment Studio で作る」で小さな街を作り、Compose の World に出ること。
 4. `status-urban-studio.bat`、`stop-urban-studio.bat` で全部止まること（ポート 28090・28097・28100・28865〜28867 が空く）。
