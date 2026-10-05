@@ -1,0 +1,3273 @@
+# The Sapporo Station south rotary for the 箱庭カート ride (made from sapporo-351-exact,
+# which is unchanged; it shares that Recipe's assets).
+schema: hakoniwa.environment-recipe/v1
+name: 札幌駅南口ロータリー（雪の日・停止線と横断歩道つき）
+description: '③-5: sapporo-rotary with a stop line and a crosswalk (assumed positions, not PLATEAU data) on the street about 50 m after the rotary exit. The Sapporo Station south rotary with two Hakoniwa Shuttle stops (the station side, and the south side of 北5条手稲通 by an open space with three stalls and a lively square). Made from sapporo-351-exact, which is unchanged; it shares that Recipe''s assets.'
+catalog: ../../../../../hakoniwa-environment-studio/catalogs/starter/catalog.yaml
+geo:
+  provider: plateau
+  origin:
+    lat_deg: 43.06738
+    lon_deg: 141.350709
+  bbox_deg:
+    south: 43.066188183
+    west: 141.347904942
+    north: 43.068571749
+    east: 141.353513166
+  projection: hakoniwa-envsim local ENU about the origin (EPSG:6697)
+  query: '{"converter": "env_citygml 1", "sources": [{"path": "01100-2020/64414278_bldg_6697_op.gml",
+    "sha256": "04b24a82f803fbe488d77c2c9d173e17dd14efffba7d19f37c6029201a63dba3"}, {"path": "01100-2020/64414287_bldg_6697_op.gml",
+    "sha256": "53f3a4f3ac805539ba11a93559e1bb014f38636d68166171effcfb5e88d179e4"}, {"path": "01100-2020/64414288_bldg_6697_op.gml",
+    "sha256": "7565db5732f5c9183824e51c676772a3a460f87ff9a541b20e0f0761b893d5c5"}, {"path": "01100-2020/64414277_tran_6697_op.gml",
+    "sha256": "b4bf2a43b1b6bb19af8b0b3ae9aa392625285700b9032492531030d8e929aeb6"}, {"path": "01100-2020/64414278_tran_6697_op.gml",
+    "sha256": "0488cc95f2aa2379375d06a86bdb9b3719333a9c9e7899b60c36d082246238a9"}, {"path": "01100-2020/64414287_tran_6697_op.gml",
+    "sha256": "8e0eb648de266f2a48c44869bfaf7320cf195c727bf8a8c8488429d33dbd6f73"}, {"path": "01100-2020/64414288_tran_6697_op.gml",
+    "sha256": "98ecde3808c2677455137760166221ae2c03a83de805d4d9381093ee6b27a9ec"}]}'
+  attribution: PLATEAU (国土交通省)
+size_m:
+  east: 456.8
+  north: 264.8
+terrain:
+  item: city-dem
+  params:
+    dem: sapporo-351-exact.assets/terrain/terrain-receipt.json
+    visual: sapporo-351-exact.assets/terrain/terrain.glb
+objects:
+- id: bldg_1c6546bf-1c5d-4dba-83a1-af2685b77e14
+  item: building-footprint
+  pose:
+    x_m: 25.809
+    y_m: -88.228
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -20.473
+      - 2.297
+    - - -20.472
+      - 2.294
+    - - -17.57
+      - -13.4
+    - - 9.574
+      - -8.106
+    - - 10.209
+      - -11.71
+    - - 17.352
+      - -10.452
+    - - 17.999
+      - -14.362
+    - - 20.113
+      - -14.012
+    - - 19.462
+      - -10.081
+    - - 20.474
+      - -9.903
+    - - 20.473
+      - -9.902
+    - - 18.543
+      - 1.05
+    - - 17.993
+      - 0.953
+    - - 15.665
+      - 14.361
+    - - 10.368
+      - 13.284
+    - - 10.291
+      - 13.786
+    - - -15.886
+      - 8.916
+    height_m: 31.632
+    visual: sapporo-351-exact.assets/bldg_1c6546bf-1c5d-4dba-83a1-af2685b77e14.glb
+    collision: sapporo-351-exact.assets/bldg_1c6546bf-1c5d-4dba-83a1-af2685b77e14.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_1c6546bf-1c5d-4dba-83a1-af2685b77e14
+    note: 64414278_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001050100301'
+      AreaSerachKey: '010100105'
+      KeyCode: '478774'
+      様式Aキー: '0101001050100301'
+      現況図2500: 09-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00105'
+      敷地番号: '01003'
+      棟番号: '01'
+      建物用途名_基礎: 業務施設
+      建物用途名_動態図: A_業務施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: b_専用商業施設
+      建物用途_細分類: 11_業務施設
+      建物構造: 耐火構造
+      measuredHeight: '60.1'
+      storeysAboveGround: '9'
+      usage: '401'
+      class: '3002'
+      yearOfConstruction: '1972'
+  anchor:
+    x_m: 25.809
+    y_m: -88.228
+    z_m: 0.361627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_d21cde8c-8afc-42a3-b469-b77e50cd1187
+  item: building-footprint
+  pose:
+    x_m: 55.737
+    y_m: -80.979
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -12.853
+      - 7.543
+    - - -12.852
+      - 7.54
+    - - -9.998
+      - -7.471
+    - - -9.843
+      - -7.442
+    - - -8.835
+      - -12.925
+    - - -5.66
+      - -12.339
+    - - -5.603
+      - -12.639
+    - - -0.592
+      - -11.685
+    - - -0.592
+      - -11.684
+    - - 4.231
+      - -10.766
+    - - 9.347
+      - -9.794
+    - - 12.853
+      - -9.126
+    - - 12.852
+      - -9.123
+    - - 9.602
+      - 7.967
+    - - 10.625
+      - 8.181
+    - - 10.625
+      - 8.182
+    - - 9.821
+      - 12.024
+    - - 8.6
+      - 11.769
+    - - 8.359
+      - 12.925
+    - - 7.814
+      - 12.811
+    - - 7.814
+      - 12.808
+    - - 8.055
+      - 11.655
+    - - 7.217
+      - 11.48
+    - - 7.217
+      - 11.479
+    - - 7.241
+      - 11.365
+    height_m: 31.44
+    visual: sapporo-351-exact.assets/bldg_d21cde8c-8afc-42a3-b469-b77e50cd1187.glb
+    collision: sapporo-351-exact.assets/bldg_d21cde8c-8afc-42a3-b469-b77e50cd1187.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_d21cde8c-8afc-42a3-b469-b77e50cd1187
+    note: 64414278_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001050100501'
+      AreaSerachKey: '010100105'
+      KeyCode: '478773'
+      様式Aキー: '0101001050100501'
+      現況図2500: 09-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00105'
+      敷地番号: '01005'
+      棟番号: '01'
+      建物用途名_基礎: 業務施設
+      建物用途名_動態図: A_業務施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: b_専用商業施設
+      建物用途_細分類: 11_業務施設
+      建物構造: 簡易耐火構造
+      measuredHeight: '40.5'
+      storeysAboveGround: '9'
+      usage: '401'
+      class: '3002'
+      yearOfConstruction: '2003'
+  anchor:
+    x_m: 55.737
+    y_m: -80.979
+    z_m: 0.371627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_cfc3885f-44f3-4737-943f-a590b5423c69
+  item: building-footprint
+  pose:
+    x_m: -82.258
+    y_m: -65.699
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -3.207
+      - 1.064
+    - - -2.632
+      - -2.119
+    - - 3.206
+      - -1.064
+    - - 2.63
+      - 2.119
+    height_m: 4.588
+    visual: sapporo-351-exact.assets/bldg_cfc3885f-44f3-4737-943f-a590b5423c69.glb
+    collision: sapporo-351-exact.assets/bldg_cfc3885f-44f3-4737-943f-a590b5423c69.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_cfc3885f-44f3-4737-943f-a590b5423c69
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.0'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -82.258
+    y_m: -65.699
+    z_m: 0.631627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_958c9048-ce78-4158-a92e-508ab9f6cf38
+  item: building-footprint
+  pose:
+    x_m: -115.092
+    y_m: -24.335
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -4.855
+      - 0.664
+    - - -4.301
+      - -2.349
+    - - -4.3
+      - -2.349
+    - - 4.855
+      - -0.665
+    - - 4.301
+      - 2.348
+    - - 4.3
+      - 2.348
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_958c9048-ce78-4158-a92e-508ab9f6cf38.glb
+    collision: sapporo-351-exact.assets/bldg_958c9048-ce78-4158-a92e-508ab9f6cf38.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_958c9048-ce78-4158-a92e-508ab9f6cf38
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.4'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -115.092
+    y_m: -24.335
+    z_m: 1.154627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_b9576488-2f49-43d1-a328-9f33af544b9f
+  item: building-footprint
+  pose:
+    x_m: -132.031
+    y_m: -49.914
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -8.534
+      - 10.909
+    - - -4.231
+      - -11.986
+    - - -4.231
+      - -11.987
+    - - -3.631
+      - -11.874
+    - - -2.306
+      - -19.803
+    - - -2.306
+      - -19.804
+    - - 8.533
+      - -17.993
+    - - 5.987
+      - -2.755
+    - - 4.626
+      - -2.982
+    - - 3.515
+      - 2.928
+    - - 6.207
+      - 3.462
+    - - 3.515
+      - 19.803
+    - - 3.515
+      - 19.804
+    - - -4.956
+      - 18.165
+    - - -3.683
+      - 11.821
+    - - -4.164
+      - 11.731
+    - - -5.362
+      - 18.364
+    - - -5.362
+      - 18.365
+    - - -7.818
+      - 17.92
+    - - -6.618
+      - 11.27
+    height_m: 11.221
+    visual: sapporo-351-exact.assets/bldg_b9576488-2f49-43d1-a328-9f33af544b9f.glb
+    collision: sapporo-351-exact.assets/bldg_b9576488-2f49-43d1-a328-9f33af544b9f.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_b9576488-2f49-43d1-a328-9f33af544b9f
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      measuredHeight: '14.9'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -132.031
+    y_m: -49.914
+    z_m: 0.643627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_2855810f-6ad2-4ebd-9b67-97d305b74206
+  item: building-footprint
+  pose:
+    x_m: -85.209
+    y_m: -18.814
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.03
+      - 1.239
+    - - -1.532
+      - -1.817
+    - - -1.532
+      - -1.818
+    - - 2.031
+      - -1.238
+    - - 1.535
+      - 1.818
+    height_m: 4.157
+    visual: sapporo-351-exact.assets/bldg_2855810f-6ad2-4ebd-9b67-97d305b74206.glb
+    collision: sapporo-351-exact.assets/bldg_2855810f-6ad2-4ebd-9b67-97d305b74206.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_2855810f-6ad2-4ebd-9b67-97d305b74206
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.4'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -85.209
+    y_m: -18.814
+    z_m: 1.165627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_3d012c6e-586d-4595-a78a-79e21cf14d60
+  item: building-footprint
+  pose:
+    x_m: -68.148
+    y_m: -63.627
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -10.361
+      - 0.621
+    - - -9.42
+      - -4.354
+    - - -9.42
+      - -4.355
+    - - 10.362
+      - -0.622
+    - - 9.423
+      - 4.355
+    height_m: 3.603
+    visual: sapporo-351-exact.assets/bldg_3d012c6e-586d-4595-a78a-79e21cf14d60.glb
+    collision: sapporo-351-exact.assets/bldg_3d012c6e-586d-4595-a78a-79e21cf14d60.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_3d012c6e-586d-4595-a78a-79e21cf14d60
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001370100301'
+      AreaSerachKey: '010100137'
+      KeyCode: '340102'
+      様式Aキー: '0101001370100301'
+      現況図2500: 09-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00137'
+      敷地番号: '01003'
+      棟番号: '01'
+      建物用途名_基礎: 地方国家施設
+      建物用途名_動態図: J_官公庁施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: a_官公署施設
+      建物用途_細分類: 01_地方国家施設
+      建物構造: 簡易耐火構造
+      measuredHeight: '4.0'
+      storeysAboveGround: '1'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '2005'
+      name: 中央警察署札幌駅前交番
+  anchor:
+    x_m: -68.148
+    y_m: -63.627
+    z_m: 0.554627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_dcb246b8-7af9-4ace-a3ec-3b417852faf2
+  item: building-footprint
+  pose:
+    x_m: -77.528
+    y_m: -36.748
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -7.331
+      - 0.179
+    - - -6.714
+      - -2.947
+    - - 3.694
+      - -0.89
+    - - 3.779
+      - -1.338
+    - - 7.332
+      - -0.659
+    - - 6.643
+      - 2.947
+    - - 3.09
+      - 2.268
+    - - 3.096
+      - 2.238
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_dcb246b8-7af9-4ace-a3ec-3b417852faf2.glb
+    collision: sapporo-351-exact.assets/bldg_dcb246b8-7af9-4ace-a3ec-3b417852faf2.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_dcb246b8-7af9-4ace-a3ec-3b417852faf2
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      KeyCode: '340101'
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -77.528
+    y_m: -36.748
+    z_m: 1.016627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_c973a791-3f11-433c-adc4-b25a649d210a
+  item: building-footprint
+  pose:
+    x_m: -76.078
+    y_m: -17.018
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -4.886
+      - 0.818
+    - - -4.344
+      - -2.379
+    - - -4.344
+      - -2.38
+    - - 4.886
+      - -0.819
+    - - 4.345
+      - 2.38
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_c973a791-3f11-433c-adc4-b25a649d210a.glb
+    collision: sapporo-351-exact.assets/bldg_c973a791-3f11-433c-adc4-b25a649d210a.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_c973a791-3f11-433c-adc4-b25a649d210a
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.0'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -76.078
+    y_m: -17.018
+    z_m: 1.128627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_b52378ff-7e57-4fac-b596-fb87955de7a1
+  item: building-footprint
+  pose:
+    x_m: -127.334
+    y_m: -26.777
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -3.049
+      - 1.054
+    - - -2.607
+      - -2.048
+    - - -2.607
+      - -2.049
+    - - 0.7
+      - -1.578
+    - - 0.67
+      - -1.368
+    - - 3.049
+      - -0.941
+    - - 2.512
+      - 2.047
+    - - 2.512
+      - 2.048
+    - - -0.114
+      - 1.574
+    - - -0.096
+      - 1.475
+    height_m: 4.534
+    visual: sapporo-351-exact.assets/bldg_b52378ff-7e57-4fac-b596-fb87955de7a1.glb
+    collision: sapporo-351-exact.assets/bldg_b52378ff-7e57-4fac-b596-fb87955de7a1.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_b52378ff-7e57-4fac-b596-fb87955de7a1
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      KeyCode: '340100'
+      measuredHeight: '5.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -127.334
+    y_m: -26.777
+    z_m: 1.076627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_e6ff3c8d-2fe2-4652-b08c-f50fbca37f0c
+  item: building-footprint
+  pose:
+    x_m: -120.924
+    y_m: -73.954
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.522
+      - 1.549
+    - - -2.029
+      - -2.153
+    - - -2.029
+      - -2.154
+    - - 2.521
+      - -1.548
+    - - 2.03
+      - 2.154
+    height_m: 4.376
+    visual: sapporo-351-exact.assets/bldg_e6ff3c8d-2fe2-4652-b08c-f50fbca37f0c.glb
+    collision: sapporo-351-exact.assets/bldg_e6ff3c8d-2fe2-4652-b08c-f50fbca37f0c.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_e6ff3c8d-2fe2-4652-b08c-f50fbca37f0c
+    note: 64414287_bldg_6697_op.gml
+    tags:
+      KeyCode: '340485'
+      measuredHeight: '4.9'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -120.924
+    y_m: -73.954
+    z_m: 0.596627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_f062ad54-ad22-4b3b-af13-e1e44652c858
+  item: building-footprint
+  pose:
+    x_m: 79.032
+    y_m: -36.611
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.576
+      - 1.65
+    - - -1.576
+      - 1.649
+    - - -0.997
+      - -2.051
+    - - 1.577
+      - -1.649
+    - - 1.0
+      - 2.052
+    height_m: 5.618
+    visual: sapporo-351-exact.assets/bldg_f062ad54-ad22-4b3b-af13-e1e44652c858.glb
+    collision: sapporo-351-exact.assets/bldg_f062ad54-ad22-4b3b-af13-e1e44652c858.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_f062ad54-ad22-4b3b-af13-e1e44652c858
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.6'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 79.032
+    y_m: -36.611
+    z_m: 0.236627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_6de9707c-6e67-4cff-9f0c-33b9c5f16d45
+  item: building-footprint
+  pose:
+    x_m: 32.548
+    y_m: -45.201
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.385
+      - 1.617
+    - - -0.818
+      - -1.965
+    - - 1.385
+      - -1.616
+    - - 0.819
+      - 1.964
+    height_m: 4.61
+    visual: sapporo-351-exact.assets/bldg_6de9707c-6e67-4cff-9f0c-33b9c5f16d45.glb
+    collision: sapporo-351-exact.assets/bldg_6de9707c-6e67-4cff-9f0c-33b9c5f16d45.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_6de9707c-6e67-4cff-9f0c-33b9c5f16d45
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '340583'
+      measuredHeight: '4.9'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 32.548
+    y_m: -45.201
+    z_m: 0.634627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_bcc6ad73-3b0f-4bbc-a13a-51e2da9b2ef2
+  item: building-footprint
+  pose:
+    x_m: 150.906
+    y_m: 16.151
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -77.487
+      - -7.517
+    - - -77.404
+      - -7.96
+    - - -76.053
+      - -15.202
+    - - -75.971
+      - -15.645
+    - - -75.531
+      - -15.551
+    - - -68.525
+      - -14.058
+    - - -66.534
+      - -13.686
+    - - -66.095
+      - -13.587
+    - - -63.447
+      - -12.987
+    - - -39.288
+      - -8.879
+    - - -32.052
+      - -47.722
+    - - 72.367
+      - -28.172
+    - - 77.488
+      - -20.948
+    - - 64.602
+      - 47.723
+    - - 62.606
+      - 47.359
+    - - 60.823
+      - 47.037
+    - - 54.654
+      - 45.915
+    - - 54.621
+      - 46.103
+    - - 46.654
+      - 44.708
+    - - 46.609
+      - 44.965
+    - - 43.509
+      - 44.423
+    - - 43.509
+      - 44.421
+    - - 43.6
+      - 43.905
+    - - -12.479
+      - 33.708
+    - - -12.783
+      - 35.105
+    - - -17.698
+      - 34.036
+    - - -17.698
+      - 34.032
+    - - -17.432
+      - 32.807
+    - - -46.387
+      - 27.542
+    - - -40.734
+      - -0.659
+    - - -64.962
+      - -4.868
+    - - -68.05
+      - -5.57
+    - - -70.042
+      - -5.941
+    height_m: 44.97
+    visual: sapporo-351-exact.assets/bldg_bcc6ad73-3b0f-4bbc-a13a-51e2da9b2ef2.glb
+    collision: sapporo-351-exact.assets/bldg_bcc6ad73-3b0f-4bbc-a13a-51e2da9b2ef2.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_bcc6ad73-3b0f-4bbc-a13a-51e2da9b2ef2
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001370100102'
+      AreaSerachKey: '010100137'
+      KeyCode: '491208'
+      様式Aキー: '0101001370100102'
+      現況図2500: 08-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00137'
+      敷地番号: '01001'
+      棟番号: '02'
+      建物用途名_基礎: 集合販売施設
+      建物用途名_動態図: B_商業施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: b_専用商業施設
+      建物用途_細分類: 12_集合販売施設
+      建物構造: 簡易耐火構造
+      measuredHeight: '62.5'
+      storeysAboveGround: '11'
+      usage: '402'
+      class: '3002'
+      yearOfConstruction: '1979'
+  anchor:
+    x_m: 150.906
+    y_m: 16.151
+    z_m: 0.282627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_bed1cfb5-ce9a-49a5-8893-4ddee22feb93
+  item: building-footprint
+  pose:
+    x_m: 38.457
+    y_m: -44.074
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.385
+      - 1.616
+    - - -0.818
+      - -1.965
+    - - 1.385
+      - -1.616
+    - - 0.818
+      - 1.965
+    height_m: 4.909
+    visual: sapporo-351-exact.assets/bldg_bed1cfb5-ce9a-49a5-8893-4ddee22feb93.glb
+    collision: sapporo-351-exact.assets/bldg_bed1cfb5-ce9a-49a5-8893-4ddee22feb93.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_bed1cfb5-ce9a-49a5-8893-4ddee22feb93
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '340584'
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 38.457
+    y_m: -44.074
+    z_m: 0.503627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_bd40bcad-10be-4545-9207-71febac9e0c2
+  item: building-footprint
+  pose:
+    x_m: 69.804
+    y_m: 50.138
+    yaw_deg: 0
+  params:
+    footprint:
+    - - 2.835
+      - 5.298
+    - - -4.338
+      - 3.945
+    - - -3.55
+      - -1.104
+    - - -3.554
+      - -1.104
+    - - -2.714
+      - -6.082
+    - - 4.495
+      - -4.863
+    - - 4.495
+      - -4.862
+    - - 3.656
+      - 0.112
+    - - 3.646
+      - 0.111
+    height_m: 6.017
+    visual: sapporo-351-exact.assets/bldg_bd40bcad-10be-4545-9207-71febac9e0c2.glb
+    collision: sapporo-351-exact.assets/bldg_bd40bcad-10be-4545-9207-71febac9e0c2.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_bd40bcad-10be-4545-9207-71febac9e0c2
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '6.0'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+      clipped_by: bldg_c47111ea-2a6d-46b3-9131-7b24831354a3
+      clipped_m2: '6.609'
+  anchor:
+    x_m: 69.804
+    y_m: 50.138
+    z_m: 1.204627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_4d83c7ce-1dfe-4cc7-9de4-a03278e83548
+  item: building-footprint
+  pose:
+    x_m: 77.71
+    y_m: 29.41
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -7.399
+      - 5.427
+    - - -7.399
+      - 5.426
+    - - -4.81
+      - -7.814
+    - - 7.398
+      - -5.428
+    - - 7.398
+      - -5.427
+    - - 4.809
+      - 7.813
+    height_m: 5.421
+    visual: sapporo-351-exact.assets/bldg_4d83c7ce-1dfe-4cc7-9de4-a03278e83548.glb
+    collision: sapporo-351-exact.assets/bldg_4d83c7ce-1dfe-4cc7-9de4-a03278e83548.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_4d83c7ce-1dfe-4cc7-9de4-a03278e83548
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '308353'
+      measuredHeight: '5.4'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 77.71
+    y_m: 29.41
+    z_m: 0.931627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_eed017fc-7780-4468-b7a4-549ec233dadc
+  item: building-footprint
+  pose:
+    x_m: -39.138
+    y_m: 3.118
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.333
+      - 4.655
+    - - -1.886
+      - 2.122
+    - - -1.948
+      - 2.111
+    - - -0.604
+      - -5.11
+    - - -0.604
+      - -5.111
+    - - 2.333
+      - -4.564
+    - - 0.989
+      - 2.657
+    - - 0.701
+      - 2.603
+    - - 0.259
+      - 5.111
+    height_m: 3.111
+    visual: sapporo-351-exact.assets/bldg_eed017fc-7780-4468-b7a4-549ec233dadc.glb
+    collision: sapporo-351-exact.assets/bldg_eed017fc-7780-4468-b7a4-549ec233dadc.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_eed017fc-7780-4468-b7a4-549ec233dadc
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.1'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -39.138
+    y_m: 3.118
+    z_m: 1.040627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_7d397fa7-523c-41fe-a4b2-45a205762a7a
+  item: building-footprint
+  pose:
+    x_m: -13.766
+    y_m: 7.503
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -9.898
+      - 2.243
+    - - -9.615
+      - -1.678
+    - - -8.554
+      - -5.462
+    - - -6.799
+      - -8.804
+    - - -4.493
+      - -11.433
+    - - -1.823
+      - -13.135
+    - - 0.994
+      - -13.774
+    - - 3.731
+      - -13.296
+    - - 6.166
+      - -11.741
+    - - 8.101
+      - -9.235
+    - - 9.38
+      - -5.981
+    - - 9.899
+      - -2.242
+    - - 9.616
+      - 1.678
+    - - 8.554
+      - 5.463
+    - - 6.8
+      - 8.805
+    - - 4.494
+      - 11.434
+    - - 1.824
+      - 13.136
+    - - -0.993
+      - 13.774
+    - - -3.73
+      - 13.297
+    - - -6.165
+      - 11.742
+    - - -8.1
+      - 9.236
+    - - -9.379
+      - 5.982
+    height_m: 5.774
+    holes:
+    - - - -1.932
+        - -8.009
+      - - -0.891
+        - -9.454
+      - - 0.913
+        - -10.044
+      - - 2.252
+        - -10.008
+      - - 3.759
+        - -9.145
+      - - 4.802
+        - -8.076
+      - - 5.659
+        - -6.416
+      - - 5.884
+        - -5.731
+      - - 5.925
+        - -5.049
+      - - -2.31
+        - -6.926
+    visual: sapporo-351-exact.assets/bldg_7d397fa7-523c-41fe-a4b2-45a205762a7a.glb
+    collision: sapporo-351-exact.assets/bldg_7d397fa7-523c-41fe-a4b2-45a205762a7a.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_7d397fa7-523c-41fe-a4b2-45a205762a7a
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '14.1'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -13.766
+    y_m: 7.503
+    z_m: 1.051627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_cc1798f9-07f6-476e-b3e3-36b1a5d9f87c
+  item: building-footprint
+  pose:
+    x_m: 55.53
+    y_m: -19.278
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.874
+      - 0.82
+    - - -1.874
+      - 0.819
+    - - -1.451
+      - -1.442
+    - - 1.874
+      - -0.821
+    - - 1.451
+      - 1.442
+    height_m: 4.455
+    visual: sapporo-351-exact.assets/bldg_cc1798f9-07f6-476e-b3e3-36b1a5d9f87c.glb
+    collision: sapporo-351-exact.assets/bldg_cc1798f9-07f6-476e-b3e3-36b1a5d9f87c.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_cc1798f9-07f6-476e-b3e3-36b1a5d9f87c
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 55.53
+    y_m: -19.278
+    z_m: 0.802627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_44989d64-9b4b-48b6-9433-899983a87638
+  item: building-footprint
+  pose:
+    x_m: -10.108
+    y_m: -36.577
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -3.866
+      - 10.451
+    - - 0.123
+      - -11.142
+    - - 0.453
+      - -11.081
+    - - 3.866
+      - -10.45
+    - - -0.121
+      - 11.142
+    height_m: 3.929
+    visual: sapporo-351-exact.assets/bldg_44989d64-9b4b-48b6-9433-899983a87638.glb
+    collision: sapporo-351-exact.assets/bldg_44989d64-9b4b-48b6-9433-899983a87638.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_44989d64-9b4b-48b6-9433-899983a87638
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '340104'
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -10.108
+    y_m: -36.577
+    z_m: 0.697627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_02efaeb4-a2f6-4c1b-a510-e7d159613c9d
+  item: building-footprint
+  pose:
+    x_m: 6.476
+    y_m: 39.993
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -7.918
+      - 0.115
+    - - -7.476
+      - -3.132
+    - - -6.346
+      - -3.049
+    - - -6.233
+      - -3.493
+    - - 3.758
+      - -1.467
+    - - 3.759
+      - -1.473
+    - - 7.917
+      - -0.869
+    - - 7.285
+      - 3.494
+    - - 3.127
+      - 2.891
+    - - 3.161
+      - 2.656
+    - - -6.949
+      - 0.732
+    - - -6.889
+      - 0.18
+    height_m: 3.754
+    visual: sapporo-351-exact.assets/bldg_02efaeb4-a2f6-4c1b-a510-e7d159613c9d.glb
+    collision: sapporo-351-exact.assets/bldg_02efaeb4-a2f6-4c1b-a510-e7d159613c9d.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_02efaeb4-a2f6-4c1b-a510-e7d159613c9d
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.1'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 6.476
+    y_m: 39.993
+    z_m: 1.129627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_98bf9c60-3667-49b8-b32c-eb0424e2c094
+  item: building-footprint
+  pose:
+    x_m: 49.934
+    y_m: 10.979
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.761
+      - 1.132
+    - - -1.761
+      - 1.131
+    - - -1.295
+      - -1.644
+    - - 1.761
+      - -1.132
+    - - 1.761
+      - -1.131
+    - - 1.295
+      - 1.644
+    height_m: 4.242
+    visual: sapporo-351-exact.assets/bldg_98bf9c60-3667-49b8-b32c-eb0424e2c094.glb
+    collision: sapporo-351-exact.assets/bldg_98bf9c60-3667-49b8-b32c-eb0424e2c094.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_98bf9c60-3667-49b8-b32c-eb0424e2c094
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 49.934
+    y_m: 10.979
+    z_m: 0.997627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_29cb761a-f11f-4b18-b3a1-72c2d78747a2
+  item: building-footprint
+  pose:
+    x_m: 47.858
+    y_m: -42.434
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -5.861
+      - 0.754
+    - - -5.077
+      - -3.024
+    - - 5.862
+      - -0.755
+    - - 5.079
+      - 3.024
+    height_m: 3.327
+    visual: sapporo-351-exact.assets/bldg_29cb761a-f11f-4b18-b3a1-72c2d78747a2.glb
+    collision: sapporo-351-exact.assets/bldg_29cb761a-f11f-4b18-b3a1-72c2d78747a2.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_29cb761a-f11f-4b18-b3a1-72c2d78747a2
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 47.858
+    y_m: -42.434
+    z_m: 0.408627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_b4bfed9d-c8c0-45c5-8f37-2932a4a2b313
+  item: building-footprint
+  pose:
+    x_m: 23.183
+    y_m: -47.046
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -5.862
+      - 0.754
+    - - -5.078
+      - -3.024
+    - - 5.861
+      - -0.754
+    - - 5.078
+      - 3.025
+    height_m: 3.421
+    visual: sapporo-351-exact.assets/bldg_b4bfed9d-c8c0-45c5-8f37-2932a4a2b313.glb
+    collision: sapporo-351-exact.assets/bldg_b4bfed9d-c8c0-45c5-8f37-2932a4a2b313.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_b4bfed9d-c8c0-45c5-8f37-2932a4a2b313
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 23.183
+    y_m: -47.046
+    z_m: 0.396627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_621201d1-1236-4d18-b450-68f067cfc7c6
+  item: building-footprint
+  pose:
+    x_m: -52.257
+    y_m: -13.643
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.977
+      - 2.851
+    - - -0.994
+      - -3.323
+    - - 1.978
+      - -2.85
+    - - 0.996
+      - 3.323
+    height_m: 4.788
+    visual: sapporo-351-exact.assets/bldg_621201d1-1236-4d18-b450-68f067cfc7c6.glb
+    collision: sapporo-351-exact.assets/bldg_621201d1-1236-4d18-b450-68f067cfc7c6.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_621201d1-1236-4d18-b450-68f067cfc7c6
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -52.257
+    y_m: -13.643
+    z_m: 1.081627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_3ac6c3da-50aa-41ce-ba8f-a1a775b1c96e
+  item: building-footprint
+  pose:
+    x_m: 55.19
+    y_m: -16.95
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.874
+      - 0.821
+    - - -1.451
+      - -1.442
+    - - 1.873
+      - -0.819
+    - - 1.45
+      - 1.443
+    height_m: 5.405
+    visual: sapporo-351-exact.assets/bldg_3ac6c3da-50aa-41ce-ba8f-a1a775b1c96e.glb
+    collision: sapporo-351-exact.assets/bldg_3ac6c3da-50aa-41ce-ba8f-a1a775b1c96e.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_3ac6c3da-50aa-41ce-ba8f-a1a775b1c96e
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.4'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 55.19
+    y_m: -16.95
+    z_m: 0.827627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_b7302978-5703-41fb-b603-6df04b08a2c0
+  item: building-footprint
+  pose:
+    x_m: 138.081
+    y_m: -76.082
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -12.232
+      - 7.204
+    - - -6.636
+      - -22.882
+    - - 12.23
+      - -19.228
+    - - 12.231
+      - -19.225
+    - - 7.32
+      - 8.041
+    - - 9.04
+      - 8.389
+    - - 10.117
+      - 9.541
+    - - 8.717
+      - 18.263
+    - - 7.322
+      - 19.194
+    - - 7.778
+      - 19.278
+    - - 7.778
+      - 19.28
+    - - 7.111
+      - 22.881
+    - - 5.108
+      - 22.509
+    - - 5.107
+      - 22.507
+    - - 5.707
+      - 19.274
+    - - 5.311
+      - 19.194
+    - - 4.94
+      - 21.251
+    - - -10.929
+      - 18.24
+    - - -12.232
+      - 7.207
+    height_m: 33.821
+    visual: sapporo-351-exact.assets/bldg_b7302978-5703-41fb-b603-6df04b08a2c0.glb
+    collision: sapporo-351-exact.assets/bldg_b7302978-5703-41fb-b603-6df04b08a2c0.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_b7302978-5703-41fb-b603-6df04b08a2c0
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001040100701'
+      AreaSerachKey: '010100104'
+      KeyCode: '479383'
+      様式Aキー: '0101001040100701'
+      現況図2500: 09-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00104'
+      敷地番号: '01007'
+      棟番号: '01'
+      建物用途名_基礎: 遊技施設
+      建物用途名_動態図: E_遊技施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: c_娯楽施設
+      建物用途_細分類: 23_遊技施設
+      建物構造: 簡易耐火構造
+      measuredHeight: '36.2'
+      storeysAboveGround: '7'
+      usage: '402'
+      class: '3002'
+      yearOfConstruction: '2004'
+  anchor:
+    x_m: 138.081
+    y_m: -76.082
+    z_m: 0.082627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_74599bc1-4b8d-46c3-b242-7385335109ab
+  item: building-footprint
+  pose:
+    x_m: 71.215
+    y_m: -38.268
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -6.643
+      - 0.691
+    - - -6.643
+      - 0.69
+    - - -5.818
+      - -3.119
+    - - 4.065
+      - -0.973
+    - - 4.067
+      - -0.985
+    - - 6.643
+      - -0.582
+    - - 6.065
+      - 3.119
+    - - 4.289
+      - 2.841
+    - - 4.243
+      - 3.053
+    height_m: 3.568
+    visual: sapporo-351-exact.assets/bldg_74599bc1-4b8d-46c3-b242-7385335109ab.glb
+    collision: sapporo-351-exact.assets/bldg_74599bc1-4b8d-46c3-b242-7385335109ab.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_74599bc1-4b8d-46c3-b242-7385335109ab
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.6'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 71.215
+    y_m: -38.268
+    z_m: 0.271627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_9a33882a-8912-4726-b99b-f6d98116e9c8
+  item: building-footprint
+  pose:
+    x_m: -49.136
+    y_m: -13.144
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.977
+      - 2.852
+    - - -0.996
+      - -3.323
+    - - 1.977
+      - -2.851
+    - - 0.995
+      - 3.323
+    height_m: 4.846
+    visual: sapporo-351-exact.assets/bldg_9a33882a-8912-4726-b99b-f6d98116e9c8.glb
+    collision: sapporo-351-exact.assets/bldg_9a33882a-8912-4726-b99b-f6d98116e9c8.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_9a33882a-8912-4726-b99b-f6d98116e9c8
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -49.136
+    y_m: -13.144
+    z_m: 1.077627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_85c9e125-00d5-49c4-9e6c-23ca6f4ba910
+  item: building-footprint
+  pose:
+    x_m: 85.873
+    y_m: 1.238
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.607
+      - 0.737
+    - - -2.145
+      - -1.653
+    - - 2.607
+      - -0.738
+    - - 2.145
+      - 1.654
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_85c9e125-00d5-49c4-9e6c-23ca6f4ba910.glb
+    collision: sapporo-351-exact.assets/bldg_85c9e125-00d5-49c4-9e6c-23ca6f4ba910.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_85c9e125-00d5-49c4-9e6c-23ca6f4ba910
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 85.873
+    y_m: 1.238
+    z_m: 0.711627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_e7b97775-fe77-4604-9cc8-ac18e254dfe2
+  item: building-footprint
+  pose:
+    x_m: 88.192
+    y_m: 55.941
+    yaw_deg: 0
+  params:
+    footprint:
+    - - 2.645
+      - 2.926
+    - - -3.531
+      - 1.762
+    - - -2.643
+      - -2.934
+    - - 3.533
+      - -1.767
+    height_m: 6.779
+    visual: sapporo-351-exact.assets/bldg_e7b97775-fe77-4604-9cc8-ac18e254dfe2.glb
+    collision: sapporo-351-exact.assets/bldg_e7b97775-fe77-4604-9cc8-ac18e254dfe2.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_e7b97775-fe77-4604-9cc8-ac18e254dfe2
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '6.8'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+      clipped_by: bldg_c47111ea-2a6d-46b3-9131-7b24831354a3
+      clipped_m2: '0.040'
+  anchor:
+    x_m: 88.192
+    y_m: 55.941
+    z_m: 1.071627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_41bb52be-e234-430e-addc-1de3f04b6bd8
+  item: building-footprint
+  pose:
+    x_m: 54.623
+    y_m: -14.463
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.873
+      - 0.821
+    - - -1.873
+      - 0.82
+    - - -1.451
+      - -1.442
+    - - 1.874
+      - -0.821
+    - - 1.874
+      - -0.82
+    - - 1.451
+      - 1.441
+    height_m: 5.298
+    visual: sapporo-351-exact.assets/bldg_41bb52be-e234-430e-addc-1de3f04b6bd8.glb
+    collision: sapporo-351-exact.assets/bldg_41bb52be-e234-430e-addc-1de3f04b6bd8.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_41bb52be-e234-430e-addc-1de3f04b6bd8
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 54.623
+    y_m: -14.463
+    z_m: 0.854627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_f67097cb-cbe4-494e-b6e1-a5ff954e9be5
+  item: building-footprint
+  pose:
+    x_m: 64.584
+    y_m: 10.142
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -4.298
+      - 7.357
+    - - -2.547
+      - -3.881
+    - - -2.453
+      - -3.867
+    - - -1.768
+      - -7.953
+    - - 1.225
+      - -7.455
+    - - 1.225
+      - -7.454
+    - - 4.299
+      - -6.943
+    - - 1.816
+      - 7.952
+    - - -1.179
+      - 7.452
+    - - -1.238
+      - 7.834
+    height_m: 4.357
+    visual: sapporo-351-exact.assets/bldg_f67097cb-cbe4-494e-b6e1-a5ff954e9be5.glb
+    collision: sapporo-351-exact.assets/bldg_f67097cb-cbe4-494e-b6e1-a5ff954e9be5.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_f67097cb-cbe4-494e-b6e1-a5ff954e9be5
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '308845'
+      measuredHeight: '5.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 64.584
+    y_m: 10.142
+    z_m: 0.925627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_0e77303b-9ed4-43e3-bca0-3beeb1f1a861
+  item: building-footprint
+  pose:
+    x_m: 26.389
+    y_m: -21.538
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.528
+      - 6.201
+    - - -0.289
+      - -6.69
+    - - 2.527
+      - -6.202
+    - - 0.288
+      - 6.691
+    height_m: 3.12
+    visual: sapporo-351-exact.assets/bldg_0e77303b-9ed4-43e3-bca0-3beeb1f1a861.glb
+    collision: sapporo-351-exact.assets/bldg_0e77303b-9ed4-43e3-bca0-3beeb1f1a861.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_0e77303b-9ed4-43e3-bca0-3beeb1f1a861
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '472045'
+      measuredHeight: '3.8'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 26.389
+    y_m: -21.538
+    z_m: 0.795627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_8b02d2db-febe-48aa-9a16-c76dddb7345c
+  item: building-footprint
+  pose:
+    x_m: 32.234
+    y_m: 44.678
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -7.824
+      - 0.866
+    - - -7.276
+      - -3.345
+    - - -3.209
+      - -2.816
+    - - -3.234
+      - -2.625
+    - - 6.852
+      - -0.946
+    - - 6.813
+      - -0.542
+    - - 7.825
+      - -0.466
+    - - 7.345
+      - 3.152
+    - - 6.309
+      - 2.958
+    - - 6.212
+      - 3.345
+    - - -3.902
+      - 1.376
+    height_m: 3.82
+    visual: sapporo-351-exact.assets/bldg_8b02d2db-febe-48aa-9a16-c76dddb7345c.glb
+    collision: sapporo-351-exact.assets/bldg_8b02d2db-febe-48aa-9a16-c76dddb7345c.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_8b02d2db-febe-48aa-9a16-c76dddb7345c
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 32.234
+    y_m: 44.678
+    z_m: 1.128627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_3bde0240-ed6b-4f32-95b9-075c04c9060e
+  item: building-footprint
+  pose:
+    x_m: 81.998
+    y_m: -36.11
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.577
+      - 1.648
+    - - -0.998
+      - -2.052
+    - - 1.577
+      - -1.65
+    - - 1.0
+      - 2.052
+    height_m: 4.972
+    visual: sapporo-351-exact.assets/bldg_3bde0240-ed6b-4f32-95b9-075c04c9060e.glb
+    collision: sapporo-351-exact.assets/bldg_3bde0240-ed6b-4f32-95b9-075c04c9060e.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_3bde0240-ed6b-4f32-95b9-075c04c9060e
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.7'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 81.998
+    y_m: -36.11
+    z_m: 0.196627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_5f60a24f-a5b5-4e2c-b0da-57b6bb341581
+  item: building-footprint
+  pose:
+    x_m: 49.459
+    y_m: 14.262
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.761
+      - 1.132
+    - - -1.296
+      - -1.645
+    - - 1.76
+      - -1.131
+    - - 1.293
+      - 1.646
+    height_m: 5.113
+    visual: sapporo-351-exact.assets/bldg_5f60a24f-a5b5-4e2c-b0da-57b6bb341581.glb
+    collision: sapporo-351-exact.assets/bldg_5f60a24f-a5b5-4e2c-b0da-57b6bb341581.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_5f60a24f-a5b5-4e2c-b0da-57b6bb341581
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 49.459
+    y_m: 14.262
+    z_m: 1.023627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_377d0cb8-3bbc-45e4-bc06-415e042e2402
+  item: building-footprint
+  pose:
+    x_m: 43.835
+    y_m: 17.119
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -25.893
+      - -3.211
+    - - -25.15
+      - -6.663
+    - - -15.028
+      - -4.784
+    - - -12.319
+      - -19.313
+    - - -8.877
+      - -18.802
+    - - -8.877
+      - -18.801
+    - - -13.951
+      - 8.438
+    - - 13.439
+      - 13.422
+    - - 14.656
+      - 7.269
+    - - 13.99
+      - 7.158
+    - - 14.582
+      - 3.563
+    - - 15.385
+      - 3.666
+    - - 15.785
+      - 0.794
+    - - 19.23
+      - 1.356
+    - - 17.023
+      - 14.225
+    - - 25.893
+      - 15.905
+    - - 25.38
+      - 19.314
+    - - -18.092
+      - 11.327
+    - - -15.851
+      - -1.384
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_377d0cb8-3bbc-45e4-bc06-415e042e2402.glb
+    collision: sapporo-351-exact.assets/bldg_377d0cb8-3bbc-45e4-bc06-415e042e2402.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_377d0cb8-3bbc-45e4-bc06-415e042e2402
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 43.835
+    y_m: 17.119
+    z_m: 0.983627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_e7f4cae2-a6b2-4139-99e2-41102bd2e8a5
+  item: building-footprint
+  pose:
+    x_m: 82.139
+    y_m: -13.051
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.655
+      - 5.818
+    - - -0.388
+      - -6.383
+    - - 2.655
+      - -5.819
+    - - 0.387
+      - 6.383
+    height_m: 3.099
+    visual: sapporo-351-exact.assets/bldg_e7f4cae2-a6b2-4139-99e2-41102bd2e8a5.glb
+    collision: sapporo-351-exact.assets/bldg_e7f4cae2-a6b2-4139-99e2-41102bd2e8a5.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_e7f4cae2-a6b2-4139-99e2-41102bd2e8a5
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.1'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 82.139
+    y_m: -13.051
+    z_m: 0.545627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_8fe9b98b-b05a-475a-991b-4c8a6652a9b9
+  item: building-footprint
+  pose:
+    x_m: -41.545
+    y_m: 27.337
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -4.547
+      - 2.356
+    - - -3.363
+      - -3.862
+    - - -3.363
+      - -3.863
+    - - 4.547
+      - -2.359
+    - - 3.364
+      - 3.861
+    - - 3.364
+      - 3.862
+    height_m: 5.903
+    visual: sapporo-351-exact.assets/bldg_8fe9b98b-b05a-475a-991b-4c8a6652a9b9.glb
+    collision: sapporo-351-exact.assets/bldg_8fe9b98b-b05a-475a-991b-4c8a6652a9b9.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_8fe9b98b-b05a-475a-991b-4c8a6652a9b9
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.9'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -41.545
+    y_m: 27.337
+    z_m: 1.140627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_c47111ea-2a6d-46b3-9131-7b24831354a3
+  item: building-footprint
+  pose:
+    x_m: 29.174
+    y_m: 54.703
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -182.664
+      - -16.461
+    - - -175.527
+      - -54.309
+    - - -175.527
+      - -54.31
+    - - -170.252
+      - -53.179
+    - - -175.527
+      - -24.106
+    - - -172.595
+      - -23.576
+    - - -170.873
+      - -32.055
+    - - -170.871
+      - -32.061
+    - - -170.574
+      - -32.017
+    - - -170.522
+      - -32.009
+    - - -165.33
+      - -60.047
+    - - -172.977
+      - -61.322
+    - - -174.454
+      - -54.153
+    - - -175.552
+      - -54.379
+    - - -174.084
+      - -61.506
+    - - -174.521
+      - -61.579
+    - - -173.514
+      - -67.37
+    - - -173.513
+      - -67.371
+    - - -173.064
+      - -67.294
+    - - -171.687
+      - -74.046
+    - - -166.631
+      - -73.478
+    - - -167.224
+      - -70.565
+    - - -165.466
+      - -72.831
+    - - -162.835
+      - -75.1
+    - - -159.659
+      - -76.79
+    - - -156.182
+      - -77.606
+    - - -153.125
+      - -77.355
+    - - -84.529
+      - -63.814
+    - - -82.474
+      - -63.077
+    - - -80.358
+      - -61.924
+    - - -78.107
+      - -60.151
+    - - -76.003
+      - -57.178
+    - - -74.721
+      - -54.046
+    - - -74.363
+      - -52.204
+    - - -74.367
+      - -49.76
+    - - -77.125
+      - -34.338
+    - - -77.126
+      - -34.336
+    - - -77.211
+      - -34.364
+    - - -77.609
+      - -32.505
+    - - -77.111
+      - -32.426
+    - - -78.923
+      - -20.982
+    - - -78.365
+      - -20.894
+    - - -78.127
+      - -22.184
+    - - -78.125
+      - -22.19
+    - - -56.875
+      - -18.183
+    - - -55.742
+      - -24.604
+    - - -44.533
+      - -22.625
+    - - -45.69
+      - -16.075
+    - - 64.352
+      - 4.673
+    - - 66.135
+      - -4.455
+    - - 64.473
+      - -4.84
+    - - 64.473
+      - -4.847
+    - - 65.227
+      - -9.747
+    - - 67.057
+      - -11.87
+    - - 74.451
+      - -10.295
+    - - 74.451
+      - -10.289
+    - - 74.405
+      - -10.059
+    - - 85.758
+      - -7.841
+    - - 85.759
+      - -7.837
+    - - 85.711
+      - -7.593
+    - - 142.398
+      - 2.965
+    - - 142.399
+      - 2.97
+    - - 141.583
+      - 7.354
+    - - 143.199
+      - 7.654
+    - - 144.086
+      - 3.065
+    - - 157.664
+      - 5.69
+    - - 157.665
+      - 5.696
+    - - 157.551
+      - 6.282
+    - - 182.664
+      - 10.601
+    - - 182.664
+      - 10.603
+    - - 181.448
+      - 16.252
+    - - 170.736
+      - 73.294
+    - - 169.889
+      - 73.133
+    - - 169.025
+      - 77.606
+    - - -87.871
+      - 27.993
+    - - -87.985
+      - 28.571
+    - - -87.986
+      - 28.573
+    - - -94.718
+      - 27.248
+    - - -93.653
+      - 21.832
+    - - -101.235
+      - 20.341
+    - - -110.982
+      - 18.379
+    - - -133.637
+      - 12.839
+    - - -145.923
+      - 9.373
+    - - -145.986
+      - 9.657
+    - - -145.986
+      - 9.658
+    - - -180.833
+      - 0.567
+    - - -177.578
+      - -15.564
+    height_m: 45.617
+    holes:
+    - - - -123.373
+        - 2.997
+      - - -122.865
+        - 3.116
+      - - -123.438
+        - 6.031
+      - - -124.034
+        - 5.836
+    visual: sapporo-351-exact.assets/bldg_c47111ea-2a6d-46b3-9131-7b24831354a3.glb
+    collision: sapporo-351-exact.assets/bldg_c47111ea-2a6d-46b3-9131-7b24831354a3.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_c47111ea-2a6d-46b3-9131-7b24831354a3
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      kisokey: '0101001370100101'
+      AreaSerachKey: '010100137'
+      KeyCode: '476017'
+      様式Aキー: '0101001370100101'
+      現況図2500: 08-09
+      編集年度: '2019'
+      分割年度: '2019'
+      大ゾーン番号: '01'
+      中ゾーン番号: '01'
+      小ゾーン番号: '00137'
+      敷地番号: '01001'
+      棟番号: '01'
+      建物用途名_基礎: 集合販売施設
+      建物用途名_動態図: B_商業施設
+      建物用途_大分類: 00_母屋
+      建物用途_中分類: a_商業
+      建物用途_小分類: b_専用商業施設
+      建物用途_細分類: 12_集合販売施設
+      建物構造: 簡易耐火構造
+      measuredHeight: '173.9'
+      storeysAboveGround: '38'
+      usage: '402'
+      class: '3002'
+      yearOfConstruction: '2002'
+  anchor:
+    x_m: 29.174
+    y_m: 54.703
+    z_m: 0.095627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_39dc4cdf-8dac-4e8a-ad0a-f077b3dc8c6c
+  item: building-footprint
+  pose:
+    x_m: 23.804
+    y_m: -6.898
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.628
+      - 1.374
+    - - -1.628
+      - 1.373
+    - - -1.166
+      - -1.783
+    - - 1.628
+      - -1.374
+    - - 1.166
+      - 1.782
+    height_m: 4.779
+    visual: sapporo-351-exact.assets/bldg_39dc4cdf-8dac-4e8a-ad0a-f077b3dc8c6c.glb
+    collision: sapporo-351-exact.assets/bldg_39dc4cdf-8dac-4e8a-ad0a-f077b3dc8c6c.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_39dc4cdf-8dac-4e8a-ad0a-f077b3dc8c6c
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 23.804
+    y_m: -6.898
+    z_m: 0.941627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_d83633b3-b70e-4e9f-a9b3-3b905f2a5f48
+  item: building-footprint
+  pose:
+    x_m: -34.569
+    y_m: -40.748
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -4.034
+      - 10.296
+    - - 0.091
+      - -11.056
+    - - 0.588
+      - -10.96
+    - - 4.034
+      - -10.295
+    - - -0.092
+      - 11.057
+    height_m: 3.872
+    visual: sapporo-351-exact.assets/bldg_d83633b3-b70e-4e9f-a9b3-3b905f2a5f48.glb
+    collision: sapporo-351-exact.assets/bldg_d83633b3-b70e-4e9f-a9b3-3b905f2a5f48.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_d83633b3-b70e-4e9f-a9b3-3b905f2a5f48
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '340103'
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3001'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -34.569
+    y_m: -40.748
+    z_m: 0.777627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_57398623-e355-492f-90d3-f067b984f44c
+  item: building-footprint
+  pose:
+    x_m: 28.651
+    y_m: -7.657
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -3.436
+      - 2.245
+    - - -2.393
+      - -3.335
+    - - 3.437
+      - -2.246
+    - - 2.394
+      - 3.335
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_57398623-e355-492f-90d3-f067b984f44c.glb
+    collision: sapporo-351-exact.assets/bldg_57398623-e355-492f-90d3-f067b984f44c.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_57398623-e355-492f-90d3-f067b984f44c
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.8'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 28.651
+    y_m: -7.657
+    z_m: 0.933627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_6d934a3a-6b7d-4685-9211-1dc150c65bec
+  item: building-footprint
+  pose:
+    x_m: 21.261
+    y_m: 19.659
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.156
+      - 4.217
+    - - -2.156
+      - 4.216
+    - - -0.62
+      - -4.694
+    - - 2.157
+      - -4.216
+    - - 0.621
+      - 4.694
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_6d934a3a-6b7d-4685-9211-1dc150c65bec.glb
+    collision: sapporo-351-exact.assets/bldg_6d934a3a-6b7d-4685-9211-1dc150c65bec.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_6d934a3a-6b7d-4685-9211-1dc150c65bec
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.0'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 21.261
+    y_m: 19.659
+    z_m: 1.110627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_08e3b3a8-1d68-4bef-896a-eec4e34a57ea
+  item: building-footprint
+  pose:
+    x_m: 48.864
+    y_m: 17.358
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.761
+      - 1.133
+    - - -1.761
+      - 1.132
+    - - -1.295
+      - -1.646
+    - - 1.76
+      - -1.131
+    - - 1.76
+      - -1.13
+    - - 1.295
+      - 1.646
+    height_m: 5.073
+    visual: sapporo-351-exact.assets/bldg_08e3b3a8-1d68-4bef-896a-eec4e34a57ea.glb
+    collision: sapporo-351-exact.assets/bldg_08e3b3a8-1d68-4bef-896a-eec4e34a57ea.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_08e3b3a8-1d68-4bef-896a-eec4e34a57ea
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.2'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 48.864
+    y_m: 17.358
+    z_m: 1.050627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_bcf403e6-3e15-4850-aa29-727a50e843a1
+  item: building-footprint
+  pose:
+    x_m: -42.088
+    y_m: 2.571
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.191
+      - 4.619
+    - - -1.724
+      - 2.168
+    - - -2.091
+      - 2.099
+    - - -0.747
+      - -5.122
+    - - 2.191
+      - -4.574
+    - - 0.869
+      - 2.529
+    - - 0.941
+      - 2.543
+    - - 0.45
+      - 5.121
+    height_m: 3.321
+    visual: sapporo-351-exact.assets/bldg_bcf403e6-3e15-4850-aa29-727a50e843a1.glb
+    collision: sapporo-351-exact.assets/bldg_bcf403e6-3e15-4850-aa29-727a50e843a1.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_bcf403e6-3e15-4850-aa29-727a50e843a1
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: -42.088
+    y_m: 2.571
+    z_m: 1.079627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_ef8abb66-0dee-4e32-b869-341d425287bc
+  item: building-footprint
+  pose:
+    x_m: 24.331
+    y_m: -10.127
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -1.628
+      - 1.374
+    - - -1.166
+      - -1.782
+    - - 1.628
+      - -1.375
+    - - 1.628
+      - -1.374
+    - - 1.166
+      - 1.782
+    height_m: 3.946
+    visual: sapporo-351-exact.assets/bldg_ef8abb66-0dee-4e32-b869-341d425287bc.glb
+    collision: sapporo-351-exact.assets/bldg_ef8abb66-0dee-4e32-b869-341d425287bc.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_ef8abb66-0dee-4e32-b869-341d425287bc
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.3'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 24.331
+    y_m: -10.127
+    z_m: 0.932627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_c7b35c0c-03b0-4439-82f5-2a1957ebea72
+  item: building-footprint
+  pose:
+    x_m: 167.75
+    y_m: -59.538
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -12.17
+      - -4.46
+    - - -11.909
+      - -5.811
+    - - -6.966
+      - -9.221
+    - - 7.295
+      - -6.467
+    - - 6.021
+      - 0.128
+    - - 7.616
+      - -0.827
+    - - 12.169
+      - 6.782
+    - - 8.096
+      - 9.221
+    - - 5.199
+      - 4.38
+    - - 4.682
+      - 7.054
+    - - -6.916
+      - 4.813
+    - - -6.172
+      - 0.955
+    - - -7.11
+      - 0.774
+    - - -7.111
+      - 0.773
+    - - -6.318
+      - -3.33
+    height_m: 7.357
+    visual: sapporo-351-exact.assets/bldg_c7b35c0c-03b0-4439-82f5-2a1957ebea72.glb
+    collision: sapporo-351-exact.assets/bldg_c7b35c0c-03b0-4439-82f5-2a1957ebea72.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_c7b35c0c-03b0-4439-82f5-2a1957ebea72
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      KeyCode: '495565'
+      measuredHeight: '7.4'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '3003'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 167.75
+    y_m: -59.538
+    z_m: 0.475627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_4752500e-f822-418b-b16c-6c6be47e3e75
+  item: building-footprint
+  pose:
+    x_m: 21.695
+    y_m: 4.264
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.417
+      - 5.573
+    - - -0.189
+      - -6.073
+    - - 2.417
+      - -5.574
+    - - 0.189
+      - 6.072
+    height_m: 3.0
+    visual: sapporo-351-exact.assets/bldg_4752500e-f822-418b-b16c-6c6be47e3e75.glb
+    collision: sapporo-351-exact.assets/bldg_4752500e-f822-418b-b16c-6c6be47e3e75.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_4752500e-f822-418b-b16c-6c6be47e3e75
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '3.0'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 21.695
+    y_m: 4.264
+    z_m: 1.003627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: bldg_22edf9f2-a82e-4d26-8e7a-bc94064450ac
+  item: building-footprint
+  pose:
+    x_m: 96.931
+    y_m: 40.404
+    yaw_deg: 0
+  params:
+    footprint:
+    - - -2.812
+      - 1.144
+    - - -2.812
+      - 1.143
+    - - -2.411
+      - -2.063
+    - - 0.249
+      - -1.729
+    - - 0.249
+      - -1.728
+    - - 0.216
+      - -1.47
+    - - 2.813
+      - -1.145
+    - - 2.411
+      - 2.064
+    - - -0.249
+      - 1.729
+    - - -0.216
+      - 1.471
+    height_m: 4.753
+    visual: sapporo-351-exact.assets/bldg_22edf9f2-a82e-4d26-8e7a-bc94064450ac.glb
+    collision: sapporo-351-exact.assets/bldg_22edf9f2-a82e-4d26-8e7a-bc94064450ac.xml
+  source:
+    provider: plateau
+    kind: citygml
+    id: bldg_22edf9f2-a82e-4d26-8e7a-bc94064450ac
+    note: 64414288_bldg_6697_op.gml
+    tags:
+      measuredHeight: '5.5'
+      storeysAboveGround: '9999'
+      usage: '461'
+      class: '9999'
+      yearOfConstruction: '0001'
+  anchor:
+    x_m: 96.931
+    y_m: 40.404
+    z_m: 1.002627326
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+- id: roads
+  item: city-layer
+  pose:
+    x_m: 0.0
+    y_m: 0.0
+    yaw_deg: 0.0
+  params:
+    outlines:
+    - - - -160.219
+        - -91.3
+      - - -126.978
+        - -91.3
+      - - -127.319
+        - -70.724
+      - - -132.21
+        - -71.607
+      - - -134.738
+        - -69.983
+      - - -134.77
+        - -69.834
+      - - -158.778
+        - -77.642
+      - - -162.987
+        - -83.397
+    - - - -126.978
+        - -91.3
+      - - -60.858
+        - -91.3
+      - - -38.334
+        - -87.292
+      - - -43.921
+        - -55.886
+      - - -127.319
+        - -70.724
+    - - - -172.7
+        - -85.279
+      - - -172.7
+        - -91.3
+      - - -160.219
+        - -91.3
+      - - -162.987
+        - -83.397
+    - - - -5.644
+        - -91.3
+      - - 7.654
+        - -91.3
+      - - 7.224
+        - -88.947
+    - - - 131.687
+        - -91.3
+      - - 126.216
+        - -61.646
+      - - 106.539
+        - -65.279
+      - - 111.343
+        - -91.3
+    - - - -172.7
+        - 51.838
+      - - -172.7
+        - 31.184
+      - - -154.188
+        - 34.692
+      - - -156.217
+        - 45.397
+      - - -157.842
+        - 54.492
+    - - - -172.7
+        - 31.184
+      - - -172.7
+        - -1.941
+      - - -163.935
+        - -48.144
+      - - -158.778
+        - -77.642
+      - - -134.77
+        - -69.834
+      - - -139.34
+        - -43.67
+      - - -154.188
+        - 34.692
+    - - - -172.7
+        - 91.3
+      - - -172.7
+        - 51.838
+      - - -157.842
+        - 54.492
+      - - -164.434
+        - 91.3
+    - - - -5.644
+        - -91.3
+      - - 7.224
+        - -88.947
+      - - 6.389
+        - -84.382
+      - - 9.804
+        - -78.275
+      - - 20.546
+        - -76.441
+      - - 15.989
+        - -49.746
+      - - 15.398
+        - -49.663
+      - - 14.826
+        - -49.499
+      - - 14.283
+        - -49.244
+      - - 13.79
+        - -48.91
+      - - 13.355
+        - -48.504
+      - - 0.577
+        - -47.526
+      - - 0.425
+        - -49.513
+      - - 0.423
+        - -50.233
+      - - 0.369
+        - -50.874
+      - - 0.216
+        - -51.515
+      - - -0.047
+        - -52.128
+      - - -0.391
+        - -52.692
+      - - -0.826
+        - -53.187
+      - - -1.331
+        - -53.612
+      - - -1.898
+        - -53.958
+      - - -2.515
+        - -54.205
+      - - -2.924
+        - -54.309
+      - - -41.455
+        - -61.242
+      - - -42.444
+        - -55.623
+      - - -43.921
+        - -55.886
+      - - -38.334
+        - -87.292
+      - - -33.337
+        - -91.3
+    - - - 126.216
+        - -61.646
+      - - 128.278
+        - -57.083
+      - - 117.582
+        - -31.406
+      - - 96.93
+        - -33.307
+      - - 96.776
+        - -33.909
+      - - 96.533
+        - -34.482
+      - - 96.198
+        - -35.015
+      - - 95.793
+        - -35.48
+      - - 95.318
+        - -35.885
+      - - 102.373
+        - -62.472
+      - - 106.539
+        - -65.279
+    - - - 172.7
+        - -49.0
+      - - 172.7
+        - -21.591
+      - - 117.582
+        - -31.406
+      - - 128.278
+        - -57.083
+      - - 135.413
+        - -55.637
+    - - - 13.355
+        - -48.504
+      - - 12.99
+        - -48.038
+      - - 12.705
+        - -47.511
+      - - 12.509
+        - -46.953
+      - - 12.392
+        - -46.364
+      - - 12.376
+        - -45.775
+      - - 12.45
+        - -45.184
+      - - 12.614
+        - -44.622
+      - - 13.054
+        - -43.737
+      - - 13.695
+        - -42.88
+      - - 14.417
+        - -42.092
+      - - 15.219
+        - -41.384
+      - - 16.092
+        - -40.754
+      - - 17.027
+        - -40.234
+      - - 18.012
+        - -39.804
+      - - 19.109
+        - -39.462
+      - - 21.075
+        - -39.081
+      - - 67.756
+        - -30.4
+      - - 68.723
+        - -30.109
+      - - 69.618
+        - -29.62
+      - - 70.025
+        - -29.315
+      - - 70.717
+        - -28.578
+      - - 71.248
+        - -27.712
+      - - 71.443
+        - -27.24
+      - - 71.588
+        - -26.758
+      - - 71.717
+        - -25.747
+      - - 71.701
+        - -25.247
+      - - 71.636
+        - -24.727
+      - - 67.807
+        - -4.357
+      - - 67.63
+        - -3.738
+      - - 67.27
+        - -2.742
+      - - 66.789
+        - -1.787
+      - - 66.23
+        - -0.893
+      - - 65.571
+        - -0.06
+      - - 64.823
+        - 0.702
+      - - 63.955
+        - 1.423
+      - - 62.958
+        - 2.082
+      - - 62.756
+        - 2.26
+      - - 62.562
+        - 2.578
+      - - 62.49
+        - 2.807
+      - - 58.249
+        - 24.324
+      - - 57.655
+        - 25.627
+      - - 57.146
+        - 26.442
+      - - 56.548
+        - 27.196
+      - - 55.88
+        - 27.888
+      - - 55.154
+        - 28.511
+      - - 54.358
+        - 29.042
+      - - 53.674
+        - 29.405
+      - - 52.619
+        - 29.854
+      - - 51.686
+        - 30.124
+      - - 50.824
+        - 30.274
+      - - 49.783
+        - 30.353
+      - - 48.824
+        - 30.323
+      - - 38.044
+        - 28.317
+      - - 37.117
+        - 28.077
+      - - 36.22
+        - 27.728
+      - - 35.365
+        - 27.299
+      - - 34.55
+        - 26.78
+      - - 33.807
+        - 26.182
+      - - 33.124
+        - 25.504
+      - - 32.512
+        - 24.758
+      - - 31.99
+        - 23.952
+      - - 31.55
+        - 23.097
+      - - 31.199
+        - 22.203
+      - - 30.949
+        - 21.281
+      - - 30.799
+        - 20.329
+      - - 30.739
+        - 19.368
+      - - 30.79
+        - 18.409
+      - - 30.898
+        - 17.65
+      - - 38.003
+        - -20.108
+      - - 38.111
+        - -20.866
+      - - 38.128
+        - -21.516
+      - - 38.084
+        - -22.097
+      - - 37.962
+        - -22.788
+      - - 37.779
+        - -23.41
+      - - 37.535
+        - -24.003
+      - - 37.231
+        - -24.566
+      - - 36.867
+        - -25.1
+      - - 36.452
+        - -25.595
+      - - 35.987
+        - -26.04
+      - - 35.471
+        - -26.425
+      - - 34.924
+        - -26.771
+      - - 34.347
+        - -27.047
+      - - 33.739
+        - -27.264
+      - - 33.141
+        - -27.41
+      - - 16.433
+        - -30.55
+      - - 14.488
+        - -31.031
+      - - 12.605
+        - -31.701
+      - - 10.804
+        - -32.56
+      - - 8.877
+        - -33.731
+      - - 7.25
+        - -34.998
+      - - 5.755
+        - -36.425
+      - - 4.432
+        - -37.999
+      - - 3.27
+        - -39.712
+      - - 2.3
+        - -41.532
+      - - 1.52
+        - -43.441
+      - - 0.941
+        - -45.417
+      - - 0.577
+        - -47.526
+    - - - 15.989
+        - -49.746
+      - - 20.546
+        - -76.441
+      - - 102.373
+        - -62.472
+      - - 95.318
+        - -35.885
+      - - 94.781
+        - -36.2
+      - - 94.203
+        - -36.437
+      - - 93.605
+        - -36.573
+      - - 16.599
+        - -49.72
+    - - - 117.582
+        - -31.406
+      - - 115.393
+        - -21.268
+      - - 103.358
+        - 38.768
+      - - 95.213
+        - 37.301
+      - - 92.51
+        - 36.602
+      - - 90.226
+        - 35.167
+      - - 87.847
+        - 32.231
+      - - 86.593
+        - 29.768
+      - - 86.033
+        - 26.942
+      - - 85.957
+        - 23.8
+      - - 95.033
+        - -21.486
+      - - 96.937
+        - -32.067
+      - - 96.983
+        - -32.687
+      - - 96.93
+        - -33.307
+    visual: sapporo-351-exact.assets/layer-roads.glb
+  anchor:
+    x_m: 0.0
+    y_m: 0.0
+    z_m: 0.0
+    yaw_deg: 0.0
+    terrain: 11f822f4f657609b1eb8b0e44e25fa6989040ea325ca5430ee2ede01e9afe5ac
+  source:
+    provider: hakoniwa-envsim
+    kind: city-world-layer
+    id: roads
+    note: roads.glb
+- id: stop-station
+  item: hakoniwa-shuttle-stop
+  pose: {x_m: 48.0, y_m: 27.0, yaw_deg: 180}
+- id: stop-street
+  item: hakoniwa-shuttle-stop
+  pose: {x_m: 98.0, y_m: -62.5, yaw_deg: 0}
+# ③-5 festival (演出): twelve stalls, two squares between the rows.
+- id: stall-n1
+  item: hakoniwa-stall-red
+  pose: {x_m: 71.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-n2
+  item: hakoniwa-stall
+  pose: {x_m: 77.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-n3
+  item: hakoniwa-stall-blue
+  pose: {x_m: 83.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-n4
+  item: hakoniwa-stall-red
+  pose: {x_m: 89.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-n5
+  item: hakoniwa-stall
+  pose: {x_m: 95.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-n6
+  item: hakoniwa-stall-blue
+  pose: {x_m: 101.0, y_m: -69.0, yaw_deg: 180}
+- id: stall-s1
+  item: hakoniwa-stall
+  pose: {x_m: 71.0, y_m: -89.0, yaw_deg: 0}
+- id: stall-s2
+  item: hakoniwa-stall-blue
+  pose: {x_m: 77.0, y_m: -89.0, yaw_deg: 0}
+- id: stall-s3
+  item: hakoniwa-stall-red
+  pose: {x_m: 83.0, y_m: -89.0, yaw_deg: 0}
+- id: stall-s4
+  item: hakoniwa-stall
+  pose: {x_m: 89.0, y_m: -89.0, yaw_deg: 0}
+- id: stall-s5
+  item: hakoniwa-stall-blue
+  pose: {x_m: 95.0, y_m: -89.0, yaw_deg: 0}
+- id: stall-s6
+  item: hakoniwa-stall-red
+  pose: {x_m: 101.0, y_m: -89.0, yaw_deg: 0}
+- id: square-west
+  item: hakoniwa-open-space-lively
+  pose: {x_m: 80.5, y_m: -79.0, yaw_deg: 0}
+- id: square-east
+  item: hakoniwa-open-space
+  pose: {x_m: 92.5, y_m: -79.0, yaw_deg: 180}
+# ③-5 additions (演出: assumed positions; PLATEAU has no road markings here).
+- id: stop-line-1
+  item: stop-line
+  pose: {x_m: 59.308, y_m: -49.428, yaw_deg: 103.05}
+  params: {width_m: 13.35}
+- id: guide-snow
+  item: stop-line
+  pose: {x_m: 56.386, y_m: -50.105, yaw_deg: 103.05}
+  params: {width_m: 13.35, color: '#29b6f6'}
+- id: guide-ice
+  item: stop-line
+  pose: {x_m: 49.567, y_m: -51.685, yaw_deg: 103.05}
+  params: {width_m: 13.35, color: '#7e57c2'}
+- id: crosswalk-00
+  item: stop-line
+  pose: {x_m: 67.624, y_m: -67.595, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-01
+  item: stop-line
+  pose: {x_m: 67.421, y_m: -66.718, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-02
+  item: stop-line
+  pose: {x_m: 67.217, y_m: -65.841, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-03
+  item: stop-line
+  pose: {x_m: 67.014, y_m: -64.965, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-04
+  item: stop-line
+  pose: {x_m: 66.811, y_m: -64.088, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-05
+  item: stop-line
+  pose: {x_m: 66.608, y_m: -63.211, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-06
+  item: stop-line
+  pose: {x_m: 66.405, y_m: -62.334, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-07
+  item: stop-line
+  pose: {x_m: 66.202, y_m: -61.458, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-08
+  item: stop-line
+  pose: {x_m: 65.999, y_m: -60.581, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-09
+  item: stop-line
+  pose: {x_m: 65.795, y_m: -59.704, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-10
+  item: stop-line
+  pose: {x_m: 65.592, y_m: -58.827, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-11
+  item: stop-line
+  pose: {x_m: 65.389, y_m: -57.951, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-12
+  item: stop-line
+  pose: {x_m: 65.186, y_m: -57.074, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-13
+  item: stop-line
+  pose: {x_m: 64.983, y_m: -56.197, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-14
+  item: stop-line
+  pose: {x_m: 64.78, y_m: -55.32, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-15
+  item: stop-line
+  pose: {x_m: 64.576, y_m: -54.443, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-16
+  item: stop-line
+  pose: {x_m: 64.373, y_m: -53.567, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-17
+  item: stop-line
+  pose: {x_m: 64.17, y_m: -52.69, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-18
+  item: stop-line
+  pose: {x_m: 63.967, y_m: -51.813, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-19
+  item: stop-line
+  pose: {x_m: 63.764, y_m: -50.936, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-20
+  item: stop-line
+  pose: {x_m: 63.561, y_m: -50.06, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-21
+  item: stop-line
+  pose: {x_m: 63.358, y_m: -49.183, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-22
+  item: stop-line
+  pose: {x_m: 63.154, y_m: -48.306, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-23
+  item: stop-line
+  pose: {x_m: 62.951, y_m: -47.429, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-24
+  item: stop-line
+  pose: {x_m: 62.748, y_m: -46.553, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-25
+  item: stop-line
+  pose: {x_m: 62.545, y_m: -45.676, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-26
+  item: stop-line
+  pose: {x_m: 62.342, y_m: -44.799, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-27
+  item: stop-line
+  pose: {x_m: 62.139, y_m: -43.922, yaw_deg: 13.05}
+  params: {width_m: 4.0}
+- id: crosswalk-28
+  item: stop-line
+  pose: {x_m: 61.935, y_m: -43.045, yaw_deg: 13.05}
+  params: {width_m: 4.0}

@@ -1,0 +1,13 @@
+schema: hakoniwa.composition/v1
+id: demo35-shoot-snow
+world: sapporo-rotary-snow
+vehicles:
+- name: Cart-1
+  asset: hakoniwa-cart
+  control: api
+  params:
+    scenario: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo35-shoot-snow.yaml
+  spawn:
+    east_m: 20.0
+    north_m: -60.7
+    yaw_deg: 100.9

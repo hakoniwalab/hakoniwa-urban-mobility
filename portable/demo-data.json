@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "The Urban Studio data a Windows portable package carries (tools/urban_portable.py collect): the demo Cities and the Compositions, route scenarios, flights, and people scenes of demos 3-1 to 3-5. Paths are relative to the Business Pack work directory ($HAKONIWA_WORK_DIR); collect also takes every file these reference there, and replaces the absolute paths in them with placeholders that prepare fills in for the extraction folder.",
+  "description": "The Urban Studio data a Windows portable package carries (tools/urban_portable.py collect): the demo Cities and the Compositions, route scenarios, flights, and people scenes of demos 3-1 to 3-5, as this Workspace has them (tools/urban_demo_worlds.py makes them there; demos/README.md). Paths are relative to the Business Pack work directory ($HAKONIWA_WORK_DIR); collect also takes every file these reference there, and replaces the absolute paths in them with placeholders that prepare fills in for the extraction folder.",
   "include": [
     "urban/assets/cities/tokyo-13104-multi-lat35_689-lon139_691.asset.yaml",
     "urban/assets/cities/tocho-bridge-a-hull.asset.yaml",

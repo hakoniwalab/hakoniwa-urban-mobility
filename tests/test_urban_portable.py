@@ -314,27 +314,29 @@ class BundleTest(unittest.TestCase):
             stamp = json.loads((moved / "hakoniwa-business-pack/work" / urban_portable.STAMP).read_text())
             self.assertEqual(stamp["package_root"], str(moved.resolve()))
 
-    def test_collect_makes_copies_or_reuses_the_bundle(self):
+    def test_collect_bundles_the_demo_worlds_of_this_workspace_only(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            work, spec = _demo_workspace(root / "mac")
+            work, spec = _demo_workspace(root / "win")
             spec_path = root / "demo-data.json"
             spec_path.write_text(json.dumps(spec), encoding="utf-8")
-            made = root / "mac-bundle.zip"
-            with mock.patch.object(urban_portable, "PACKAGE_ROOT", root / "mac"):
-                urban_portable.collect_demo_data(output=made, spec_path=spec_path, work=work)
-            self.assertEqual(urban_portable.read_bundle_manifest(made)["files"], 9)
-            # A Windows Workspace without the demo Cities.
-            empty = root / "win/hakoniwa-business-pack/work"
-            empty.mkdir(parents=True)
             output = root / "win/runtime/urban-demo-data.zip"
-            with self.assertRaisesRegex(urban_portable.PortableError, "bundle"):
+            with mock.patch.object(urban_portable, "PACKAGE_ROOT", root / "win"):
+                self.assertEqual(urban_portable.collect_demo_data(output=output, spec_path=spec_path, work=work), output)
+            self.assertEqual(urban_portable.read_bundle_manifest(output)["files"], 9)
+            # A Workspace without the demo Cities: no bundle from elsewhere, and a stale one is not packaged.
+            empty = root / "other/hakoniwa-business-pack/work"
+            empty.mkdir(parents=True)
+            with self.assertRaisesRegex(urban_portable.PortableError, "urban_demo_worlds.py build --all"):
                 urban_portable.collect_demo_data(output=output, spec_path=spec_path, work=empty)
-            urban_portable.collect_demo_data(made, output=output, spec_path=spec_path, work=empty)
-            self.assertEqual(output.read_bytes(), made.read_bytes())
-            # The packager runs collect without arguments: the copied bundle stays.
-            self.assertEqual(urban_portable.collect_demo_data(output=output, spec_path=spec_path, work=empty), output)
-            self.assertEqual(output.read_bytes(), made.read_bytes())
+            self.assertFalse(output.exists())
+            self.assertEqual(urban_portable.missing_demo_data(spec, empty), spec["include"])
+
+    def test_there_is_no_way_to_bring_a_bundle_made_elsewhere(self):
+        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
+            urban_portable.parser().parse_args(["bundle"])
+        with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
+            urban_portable.parser().parse_args(["collect", "--demo-data", "x.zip"])
 
     def test_a_source_path_left_in_a_file_stops_collect(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,23 @@
+{
+  "id": "tokyo-13104-multi-lat35_689-lon139_691",
+  "name": "新宿区・渋谷区 付近（437 × 434 m）",
+  "selection": {
+    "center": {
+      "latitude": 35.689245,
+      "longitude": 139.690808
+    },
+    "half_extent_m": {
+      "north_south": 217,
+      "east_west": 218.3
+    }
+  },
+  "source": "plateau",
+  "options": {
+    "building_physics_level": 3,
+    "building_collider_reduction": "convex-decompose",
+    "terrain_uncovered_policy": "error",
+    "terrain_bridge_carve": true,
+    "terrain_bridge_blend": true
+  },
+  "offline": false
+}

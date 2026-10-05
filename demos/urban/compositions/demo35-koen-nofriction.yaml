@@ -1,0 +1,14 @@
+schema: hakoniwa.composition/v1
+id: demo35-koen-nofriction
+world: tokyo-13104-multi-lat35_689-lon139_691
+vehicles:
+- name: Car-1
+  asset: hakoniwa-car
+  control: api
+  params:
+    scenario: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo35-koen-nofriction.yaml
+  spawn:
+    east_m: 55
+    north_m: -63.9
+    yaw_deg: 11
+  tire_grip: 1

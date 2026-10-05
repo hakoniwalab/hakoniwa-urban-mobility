@@ -1,0 +1,61 @@
+# ③-1 都庁で、ドローンを飛ばす（突風、余裕 4 m）: demo31-tocho-drone-gust.yaml の北西の辺を、
+# 屋上の縁まで約 4 m になるよう縁の方へ寄せたもの（縁までの余裕と突風の関係を調べる）。
+# 元の説明:
+# 屋上の上空を一回りする途中、北西の辺（west → north）で、屋上の縁の外（北西）へ
+# 突風（15 m/s、気象庁の区分で「強い風」）が吹いて流される。
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  # 突風の中では指定点にぴったり届かないので、到達の判定を緩める
+  tolerance_m: 3
+  loop_count: 1
+  takeoff:
+    rise_m: 10
+    hold_sec: 2
+  waypoints:
+  - name: rise
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+  - name: west
+    east_m: 72.07
+    north_m: -2.07
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+    wind:
+      towards_deg: 135
+      speed_m_s: 15
+    zone_width_m: 12
+    zone_height_m: 12
+  - name: north
+    east_m: 87.07
+    north_m: 12.93
+    up_m: 280
+    yaw_deg: 90
+    hold_sec: 2
+  - name: east
+    east_m: 104
+    north_m: -3
+    up_m: 280
+    yaw_deg: 0
+    hold_sec: 2
+  - name: south
+    east_m: 88
+    north_m: -19
+    up_m: 280
+    yaw_deg: -90
+    hold_sec: 2
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

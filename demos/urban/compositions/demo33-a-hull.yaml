@@ -1,0 +1,13 @@
+schema: hakoniwa.composition/v1
+id: demo33-a-hull
+world: tocho-bridge-a-hull
+vehicles:
+- name: Drone-1
+  asset: eams-hexa
+  control: schedule
+  params:
+    schedule: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo33-a-hull.yaml
+  spawn:
+    east_m: 18.5
+    north_m: -20.0
+    yaw_deg: 281

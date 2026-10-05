@@ -1,0 +1,60 @@
+# ③-1b 都庁で、ドローンを飛ばす（ローター故障）: demo31-tocho-drone-normal.yaml と同じ航路。
+# 塔の前を南から北へ通るところで、都庁の真ん前でローター 0 が止まって落ちる。
+drones:
+- name: Drone-1
+  start_delay_sec: 5
+  speed_m_s: 6
+  loop_count: 1
+  takeoff:
+    rise_m: 5
+    hold_sec: 2
+  waypoints:
+  - name: off-tower
+    east_m: 48
+    north_m: -4
+    up_m: 254
+    yaw_deg: 0
+  - name: plaza-view
+    east_m: 0
+    north_m: 20
+    up_m: 60
+    yaw_deg: 0
+    hold_sec: 6
+  - name: south-pass
+    east_m: 40
+    north_m: -60
+    up_m: 60
+    speed_m_s: 4
+    yaw_deg: 90
+  - name: front-of-tocho
+    east_m: 40
+    north_m: 25
+    up_m: 60
+    speed_m_s: 4
+    yaw_deg: 90
+    fault:
+      rotors: [0]
+      scale: 0.0
+    zone_width_m: 20
+    zone_height_m: 12
+  - name: north-pass
+    east_m: 40
+    north_m: 110
+    up_m: 60
+    speed_m_s: 4
+    yaw_deg: 90
+  - name: climb
+    east_m: 40
+    north_m: 110
+    up_m: 265
+    speed_m_s: 8
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

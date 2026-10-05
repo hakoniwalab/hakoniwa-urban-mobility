@@ -1,0 +1,50 @@
+# ③-5 (sapporo-rotary-snow): the festival south of the street in front of 札幌駅 (演出):
+# twelve stalls in two rows facing each other (north row faces south, south row faces north)
+# and two squares between them, in the open block off the road (E 66..106, N -64..-92).
+# Made from scenes/sapporo-rotary-stalls.yaml, which is unchanged.
+schema: hakoniwa.people-scene/v1
+id: demo35-festival-stalls
+
+places:
+  # In front of the stalls (towards the squares)
+  stall-n1: [71.0, -71.8]
+  stall-n2: [77.0, -71.8]
+  stall-n3: [83.0, -71.8]
+  stall-n4: [89.0, -71.8]
+  stall-n5: [95.0, -71.8]
+  stall-n6: [101.0, -71.8]
+  stall-s1: [71.0, -86.2]
+  stall-s2: [77.0, -86.2]
+  stall-s3: [83.0, -86.2]
+  stall-s4: [89.0, -86.2]
+  stall-s5: [95.0, -86.2]
+  stall-s6: [101.0, -86.2]
+  # Ways in at both ends, and the pavement by the stop
+  aisle-west: [67.5, -79.0]
+  aisle-east: [104.5, -79.0]
+  aisle-middle: [86.5, -79.0]
+  lot-north: [90.0, -64.0]
+
+squares:
+  - {pose: [80.5, -79.0, 0]}      # にぎやか
+  - {pose: [92.5, -79.0, 180]}    # シンプル
+tables:
+  - {center: [-0.9, 0.35], stool_radius_m: 0.72}
+  - {center: [1.25, -0.45], stool_radius_m: 0.72}
+seating: {chance: 0.6, sit_sec: [20, 45]}
+
+queues:
+  "stall-n*": {along: [1.0, 0.0], spacing_m: 0.85, max: 3, serve_sec: [4, 9]}
+  "stall-s*": {along: [-1.0, 0.0], spacing_m: 0.85, max: 3, serve_sec: [4, 9]}
+
+personal_space_m: 0.9
+
+roles:
+  staff: {match: "Staff-*", wave_every_sec: [6, 14]}
+  visitor: {match: "Guest-*", speed: 1.0, stay_sec: [3, 9], wave_chance: 0.3}
+  child: {match: "Child-*", speed: 1.4, stay_sec: [1, 4], wave_chance: 0.5}
+
+watch: [Cart-1, Delivery-1]
+
+safety:
+  near_miss_m: 1.5

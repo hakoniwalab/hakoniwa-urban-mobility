@@ -6,11 +6,9 @@ through portable/windows-profile.json:
 
   collect   source Workspace: gather what only the developer's machine has
             into build/portable-runtime (the Urban Car plant and its DLLs,
-            glfw3.dll for Drone Core, the demo data bundle with its absolute
-            paths replaced by placeholders; --demo-data takes a bundle made
-            elsewhere)
-  bundle    any Workspace that has the demo Cities (macOS too): write only
-            the demo data bundle (--output)
+            glfw3.dll for Drone Core, the demo data bundle: this Workspace's
+            demo Cities and Compositions, absolute paths replaced by
+            placeholders; tools/urban_demo_worlds.py makes them)
   doctor    source Workspace: fail before packaging when an input is missing;
             report ports other programs already use
   prepare   package: relocate the Foundation (receipts, mmap) and unpack the
@@ -480,16 +478,15 @@ def collect_fpv_runtime() -> int:
     return subprocess.run([sys.executable, str(tool), "collect"], cwd=FPV_DRONE, check=False).returncode
 
 
-def demo_data_available(spec: dict, work: Path) -> bool:
-    """Whether this Workspace has every demo input the spec names."""
-    return all(any(work.glob(pattern)) for pattern in spec["include"])
+def missing_demo_data(spec: dict, work: Path) -> list[str]:
+    """The demo inputs the spec names that this Workspace does not have."""
+    return [pattern for pattern in spec["include"] if not any(work.glob(pattern))]
 
 
-def bundle(output: Path = DEMO_DATA, spec_path: Path = DEMO_SPEC, work: Path | None = None,
-           workspace_root: Path = PACKAGE_ROOT) -> dict:
-    """Write the demo data bundle from this Workspace's work directory. It
-    carries no absolute path, so a bundle made on another machine (macOS,
-    where the demo Cities were made) works in a Windows package."""
+def write_demo_data(output: Path = DEMO_DATA, spec_path: Path = DEMO_SPEC, work: Path | None = None,
+                    workspace_root: Path = PACKAGE_ROOT) -> dict:
+    """Write the demo data bundle from this Workspace's work directory, with
+    placeholders for its absolute paths (prepare fills them in)."""
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     manifest = write_bundle(spec, work or work_dir(), workspace_root, output)
     _say(f"Demo data: {manifest['files']} files, {manifest['bytes'] / 1e6:.0f} MB -> {output}")
@@ -500,41 +497,32 @@ def bundle(output: Path = DEMO_DATA, spec_path: Path = DEMO_SPEC, work: Path | N
     return manifest
 
 
-def collect_demo_data(source: Path | None = None, output: Path = DEMO_DATA, spec_path: Path = DEMO_SPEC,
-                      work: Path | None = None) -> Path:
-    """The demo data bundle for the package: copied from source when given,
-    else made from this Workspace when it has the demo Cities, else the one
-    already in build/portable-runtime (copied there from the machine that has them)."""
+def collect_demo_data(output: Path = DEMO_DATA, spec_path: Path = DEMO_SPEC, work: Path | None = None) -> Path:
+    """The demo data bundle for the package, made from this Workspace: the
+    demo Cities made here (tools/urban_demo_worlds.py) and the demo
+    Compositions. A bundle left from an earlier collect is not used."""
     work = work or work_dir()
-    if source is not None:
-        read_bundle_manifest(source)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        if source.resolve() != output.resolve():
-            shutil.copy2(source, output)
-        _say(f"Demo data: copied {source} -> {output}")
-        return output
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    if demo_data_available(spec, work):
-        bundle(output, spec_path, work)
-        return output
-    if output.is_file():
-        manifest = read_bundle_manifest(output)
-        _say(f"Demo data: this Workspace has no demo Cities; using {output} "
-             f"({manifest['files']} files, made {manifest['created_at']})")
-        return output
-    raise PortableError(
-        f"デモデータがありません。デモの街がある Workspace で urban_portable.py bundle を実行し、"
-        f"できた ZIP を {output} に置くか、collect --demo-data <ZIP> で指定してください"
-    )
+    missing = missing_demo_data(spec, work)
+    if missing:
+        output.unlink(missing_ok=True)
+        raise PortableError(
+            "この Workspace にデモの街と Composition がそろっていません（" + ", ".join(missing[:4])
+            + (" ..." if len(missing) > 4 else "") + "）。python ../hakoniwa-urban-mobility/tools/urban_demo_worlds.py "
+            "build --all で作り（都庁は Environment Studio の画面でも作れます。demos/README.md）、"
+            "urban_demo_worlds.py check で確かめてください"
+        )
+    write_demo_data(output, spec_path, work)
+    return output
 
 
-def collect(demo_data: Path | None = None) -> int:
+def collect() -> int:
     RUNTIME.mkdir(parents=True, exist_ok=True)
     collect_plant()
     collect_drone_dlls()
     if collect_fpv_runtime() != 0:
         raise PortableError("hakoniwa-fpv-drone の collect に失敗しました")
-    collect_demo_data(demo_data)
+    collect_demo_data()
     return 0
 
 
@@ -1010,21 +998,13 @@ def stop() -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    result.add_argument("command", choices=("collect", "doctor", "prepare", "start", "status", "stop", "bundle"))
-    result.add_argument("--demo-data", type=Path,
-                        help="collect: use this demo data bundle (made by bundle on another machine)")
-    result.add_argument("--output", type=Path, default=DEMO_DATA, help="bundle: where to write the demo data bundle")
+    result.add_argument("command", choices=("collect", "doctor", "prepare", "start", "status", "stop"))
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    if args.command == "collect":
-        return collect(args.demo_data)
-    if args.command == "bundle":
-        bundle(args.output)
-        return 0
-    commands = {"doctor": doctor, "prepare": prepare, "start": start, "status": status, "stop": stop}
+    commands = {"collect": collect, "doctor": doctor, "prepare": prepare, "start": start, "status": status, "stop": stop}
     return commands[args.command]()
 
 
