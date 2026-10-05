@@ -1410,6 +1410,15 @@ class RealtimePacerTest(IntegratedFixture):
         with mock.patch.object(urban_realtime.sys, "platform", "darwin"):
             self.assertNotIn("--sleep-to-deadline", urban_realtime.pacer_asset("/python", "drone-service-1")["args"])
 
+    def test_windows_car_viewer_interpolates_vehicle_poses(self):
+        """#85: Windows only, the car viewer reads states about every frame and interpolates."""
+        source = (urban_realtime.ROOT / "tools" / "multi_car.py").read_text(encoding="utf-8")
+        block = source[source.index('    if sys.platform == "win32":\n        # Windows (#85): read the state PDUs'):]
+        block = block[:block.index("\n\n")]
+        self.assertIn('viewer_config["stateInput"]["vehicles"]["interpolation"] = {"enabled": True}', block)
+        self.assertIn('viewer_config["ui"]["statePanelIntervalMsec"] = urban_realtime.WINDOWS_VIEWER_READ_MSEC', block)
+        self.assertEqual(urban_realtime.WINDOWS_VIEWER_READ_MSEC, 16)
+
     def test_windows_car_route_runs_on_an_even_40_ms_cadence(self):
         """#85: Windows Car route: max_delay, pacer step and WebBridge step are 40 ms."""
         with mock.patch.object(urban_realtime.sys, "platform", "win32"):

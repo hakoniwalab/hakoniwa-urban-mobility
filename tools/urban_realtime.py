@@ -60,6 +60,8 @@ CONDUCTOR_MAX_DELAY_MSEC = {
 # give under Windows sleep granularity. Other OSes and the Drone routes keep
 # the values above.
 WINDOWS_CAR_STEP_MSEC = 40
+# Windows: how often the car viewer reads the state PDUs (about every frame).
+WINDOWS_VIEWER_READ_MSEC = 16
 CAR_PLANT_ASSET = "urban-car-fleet-plant"
 
 
