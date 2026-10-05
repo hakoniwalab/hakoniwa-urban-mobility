@@ -237,17 +237,15 @@ class UrbanMobilityToolTest(unittest.TestCase):
             text = recipe.read_text(encoding="utf-8")
             self.assertIn("callback_assets_shared: true", text)
 
-    def test_drone_schedule_recipes_require_the_shared_core_only(self):
-        """Windows opt-in (hakoniwalab/hakoniwa-core-pro#95) for the routes whose
-        Python service clients need the assets runtime's Core PRO data; the Car
-        and FPV routes are unchanged until it is proven there."""
-        for name in ("usecases/urban-drone-rc.yaml", "usecases/urban-drone-fleet.yaml",
-                     "experiments/urban-mobility-rc.yaml"):
-            text = (urban_mobility.ROOT / "recipes" / name).read_text(encoding="utf-8")
-            self.assertIn("core_shared: true", text, name)
-        for name in ("usecases/urban-car-rc.yaml", "usecases/urban-fpv-rc.yaml"):
-            text = (urban_mobility.ROOT / "recipes" / name).read_text(encoding="utf-8")
-            self.assertNotIn("core_shared", text, name)
+    def test_core_recipes_require_the_shared_core(self):
+        """Every Recipe that builds on Core PRO asks for the Windows shared Core
+        (hakoniwalab/hakoniwa-core-pro#95), so all routes run on one Core state."""
+        recipes = sorted((urban_mobility.ROOT / "recipes").rglob("*.yaml"))
+        core = [r for r in recipes if "foundation_requirements" in r.read_text(encoding="utf-8")
+                and "hakoniwa-core-pro:" in r.read_text(encoding="utf-8")]
+        self.assertGreaterEqual(len(core), 5)
+        for recipe in core:
+            self.assertIn("core_shared: true", recipe.read_text(encoding="utf-8"), recipe.name)
 
     def test_car_rc_template_fills_city_receipt_from_cli(self):
         context = car_rc_context()
