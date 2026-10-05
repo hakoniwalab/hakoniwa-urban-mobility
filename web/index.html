@@ -277,6 +277,15 @@
           <a id="viewer-link" class="button-link" target="_blank" rel="noopener" hidden>Viewer を開く</a>
           <a id="viewer-collider-link" class="button-link" target="_blank" rel="noopener" hidden title="建物・地面の当たり判定を重ねて表示">Viewer（当たり判定）を開く</a>
           <span id="viewer-hint" class="hint" hidden>Start すると Viewer を開けます</span>
+          <button id="viewer-lan-button" class="secondary" type="button" hidden title="同じネットワークのスマホや別の PC で Viewer を開く">スマホ・別の PC で見る</button>
+        </div>
+        <div id="viewer-lan" class="viewer-lan" hidden>
+          <div id="viewer-lan-qr" class="viewer-lan-qr"></div>
+          <div class="viewer-lan-text">
+            <p>同じネットワーク（同じ Wi-Fi・サブネット）のスマホや PC で、QR コードを読み取るか、この URL を開きます。</p>
+            <p><a id="viewer-lan-url" target="_blank" rel="noopener"></a></p>
+            <p class="hint">この PC のファイアウォールで、Viewer（28100）と WebBridge（28865〜28867）のポートを、同じネットワークからだけ許可してください。Viewer は作業フォルダを配るので、信頼できるネットワークだけで使ってください。</p>
+          </div>
         </div>
         <div class="progress-block">
           <div class="progress"><div id="progress-bar"></div></div>

@@ -27,7 +27,7 @@ API (all JSON):
   PUT  /api/compositions/<id>            save a Composition; returns its plan
   GET  /api/compositions/<id>/plan       its route (tools/urban_simulation.py plan)
   POST /api/compositions/<id>/<command>  run plan|configure|start|stop|status
-  GET  /api/compositions/<id>/viewer     the configured Viewer URL
+  GET  /api/compositions/<id>/viewer     the configured Viewer URL (and its LAN URL)
   GET  /api/compositions/<id>/rtf        the latest real-time factor from the pacer log
   GET  /api/jobs/<job>?since=<line>      a command's state, output, and progress
   GET  /api/scenarios                    Car route scenarios (examples and saved)
@@ -1005,8 +1005,39 @@ def viewer_serving(url: str | None) -> bool:
         return False
 
 
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def lan_address() -> str | None:
+    """This host's IPv4 address on the local network (the interface of its
+    default route), or None. A UDP connect sends no packet."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))  # TEST-NET-1, never reached
+            address = probe.getsockname()[0]
+    except OSError:
+        return None
+    return None if address.startswith("127.") or address == "0.0.0.0" else address
+
+
+def lan_url(url: str | None, address: str | None) -> str | None:
+    """The same Viewer URL as seen from another device on the local network
+    (a phone, another PC): its loopback host replaced by this host's address.
+    The page then connects to the WebBridge on this host too."""
+    if not url or not address:
+        return None
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    if parts.hostname not in LOOPBACK_HOSTS:
+        return None
+    netloc = address + (f":{parts.port}" if parts.port else "")
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 def viewer(composition_id: str) -> dict:
-    """The configured Viewer URLs, and whether they can be opened now (running)."""
+    """The configured Viewer URLs, whether they can be opened now (running),
+    and the same URLs for another device on the local network."""
     import urban_simulation
 
     try:
@@ -1014,7 +1045,15 @@ def viewer(composition_id: str) -> dict:
     except urban_simulation.SimulationError as exc:
         raise StudioError(str(exc)) from exc
     url = urban_simulation.viewer_url(selected)
-    return {"url": url, "collider_url": urban_simulation.collider_viewer_url(selected), "running": viewer_serving(url)}
+    collider_url = urban_simulation.collider_viewer_url(selected)
+    address = lan_address()
+    return {
+        "url": url,
+        "collider_url": collider_url,
+        "running": viewer_serving(url),
+        "lan_url": lan_url(url, address),
+        "lan_collider_url": lan_url(collider_url, address),
+    }
 
 
 def realtime_factor(composition_id: str) -> dict:
@@ -1470,9 +1509,16 @@ class StudioHandler(SimpleHTTPRequestHandler):
         return self._api("DELETE")
 
 
+# Urban Studio listens on every address, so a phone or another PC on the same
+# network can open it (http://<this-host>:28090/). Anyone who reaches the port
+# can run and stop simulations: use a trusted network and allow the port only
+# for the local subnet in the firewall.
+STUDIO_BIND = "0.0.0.0"
+
+
 def make_server(port: int = DEFAULT_PORT, runner: JobRunner | None = None) -> ThreadingHTTPServer:
     handler = type("BoundStudioHandler", (StudioHandler,), {"runner": runner or JobRunner()})
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return ThreadingHTTPServer((STUDIO_BIND, port), handler)
 
 
 # --- Lifecycle (start / status / stop) ---------------------------------------------------
@@ -1505,17 +1551,20 @@ def _running(state_dir: Path) -> dict | None:
 
 
 def _port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        if os.name == "nt":
-            # On Windows SO_REUSEADDR lets a second socket bind a port in use;
-            # exclusive use fails as soon as another program has it.
-            probe.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", -5), 1)
-        else:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            probe.bind(("127.0.0.1", port))
-        except OSError:
-            return False
+    # Both the loopback and the address Urban Studio listens on must be free:
+    # another program may hold either one.
+    for address in dict.fromkeys(("127.0.0.1", STUDIO_BIND)):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if os.name == "nt":
+                # On Windows SO_REUSEADDR lets a second socket bind a port in use;
+                # exclusive use fails as soon as another program has it.
+                probe.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", -5), 1)
+            else:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind((address, port))
+            except OSError:
+                return False
     return True
 
 
@@ -1555,6 +1604,8 @@ def serve(port: int, open_browser: bool) -> int:
     server = make_server(port)
     url = f"http://127.0.0.1:{port}/"
     print(f"Urban Studio: {url}", flush=True)
+    if lan := lan_url(url, lan_address()):
+        print(f"  from a phone or another PC on this network: {lan}", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
@@ -1608,6 +1659,8 @@ def start(port: int, open_browser: bool, state_dir: Path = STATE_DIR) -> int:
              "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     _state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"Urban Studio started: {url} (pid {health['pid']})")
+    if lan := lan_url(url, lan_address()):
+        print(f"  from a phone or another PC on this network: {lan}")
     print(f"  open it with: {command_hint('open')}")
     print(f"  stop it with: {command_hint('stop')}")
     if open_browser:
