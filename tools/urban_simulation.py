@@ -468,12 +468,14 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
     urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     multi_car.write_json(launcher_path, launcher)
+    # The planned lines for the Viewer's "Planned path": the api Cars' routes in
+    # every route, the schedule Drones' flights in the integrated one.
+    city_marker = None
     if target.use_case == "drone-car-distributed":
-        write_viewer_planned_paths(
-            sorted((target.work / "config/threejs").glob("viewer-config*.json")),
-            composition_path,
-            drone_one._paths(target.recipe_id).recipe_config / "mujoco-city-fleet.json",
-        )
+        city_marker = drone_one._paths(target.recipe_id).recipe_config / "mujoco-city-fleet.json"
+    write_viewer_planned_paths(
+        sorted((target.work / "config/threejs").glob("viewer-config*.json")), composition_path, city_marker,
+    )
 
 
 def route_paths(composition_path: Path, ground=None) -> list[dict]:
@@ -522,7 +524,7 @@ def route_paths(composition_path: Path, ground=None) -> list[dict]:
     return paths
 
 
-def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Path, city_marker: Path,
+def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Path, city_marker: Path | None,
                                ground=None) -> dict:
     """Put the planned paths into the Viewer configs: the line of each
     schedule-flown Drone (flightPaths) and each api Car route (routePaths).
@@ -530,8 +532,11 @@ def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Pat
     The Viewer draws them on request ("Planned path" in its panel). A Drone's
     line comes from the same steps it flies (apps/drone/drone_schedule.py
     flight_path) from its runtime spawn in the City marker; a route from
-    route_paths. A Composition without them clears them.
+    route_paths. A Composition without them clears them. city_marker is only
+    read for schedule Drones (None where the route has none).
     """
+    if not viewer_configs:
+        return {"flightPaths": [], "routePaths": []}
     import multi_car
     import urban_assets
 
@@ -543,7 +548,7 @@ def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Pat
     composition = load_composition(composition_path)
     paths = []
     for vehicle in composition.vehicles:
-        if vehicle.control != "schedule" or not vehicle.params.get("schedule"):
+        if vehicle.control != "schedule" or not vehicle.params.get("schedule") or city_marker is None:
             continue
         try:
             schedule_path = urban_assets.resolve_reference(vehicle.params["schedule"], composition_path.parent)

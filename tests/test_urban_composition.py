@@ -914,6 +914,29 @@ class ControlsTest(IntegratedFixture):
         self.assertIn("1.5", assets[2]["args"])
         self.assertEqual(assets[1]["args"][-1], "20", "the Car plant's Conductor max_delay")
 
+    def test_car_route_viewer_gets_the_route_paths(self):
+        """A Cars-only route writes the api Cars' routes for the Viewer's "Planned path" too."""
+        work = self.work / "recipe"
+        target = urban_simulation.ManagedTarget(
+            managed_recipe=ROOT / "recipes/usecases/urban-car-rc.yaml", recipe_id="urban-car-rc",
+            use_case="car-rc", work=work,
+        )
+        (work / "config/threejs").mkdir(parents=True)
+        (work / "config/launcher.json").write_text(json.dumps({"assets": [
+            {"name": "urban-car-fleet-plant"}, {"name": "urban-vehicle-web-bridge"},
+        ]}), encoding="utf-8")
+        viewer = work / "config/threejs/viewer-config.json"
+        viewer.write_text(json.dumps({"version": "1.0"}), encoding="utf-8")
+        route = [{"route": "loop", "vehicles": ["Car-1"], "closed": True,
+                  "points": [{"east_m": 0.0, "north_m": 0.0, "up_m": 0.3}]}]
+        with self.catalog(), mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)), \
+                mock.patch.object(urban_simulation, "route_paths", return_value=route) as routes:
+            urban_simulation.apply_managed_runtime(target, self.composition())
+        routes.assert_called_once()
+        written = json.loads(viewer.read_text(encoding="utf-8"))
+        self.assertEqual(written["routePaths"], route)
+        self.assertNotIn("flightPaths", written)
+
 
 try:
     import mujoco  # noqa: F401
