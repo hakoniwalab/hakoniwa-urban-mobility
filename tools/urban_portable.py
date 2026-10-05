@@ -291,10 +291,13 @@ def _excluded(relative: str, patterns: list[str]) -> bool:
 
 
 def _read_text(path: Path) -> str | None:
+    """A text file as it is, line endings included: read_text would turn the
+    CRLF of a file made on Windows into LF, and a receipt's sha256 of it (the
+    City World MJCF) would no longer match."""
     if path.suffix.lower() not in TEXT_SUFFIXES:
         return None
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_bytes().decode("utf-8")
     except UnicodeDecodeError:
         return None
 
@@ -363,11 +366,14 @@ def write_bundle(spec: dict, work: Path, workspace_root: Path, output: Path) -> 
                 archive.write(source, relative)
                 continue
             replaced = tokenize_file_text(text, source.suffix, roots)
-            if replaced != text:
-                tokenized.append(relative)
             if any(_prefix_pattern(variant).search(replaced)
                    for root, _ in roots for variant in path_variants(root)):
                 leaked.append(relative)
+            if replaced == text:
+                # Byte for byte: a receipt may hold its sha256.
+                archive.write(source, relative)
+                continue
+            tokenized.append(relative)
             archive.writestr(relative, replaced.encode("utf-8"))
         longest = max(files, key=len, default="")
         manifest = {
@@ -740,7 +746,8 @@ def check_package_path(folder: Path) -> None:
     the separators): the World, the Car plant and Drone Core load MJCF/MJB by path,
     and a Windows user name in Japanese puts Downloads and Desktop on such a path."""
     text = str(folder)
-    others = sorted({character for character in text if not PACKAGE_PATH_CHARACTERS.fullmatch(character)})
+    # In the order they appear in the path.
+    others = list(dict.fromkeys(character for character in text if not PACKAGE_PATH_CHARACTERS.fullmatch(character)))
     if others:
         shown = "、".join("空白" if character == " " else character for character in others)
         raise PortableError(
@@ -829,7 +836,8 @@ def relocate_tree(roots: list[Path], old_root: str, new_root: Path) -> set[Path]
                 replaced = tokenize_file_text(text, path.suffix, [(old_root, ROOT_TOKEN)])
                 if replaced == text:
                     continue
-                path.write_text(detokenize_text(replaced, path.suffix, replacements), encoding="utf-8")
+                # Bytes, so Windows does not turn the kept CRLF into CR CR LF.
+                path.write_bytes(detokenize_text(replaced, path.suffix, replacements).encode("utf-8"))
                 changed.add(path.resolve())
     return changed
 

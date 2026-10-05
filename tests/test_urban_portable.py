@@ -618,6 +618,51 @@ class FoundationPythonTest(unittest.TestCase):
             self.assertTrue(urban_portable.foundation_python(root).is_file())
 
 
+class LineEndingTest(unittest.TestCase):
+    """A City World made on Windows has CRLF text, and its receipt holds the MJCF's
+    sha256: the bundle and a moved folder keep the bytes of files without paths."""
+
+    def test_a_crlf_file_without_paths_goes_into_the_bundle_byte_for_byte(self):
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            work, spec = _demo_workspace(source)
+            # A text file without paths in a folder the bundle carries whole.
+            mjcf = work / "urban/studio-cities/c1/terrain-only.xml"
+            original = b'<mujoco model="c1">\r\n  <worldbody/>\r\n</mujoco>\r\n'
+            mjcf.write_bytes(original)
+            bundle = root / "bundle.zip"
+            manifest = urban_portable.write_bundle(spec, work, source, bundle)
+            relative = mjcf.relative_to(work).as_posix()
+            self.assertNotIn(relative, manifest["tokenized"])
+            with zipfile.ZipFile(bundle) as archive:
+                packed = archive.read(relative)
+            self.assertEqual(hashlib.sha256(packed).hexdigest(), hashlib.sha256(original).hexdigest())
+            self.assertIn(b"\r\n", packed)
+
+    def test_reading_keeps_crlf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "a.json"
+            path.write_bytes(b'{\r\n  "a": 1\r\n}\r\n')
+            self.assertEqual(urban_portable._read_text(path), '{\r\n  "a": 1\r\n}\r\n')
+
+    def test_a_moved_folder_rewrites_paths_without_doubling_cr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / "old"
+            new = root / "new"
+            (new / "work").mkdir(parents=True)
+            path = new / "work/receipt.json"
+            path.write_bytes(('{\r\n  "a": "' + (old / "x.xml").as_posix() + '"\r\n}\r\n').encode("utf-8"))
+            changed = urban_portable.relocate_tree([new / "work"], str(old), new)
+            self.assertEqual(changed, {path.resolve()})
+            data = path.read_bytes()
+            self.assertNotIn(b"\r\r", data)
+            self.assertIn((new.resolve() / "x.xml").as_posix().encode("utf-8"), data)
+
+
 class PackagePathTest(unittest.TestCase):
     """prepare refuses a package folder outside letters, digits and _ . -: MuJoCo on
     Windows cannot open a path outside ASCII, and spaces and shell characters break
@@ -631,7 +676,7 @@ class PackagePathTest(unittest.TestCase):
         with self.assertRaises(urban_portable.PortableError) as raised:
             urban_portable.check_package_path(Path("C:/Users/山田/Downloads/hako-urban-studio-win64"))
         message = str(raised.exception)
-        self.assertIn("山", message)
+        self.assertIn("（山、田）", message)
         self.assertIn("C:\\hako", message)
 
     def test_spaces_and_shell_characters_are_refused(self):
