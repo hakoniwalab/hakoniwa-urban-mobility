@@ -88,13 +88,19 @@ Urban Studio の「Simulation」タブで Composition（シミュレーション
 
 シミュレーションは CPU だけで動きます。街の 3D 表示はブラウザが GPU で描きます。
 
-- おすすめ：別の PC のブラウザで見る
-    同じネットワーク（同じサブネット）の別の PC から、Viewer の URL の
-    127.0.0.1 を、このパソコンの IP アドレスに替えて開けます
-    （例：http://192.168.2.104:28100/...）。
-    このパソコンのファイアウォールで、28100（Viewer）と 28865〜28867（WebBridge）を、
-    同じネットワークからだけ許可してください。
-    Viewer は展開したフォルダの中身を配るので、信頼できるネットワークだけで使ってください。
+- おすすめ：別の PC やスマホから操作・表示する
+    同じネットワーク（同じサブネット）の Mac・PC・スマホから、次を開けます。
+    このパソコンでブラウザを開く必要はありません。
+      Urban Studio : http://<このパソコンの IP アドレス>:28090/
+                     （start-urban-studio.bat の画面に表示されます）
+      Viewer       : Simulation タブの「スマホ・別の PC で見る」で URL と QR コードを表示
+    使うには、このパソコンのファイアウォールで、ポートを同じネットワークからだけ
+    許可します。管理者の PowerShell で次を実行してください（使い終わったら 2 行目で消します）。
+      New-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)" -Direction Inbound -Protocol TCP -LocalPort 28090,28100,28865-28867 -RemoteAddress LocalSubnet -Action Allow -Profile Any
+      Remove-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)"
+    ポートに届く人は、シミュレーションを動かしたり止めたり、展開したフォルダの中身を
+    見たりできます。信頼できるネットワークだけで使ってください。
+    新しい街を作る Environment Studio（28097）は、このパソコンからだけ使えます。
 
 - このパソコンで見るとき：ブラウザを「高パフォーマンス」の GPU にする
     GPU が 2 つあるノートパソコン（内蔵 GPU と NVIDIA など）では、Windows は

@@ -45,15 +45,38 @@ PLATEAU City World is GPU-heavy.
 | MacBook Pro (Mac14,9) | Apple M2 Pro, 12 cores / 32 GB | M2 Pro, 19 cores | macOS 27.0.1 | Chrome 154 | Car, Drone and integrated demos at RTF 1.0 |
 | Notebook (MouseComputer S4I7G60SRDDC) | Intel Core Ultra 7 155H, 22 threads / 64 GB | Intel Arc (integrated) + NVIDIA GeForce RTX 4060 Laptop | Windows 11 Pro 25H2 | Chrome 154 on the RTX 4060 | Car and Drone demos 3-1 to 3-5 at RTF 1.0, from the repository and from the portable package |
 
-**Recommended: view from another PC.** The viewer's HTTP server and the
-WebBridge listen on every address, so a browser on the same subnet can open the
-viewer URL printed by `configure` with `127.0.0.1` replaced by the simulation
-host's address (for example `http://192.168.2.104:28100/...`). The page connects
-to the WebBridge on the host it was loaded from (an explicit `?wsUri=` still
-wins). Allow only the viewer (28100) and WebBridge (28865-28867) ports in the
-host's firewall, for the local subnet only: the viewer's HTTP server serves the
-workspace folder, so use a trusted network. Urban Studio's own API stays on
-`127.0.0.1`.
+**Recommended: operate and view from another device.** Urban Studio
+(28090), the viewer's HTTP server (28100) and the WebBridge (28865-28867)
+listen on every address, so a PC, tablet or phone on the same subnet can use
+them; the simulation host needs no browser. A typical field setup runs the
+simulation on a Windows PC and operates Urban Studio from a Mac (or the other
+way round):
+
+- Urban Studio: open `http://<simulation-host>:28090/` (`urban_studio.py start`
+  prints this URL). The Viewer links it shows point at the same host.
+- Viewer: in the Simulation tab, "スマホ・別の PC で見る" shows the Viewer's
+  URL on the local network and a QR code for a phone. Any viewer URL printed by
+  `configure` also works with `127.0.0.1` replaced by the host's address; the
+  page connects to the WebBridge on the host it was loaded from (an explicit
+  `?wsUri=` still wins).
+- Environment Studio (28097) still listens on `127.0.0.1` only: make new
+  Cities on the simulation host.
+
+Anyone who reaches these ports can run and stop simulations and read the
+workspace folder the viewer serves, so use a trusted network and allow the
+ports only for the local subnet. On Windows, run in an administrator
+PowerShell (remove the rule when no longer needed):
+
+```powershell
+New-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)" -Direction Inbound -Protocol TCP `
+  -LocalPort 28090,28100,28865-28867 -RemoteAddress LocalSubnet -Action Allow -Profile Any
+Remove-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)"
+```
+
+`-RemoteAddress LocalSubnet` admits only devices on the same subnet; `-Profile
+Any` is needed because Windows often classifies a home or office network as
+Public. On macOS, allow incoming connections for the Foundation Python and
+`hakoniwa-pdu-web-bridge` when the firewall asks (it is off by default).
 
 **Viewing on the same PC: put the browser on the high-performance GPU.** On a
 notebook with two GPUs, Windows runs the browser on the integrated one by
