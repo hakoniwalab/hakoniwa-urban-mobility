@@ -132,7 +132,7 @@ def merge_launchers(
         "asset_name": "drone",
         "timeout_sec": 120,
         "poll_interval_sec": 0.2,
-        "command_timeout_sec": 2,
+        "command_timeout_sec": drone_one.DRONE_SERVICE_READINESS_PROBE_SEC,
     }
     drone_service["delay_sec"] = 8
 

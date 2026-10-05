@@ -68,7 +68,7 @@ def apply(work: Path, composition, launcher: dict, conductor: str) -> None:
         "args": [str(people_sim.PLANT), str(config / "people-plant.json")],
         "depends_on": [conductor], "delay_sec": 1,
         "readiness": {"type": "hako_asset", "asset_name": people_sim.PLANT_ASSET, "timeout_sec": 60,
-                      "poll_interval_sec": 0.2, "command_timeout_sec": 2},
+                      "poll_interval_sec": 0.2, "command_timeout_sec": multi_car.READINESS_PROBE_SEC},
     }
     assets = launcher["assets"]
     after = next((index for index, asset in enumerate(assets) if asset.get("name") == conductor), len(assets) - 1)

@@ -334,7 +334,7 @@ def launcher(resolved: dict, config: Path, browser: dict) -> dict:
             {"name": "people-plant", "activation_timing": "before_start", "command": str(python),
              "args": [str(PLANT), str(config / "people-plant.json")], "delay_sec": 2,
              "readiness": {"type": "hako_asset", "asset_name": PLANT_ASSET, "timeout_sec": 60,
-                           "poll_interval_sec": 0.2, "command_timeout_sec": 2}},
+                           "poll_interval_sec": 0.2, "command_timeout_sec": multi_car.READINESS_PROBE_SEC}},
             {"name": "people-web-bridge", "activation_timing": "before_start", "command": str(source["web_bridge"]),
              "args": ["--config-root", str(browser["bridge_root"]), "--node-name", "urban_vehicle_viewer_node1",
                       "--delta-time-step-usec", "20000"],
