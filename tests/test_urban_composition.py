@@ -1391,6 +1391,13 @@ class RealtimePacerTest(IntegratedFixture):
             self.assertEqual(pacer.main(["cfg.json", "--delta-msec", "30", "--max-delay-msec", "20"]), 2)
         self.assertIn("deadlock", stderr.getvalue())
 
+    def test_viewer_http_servers_listen_on_every_address(self):
+        """The car and people viewers can be opened from another machine on the LAN."""
+        self.assertEqual(multi_car.VIEWER_HTTP_BIND, "0.0.0.0")
+        for name in ("multi_car.py", "people_sim.py"):
+            source = (urban_realtime.ROOT / "tools" / name).read_text(encoding="utf-8")
+            self.assertNotIn('"--bind", "127.0.0.1"', source, name)
+
     def test_apply_pacer_follows_the_conductor_and_stops_drone_sleeps(self):
         launcher = {"assets": [
             {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},
