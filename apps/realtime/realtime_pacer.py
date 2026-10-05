@@ -40,7 +40,26 @@ def parser() -> argparse.ArgumentParser:
         help="the Conductor owner's max_delay (Drone service 20 ms, Car plant 100 ms)",
     )
     result.add_argument("--report-sec", type=float, default=2.0)
+    result.add_argument(
+        "--sleep-to-deadline", action="store_true",
+        help="sleep until the next delta boundary of wall time instead of a fixed "
+        "delta, so world time advances one step per boundary (Windows opt-in; "
+        "hakoniwalab/hakoniwa-urban-mobility#85)",
+    )
     return result
+
+
+def sleep_seconds(start: float, now: float, asset_usec: int, delta_usec: int, to_deadline: bool) -> float:
+    """How long the pacer sleeps after catching up with wall time.
+
+    A fixed delta lets the wake-ups drift against the delta boundaries, so a
+    wake-up advances 0, 1 or 2 steps and world time moves in bursts (a 20 ms
+    WebBridge then sends at 10/20/31 ms on Windows). Sleeping to the next
+    boundary keeps one step per boundary.
+    """
+    if not to_deadline:
+        return delta_usec / 1_000_000
+    return max(0.0, start + (asset_usec + delta_usec) / 1_000_000 - now)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,7 +116,9 @@ def main(argv: list[str] | None = None) -> int:
                 maybe_report(time.monotonic())
             maybe_report(now)
             slept = time.monotonic()
-            time.sleep(delta_usec / 1_000_000)
+            time.sleep(sleep_seconds(
+                start, slept, hakopy.asset_current_time(), delta_usec, args.sleep_to_deadline
+            ))
             report["idle"] += time.monotonic() - slept
 
     callbacks = {

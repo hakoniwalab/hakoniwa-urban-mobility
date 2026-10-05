@@ -1391,6 +1391,25 @@ class RealtimePacerTest(IntegratedFixture):
             self.assertEqual(pacer.main(["cfg.json", "--delta-msec", "30", "--max-delay-msec", "20"]), 2)
         self.assertIn("deadlock", stderr.getvalue())
 
+    def test_pacer_sleeps_to_the_next_delta_boundary_only_when_asked(self):
+        """#85: a fixed 10 ms sleep drifts against the step boundaries on Windows."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("realtime_pacer", urban_realtime.PACER)
+        pacer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pacer)
+        # 10.4 ms after start, the asset is at 10 ms: the next boundary is 20 ms.
+        self.assertAlmostEqual(pacer.sleep_seconds(100.0, 100.0104, 10_000, 10_000, True), 0.0096)
+        self.assertEqual(pacer.sleep_seconds(100.0, 100.0104, 10_000, 10_000, False), 0.010)
+        # Already past the boundary: no sleep.
+        self.assertEqual(pacer.sleep_seconds(100.0, 100.025, 10_000, 10_000, True), 0.0)
+
+    def test_pacer_sleeps_to_deadline_on_windows_only(self):
+        with mock.patch.object(urban_realtime.sys, "platform", "win32"):
+            self.assertIn("--sleep-to-deadline", urban_realtime.pacer_asset("/python", "drone-service-1")["args"])
+        with mock.patch.object(urban_realtime.sys, "platform", "darwin"):
+            self.assertNotIn("--sleep-to-deadline", urban_realtime.pacer_asset("/python", "drone-service-1")["args"])
+
     def test_apply_pacer_follows_the_conductor_and_stops_drone_sleeps(self):
         launcher = {"assets": [
             {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},

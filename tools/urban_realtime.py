@@ -11,6 +11,7 @@ no pacing at all once the Drone Show runner was replaced by the controls).
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 import re
 
 
@@ -77,6 +78,9 @@ def pacer_asset(python: str, conductor: str) -> dict:
         "args": [
             "-u", str(PACER), str(PACER_CONFIG),
             "--delta-msec", str(delta), "--max-delay-msec", str(max_delay),
+            # Windows: wake on the delta boundaries so world time (and the
+            # WebBridge cadence) advances evenly (#85). Other OSes unchanged.
+            *(["--sleep-to-deadline"] if sys.platform == "win32" else []),
         ],
         "cwd": str(ROOT),
         "depends_on": [conductor],
