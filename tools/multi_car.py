@@ -52,6 +52,11 @@ COMMAND_PDU = "ackermann_cmd"
 # geom_friction component applies it.
 TIRE_FRICTION_PDU = "tire_friction"
 CAR_PLANT_ASSET = "urban-car-fleet-plant"
+# The viewer's HTTP server listens on every address, so the viewer can be
+# opened from another machine (http://<this-host>:<http_port>/...; the page
+# reaches the WebBridge, which already listens on every address, on the same
+# host). It serves the workspace folder: keep it on a trusted LAN.
+VIEWER_HTTP_BIND = "0.0.0.0"
 TIRE_GEOMS = ("front_left_tire", "front_right_tire", "rear_left_tire", "rear_right_tire")
 CONTROL_MODES = {"external_python", "ps5"}
 
@@ -2037,7 +2042,7 @@ def materialize_launcher(
                 "args": [
                     str(source["http_server"]),
                     "--port", str(browser_files["http_port"]),
-                    "--bind", "127.0.0.1",
+                    "--bind", VIEWER_HTTP_BIND,
                     "--directory", str(WORKSPACE),
                 ],
                 "cwd": str(WORKSPACE),

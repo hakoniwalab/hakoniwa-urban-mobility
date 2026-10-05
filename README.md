@@ -692,6 +692,11 @@ python3 tools/multi_car.py start --config recipes/multi-car-viewer.yaml
 # Open the Three.js URL printed by configure (default):
 # Use the Map Viewer URL printed by configure. Its viewerConfigPath points to
 # /hakoniwa-business-pack/work/recipes/urban-multi-car-viewer/config/threejs/viewer-config.json
+# From another machine on the same LAN, open the same URL with 127.0.0.1
+# replaced by this host's address: the viewer's HTTP server and the WebBridge
+# listen on every address, and the page connects to the WebBridge on the host
+# it was loaded from. The HTTP server serves the workspace folder, so use a
+# trusted LAN and allow only the viewer and WebBridge ports in the firewall.
 
 # Drive any externally controlled vehicle from another terminal:
 ../hakoniwa-business-pack/work/foundation/install/python/bin/python3 \

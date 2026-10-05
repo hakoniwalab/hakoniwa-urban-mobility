@@ -340,7 +340,7 @@ def launcher(resolved: dict, config: Path, browser: dict) -> dict:
                       "--delta-time-step-usec", "20000"],
              "depends_on": ["people-plant"], "delay_sec": 1},
             {"name": "people-http-server", "activation_timing": "after_start", "command": str(python),
-             "args": [str(source["http_server"]), "--port", str(resolved["http_port"]), "--bind", "127.0.0.1",
+             "args": [str(source["http_server"]), "--port", str(resolved["http_port"]), "--bind", multi_car.VIEWER_HTTP_BIND,
                       "--directory", str(WORKSPACE)],
              "cwd": str(WORKSPACE), "depends_on": ["people-web-bridge"], "delay_sec": 1},
         ],
