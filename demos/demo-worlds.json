@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "description": "How the City Worlds of demos 3-1 to 3-5 are made again on a Workspace (tools/urban_demo_worlds.py; demos/README.md). Paths are relative to this file. The Compositions name the Worlds by these City Asset ids.",
+  "tocho": {
+    "asset_id": "tokyo-13104-multi-lat35_689-lon139_691",
+    "title": "新宿区・渋谷区 付近（437 × 434 m）",
+    "request": "worlds/tocho-city-world.json"
+  },
+  "sapporo": {
+    "asset_id": "sapporo-rotary-snow",
+    "title": "札幌駅南口ロータリー（雪の日・停止線と横断歩道つき、③-5）",
+    "city_world": "worlds/sapporo-city-world.json",
+    "base_recipe": {
+      "id": "sapporo-351-exact",
+      "name": "札幌 351（envsim 原本）",
+      "terrain": "city-dem"
+    },
+    "recipe": "worlds/sapporo-rotary-snow.yaml"
+  },
+  "hull": {
+    "asset_id": "tocho-bridge-a-hull",
+    "title": "都庁（比較用：歩道橋Aの当たり判定を1メッシュ＝凸包にした版）",
+    "source_asset_id": "tokyo-13104-multi-lat35_689-lon139_691",
+    "bridge": "brid_75151184",
+    "out": "urban/comparison-worlds/tocho-bridge-a-hull"
+  },
+  "demos": {
+    "files": "urban",
+    "description": "The Compositions, route and flight scenarios, and people scene of demos 3-1 to 3-5, copied into the work directory as they are (work/urban/...)."
+  }
+}

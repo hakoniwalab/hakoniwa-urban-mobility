@@ -1,0 +1,65 @@
+# ③-2 外壁点検（北西面、壁（リブの先端）から 3.0 m、突風＋接触で故障）
+# 南塔の H から離陸し、外壁の外を地上約 50 m まで降りて、壁に平行に 12 m 点検して H に戻る（壁の最外部は塔の中心から 22.24 m）。
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  # 突風の中では指定点にぴったり届かないので、到達の判定を緩める
+  tolerance_m: 3
+  # 飛行中に何かに触れたら、壁側のローターが止まる
+  contact_fault:
+    scale: 0.0
+  loop_count: 1
+  takeoff:
+    rise_m: 10
+    hold_sec: 2
+  waypoints:
+  - name: out
+    east_m: 56.01
+    north_m: 17.68
+    up_m: 262
+    yaw_deg: 315
+  - name: down
+    east_m: 56.01
+    north_m: 17.68
+    up_m: 60.0
+    yaw_deg: 315
+    hold_sec: 2
+  - name: pass-start
+    east_m: 64.49
+    north_m: 9.19
+    up_m: 60.0
+    yaw_deg: 315
+    hold_sec: 3
+    wind:
+      towards_deg: 315.0
+      speed_m_s: 15.0
+    zone_width_m: 10.0
+    zone_height_m: 12
+  - name: pass-end
+    east_m: 56.01
+    north_m: 0.71
+    up_m: 60.0
+    yaw_deg: 315
+    speed_m_s: 1.5
+    hold_sec: 2
+  - name: away
+    east_m: 47.52
+    north_m: 9.19
+    up_m: 60.0
+    yaw_deg: 315
+  - name: up
+    east_m: 47.52
+    north_m: 9.19
+    up_m: 262
+    yaw_deg: 315
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

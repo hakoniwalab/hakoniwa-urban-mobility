@@ -138,6 +138,17 @@ if(CMAKE_CONFIGURATION_TYPES)
             "RUNTIME_OUTPUT_DIRECTORY_${config_upper}" "${CMAKE_BINARY_DIR}/bin")
     endforeach()
 endif()
+# What this plant is built with, next to it: tools/multi_car.py reads it
+# (built_with_plant_directive) instead of CMakeCache.txt, so a packaged plant
+# (tools/urban_portable.py collect) still tells whether road friction works.
+if(HAKO_URBAN_ENABLE_MIRROR)
+    set(_urban_plant_directive true)
+else()
+    set(_urban_plant_directive false)
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/bin/urban-car-hakoniwa-asset.features.json"
+    CONTENT "{\n  \"schema_version\": 1,\n  \"plant_directive\": @_urban_plant_directive@\n}\n"
+    @ONLY)
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1

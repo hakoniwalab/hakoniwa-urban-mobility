@@ -1,0 +1,13 @@
+schema: hakoniwa.composition/v1
+id: demo34-alpha-up-wet
+world: tokyo-13104-multi-lat35_689-lon139_691
+vehicles:
+- name: Cart-1
+  asset: hakoniwa-cart
+  control: api
+  params:
+    scenario: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo34-alpha-up-wet.yaml
+  spawn:
+    east_m: -44.11
+    north_m: -121.96
+    yaw_deg: 11.4

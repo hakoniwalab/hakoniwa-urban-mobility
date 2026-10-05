@@ -1,0 +1,74 @@
+# ③-4 箱庭カート、都庁の南西の道路 α（94 m、平均 5.6 %、後半 6 % 前後）、路面 圧雪 0.25。
+# 上の端から下り、坂の途中（stop-on-slope、s=56 m、6 % の区間）で 5 秒、坂の下（stop-foot、s=6 m）で 8 秒止まる。
+# 道の中心線を走る（歩道橋の下は地形が道の中央に向かってくぼむので、中心線がなめらか）。摩擦は全区間で同じ（road_friction は各点からの区間にかかるので、すべての点に書く）。
+# return-* はルートを閉じるための戻りの線（中心線から 7 m 横）。計測はその前で終える。
+schema_version: 2
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+name: demo34-alpha-down-snow
+rate_hz: 50
+start_delay_sec: 3
+loop_count: 1
+vehicles:
+- name: Cart-1
+  route_offset_m: 0
+control:
+  speed_m_s: 3.0
+  lookahead_m: 4.0
+  position_gain: 0.8
+  wheelbase_m: 2.1
+  max_steering_deg: 34.0
+route:
+  closed: true
+  road_width_m: 12
+  points:
+  - name: top
+    east_m: -26.76
+    north_m: -208.23
+    road_friction: 0.25
+  - name: s80
+    east_m: -28.73
+    north_m: -198.43
+    road_friction: 0.25
+  - name: s70
+    east_m: -30.7
+    north_m: -188.63
+    road_friction: 0.25
+  - name: stop-on-slope
+    east_m: -33.46
+    north_m: -174.9
+    dwell_sec: 5
+    road_friction: 0.25
+  - name: s46
+    east_m: -35.43
+    north_m: -165.1
+    road_friction: 0.25
+  - name: s36
+    east_m: -37.4
+    north_m: -155.29
+    road_friction: 0.25
+  - name: s26
+    east_m: -39.37
+    north_m: -145.49
+    road_friction: 0.25
+  - name: s16
+    east_m: -41.35
+    north_m: -135.69
+    road_friction: 0.25
+  - name: stop-foot
+    east_m: -43.32
+    north_m: -125.88
+    dwell_sec: 8
+    road_friction: 0.25
+  - name: end
+    east_m: -44.3
+    north_m: -120.98
+    road_friction: 0.25
+  - name: return-foot
+    east_m: -37.44
+    north_m: -119.6
+    road_friction: 0.25
+  - name: return-top
+    east_m: -19.89
+    north_m: -206.85
+    road_friction: 0.25

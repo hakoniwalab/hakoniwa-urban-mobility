@@ -1,0 +1,64 @@
+# ③-4 制動のテスト：道路 α を坂の上から 3 m/s で下り、6 % の区間（s=56 m）で止まって 15 秒待つ。路面 乾燥 0.8。
+# 位置の追従を強く（position_gain 6）して、止まる点に着くまで 3 m/s 近くを保ち、着いた所で指示を一気に 0 にする。
+# return-* はルートを閉じるための戻りの線（中心線から 7 m 横）。計測はその前で終える。
+schema_version: 2
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+name: demo34-vshoot-brake-dry
+rate_hz: 50
+start_delay_sec: 25
+loop_count: 1
+vehicles:
+- name: Cart-1
+  route_offset_m: 0
+control:
+  speed_m_s: 3.0
+  lookahead_m: 4.0
+  position_gain: 6.0
+  wheelbase_m: 2.1
+  max_steering_deg: 34.0
+route:
+  closed: true
+  road_width_m: 12
+  points:
+  - name: top
+    east_m: -26.76
+    north_m: -208.23
+    road_friction: 0.8
+  - name: s80
+    east_m: -28.73
+    north_m: -198.43
+    road_friction: 0.8
+  - name: s70
+    east_m: -30.7
+    north_m: -188.63
+    road_friction: 0.8
+  - name: stop-on-slope
+    east_m: -33.46
+    north_m: -174.9
+    dwell_sec: 15
+    road_friction: 0.8
+  - name: s46
+    east_m: -35.43
+    north_m: -165.1
+    road_friction: 0.8
+  - name: s30
+    east_m: -38.59
+    north_m: -149.41
+    road_friction: 0.8
+  - name: s10
+    east_m: -42.53
+    north_m: -129.8
+    road_friction: 0.8
+  - name: end
+    east_m: -44.3
+    north_m: -120.98
+    road_friction: 0.8
+  - name: return-foot
+    east_m: -37.44
+    north_m: -119.6
+    road_friction: 0.8
+  - name: return-top
+    east_m: -19.89
+    north_m: -206.85
+    road_friction: 0.8

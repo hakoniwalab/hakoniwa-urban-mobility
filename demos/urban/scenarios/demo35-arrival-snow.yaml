@@ -1,0 +1,95 @@
+# ③-5 到着：sapporo-rotary-pickup と同じ乗車・ルートを、雪の日の World（sapporo-rotary-snow）で、路面 圧雪 0.25 で走る。
+# 札幌駅南の道では、雪の停止案内（演出、横断歩道の 5 m 手前）で 3 秒止まる（guide-snow）。元のシナリオは変えていない。
+# 札幌駅南口ロータリー (City sapporo-rotary): the 箱庭カート comes along
+# 北5条手稲通, turns into the station's rotary and pulls in at the station-side
+# Hakoniwa Shuttle stop, where three people wait; it goes round and out onto
+# 北5条手稲通 eastwards, turns east of the stalls and, coming back west, pulls
+# in at the stop on the south side by the open space (three stalls, a square)
+# and lets them off on the pavement side; they walk to the stalls and the
+# square. Then it goes back west. The rotary follows its
+# OpenStreetMap centre line (a one-way service road); the route keeps clear of
+# the City's walls and parts (checked against the ground heights, 0.5 m apart).
+# The car runs the route (apps/car/scenario_executor.py); the people: section
+# is the riders' side (apps/people/ride_plan.py).
+schema_version: 2
+meta:
+  world: sapporo-rotary-snow
+name: demo35-arrival-snow
+rate_hz: 50
+start_delay_sec: 0.0
+loop_count: forever
+
+vehicles:
+  - name: Cart-1
+    route_offset_m: 0.0
+
+control:
+  speed_m_s: 3.0     # the cart's top speed (11 rad/s wheels)
+  lookahead_m: 4.0
+  position_gain: 0.8
+  wheelbase_m: 2.10
+  max_steering_deg: 34.0
+
+route:
+  closed: true
+  points:
+    - {name: street-west, east_m: 30.0, north_m: -62.8, road_friction: 0.25}
+    - {name: to-entry, east_m: 11.0, north_m: -65.0, road_friction: 0.25}
+    - {name: entry, east_m: 4.0, north_m: -59.0, road_friction: 0.25}
+    - {name: r1, east_m: 2.3, north_m: -50.7, road_friction: 0.25}
+    - {name: r2, east_m: 2.6, north_m: -45.0, road_friction: 0.25}
+    - {name: r3, east_m: 4.6, north_m: -40.8, road_friction: 0.25}
+    - {name: r4, east_m: 7.1, north_m: -37.6, road_friction: 0.25}
+    - {name: r5, east_m: 10.5, north_m: -35.1, road_friction: 0.25}
+    - {name: r6, east_m: 14.7, north_m: -33.3, road_friction: 0.25}
+    - {name: r7, east_m: 38.0, north_m: -29.0, road_friction: 0.25}
+    - {name: r8, east_m: 41.2, north_m: -26.8, road_friction: 0.25}
+    - {name: r9, east_m: 42.2, north_m: -23.6, road_friction: 0.25}
+    - {name: r10, east_m: 33.9, north_m: 19.5, road_friction: 0.25}
+    - {name: r11, east_m: 35.6, north_m: 22.6, road_friction: 0.25}
+    - {name: station, east_m: 43.4, north_m: 24.9, dwell_sec: 25.0, road_friction: 0.25}
+    - {name: r12, east_m: 50.6, north_m: 25.4, road_friction: 0.25}
+    - {name: r13, east_m: 54.6, north_m: 22.0, road_friction: 0.25}
+    - {name: r14, east_m: 56.7, north_m: 15.3, road_friction: 0.25}
+    - {name: r15, east_m: 58.4, north_m: 11.7, road_friction: 0.25}
+    - {name: r16, east_m: 65.3, north_m: -22.6, road_friction: 0.25}
+    - {name: r17, east_m: 64.4, north_m: -27.0, road_friction: 0.25}
+    - {name: r18, east_m: 60.5, north_m: -29.7, road_friction: 0.25}
+    - {name: r19, east_m: 17.7, north_m: -37.5, road_friction: 0.25}
+    - {name: r20, east_m: 12.2, north_m: -40.1, road_friction: 0.25}
+    - {name: r21, east_m: 9.0, north_m: -43.3, road_friction: 0.25}
+    - {name: r22, east_m: 8.0, north_m: -46.8, road_friction: 0.25}
+    - {name: exit, east_m: 8.0, north_m: -49.7, road_friction: 0.25}
+    - {name: exit2, east_m: 10.9, north_m: -61.0, road_friction: 0.25}
+    - {name: street-east, east_m: 20.0, north_m: -60.7, road_friction: 0.25}
+    - {name: street-mid, east_m: 45.0, north_m: -55.9, road_friction: 0.25}
+    - {name: guide-snow, east_m: 56.0, north_m: -53.35, dwell_sec: 3.0, road_friction: 0.25}
+    - {name: eastbound, east_m: 86.0, north_m: -46.4, road_friction: 0.25}
+    - {name: past-stalls, east_m: 108.0, north_m: -43.4, road_friction: 0.25}
+    - {name: uturn1, east_m: 115.0, north_m: -42.6, road_friction: 0.25}
+    - {name: uturn2, east_m: 120.0, north_m: -43.4, road_friction: 0.25}
+    - {name: uturn3, east_m: 122.2, north_m: -45.8, road_friction: 0.25}
+    - {name: uturn4, east_m: 120.5, north_m: -48.7, road_friction: 0.25}
+    - {name: uturn5, east_m: 114.0, north_m: -50.6, road_friction: 0.25}
+    - {name: pull-in, east_m: 105.0, north_m: -57.6, road_friction: 0.25}
+    - {name: drop, east_m: 98.0, north_m: -59.8, dwell_sec: 20.0, road_friction: 0.25}
+    - {name: pull-out, east_m: 88.0, north_m: -58.4, road_friction: 0.25}
+    - {name: street-return, east_m: 75.4, north_m: -54.2, road_friction: 0.25}
+
+people:
+  vehicle: Cart-1
+  riders:
+    # Waiting on the station side of the rotary (the cart's left as it passes
+    # east at the top); the two for the right seats walk round its back.
+    - name: Person-1
+      wait: [41.5, 27.2]
+      board: {stop: station, seat: rear_left}
+      alight: {stop: drop, then: [101.5, -74.0]}
+    - name: Person-2
+      wait: [43.4, 27.5]
+      board: {stop: station, seat: passenger}
+      alight: {stop: drop, then: [103.0, -76.5]}
+    - name: Person-3
+      wait: [45.3, 27.8]
+      board: {stop: station, seat: rear_right}
+      alight: {stop: drop, then: [102.0, -79.5]}

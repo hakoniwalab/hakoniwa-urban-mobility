@@ -1,0 +1,55 @@
+# ③-2 外壁点検（南西面、壁（リブの先端）から 3.0 m、正常）
+# 南塔の H から離陸し、外壁の外を地上約 50 m まで降りて、壁に平行に 16 m 点検して H に戻る（壁の最外部は塔の中心から 22.18 m）。
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  loop_count: 1
+  takeoff:
+    rise_m: 10
+    hold_sec: 2
+  waypoints:
+  - name: out
+    east_m: 61.71
+    north_m: -29.29
+    up_m: 262
+    yaw_deg: 45
+  - name: down
+    east_m: 61.71
+    north_m: -29.29
+    up_m: 60.0
+    yaw_deg: 45
+    hold_sec: 2
+  - name: pass-start
+    east_m: 70.2
+    north_m: -20.8
+    up_m: 60.0
+    yaw_deg: 45
+    hold_sec: 3
+  - name: pass-end
+    east_m: 81.51
+    north_m: -32.12
+    up_m: 60.0
+    yaw_deg: 45
+    speed_m_s: 1.5
+    hold_sec: 2
+  - name: away
+    east_m: 73.03
+    north_m: -40.6
+    up_m: 60.0
+    yaw_deg: 45
+  - name: up
+    east_m: 73.03
+    north_m: -40.6
+    up_m: 262
+    yaw_deg: 45
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

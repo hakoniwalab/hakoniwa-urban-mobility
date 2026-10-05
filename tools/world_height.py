@@ -237,12 +237,16 @@ def _compile_in_process(index: int, source: Path, output: Path) -> tuple[int, fl
     package's embedded Python.
     """
     started = time.monotonic()
+    # The child writes UTF-8 (PYTHONIOENCODING) and the parent reads it as such: on
+    # Windows the locale (cp932) cannot decode a Japanese path in MuJoCo's message,
+    # which used to hide the real error behind an AttributeError.
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "compile-chunk", str(source), str(output)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if result.returncode != 0:
-        raise WorldHeightError(f"World chunk {index} failed to compile: {result.stderr.strip()[-2000:]}")
+        raise WorldHeightError(f"World chunk {index} failed to compile: {(result.stderr or '').strip()[-2000:]}")
     return index, time.monotonic() - started
 
 

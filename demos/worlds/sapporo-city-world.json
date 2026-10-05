@@ -1,0 +1,23 @@
+{
+  "id": "hokkaido-01100-lat43_067-lon141_351",
+  "name": "札幌駅南口 付近（345 × 183 m）",
+  "selection": {
+    "center": {
+      "latitude": 43.06738,
+      "longitude": 141.350709
+    },
+    "half_extent_m": {
+      "north_south": 91.3,
+      "east_west": 172.7
+    }
+  },
+  "source": "plateau",
+  "options": {
+    "building_physics_level": 3,
+    "building_collider_reduction": "convex-decompose",
+    "terrain_uncovered_policy": "error",
+    "terrain_bridge_carve": false,
+    "terrain_bridge_blend": false
+  },
+  "offline": false
+}

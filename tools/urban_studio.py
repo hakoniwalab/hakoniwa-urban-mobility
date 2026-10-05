@@ -1081,6 +1081,22 @@ class Job:
             }
 
 
+# subprocess.CREATE_NO_WINDOW (Windows only; the constant is missing elsewhere).
+CREATE_NO_WINDOW = 0x08000000
+
+
+def child_process_options(os_name: str = os.name) -> dict:
+    """Popen options for the commands Urban Studio runs.
+
+    On Windows a background Urban Studio has no console (start uses
+    DETACHED_PROCESS), so every console program it starts would open its own
+    black window. CREATE_NO_WINDOW gives the child a console without a
+    window, which the Launcher and the simulators it starts share."""
+    if os_name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", CREATE_NO_WINDOW)}
+    return {}
+
+
 class JobRunner:
     """Run one command at a time per Composition and keep its output."""
 
@@ -1132,6 +1148,7 @@ class JobRunner:
                 process = subprocess.Popen(
                     arguments, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                    **child_process_options(),
                 )
             except OSError as exc:
                 with job.lock:
@@ -1489,7 +1506,12 @@ def _running(state_dir: Path) -> dict | None:
 
 def _port_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt":
+            # On Windows SO_REUSEADDR lets a second socket bind a port in use;
+            # exclusive use fails as soon as another program has it.
+            probe.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", -5), 1)
+        else:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("127.0.0.1", port))
         except OSError:

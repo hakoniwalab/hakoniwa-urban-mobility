@@ -1,0 +1,60 @@
+# ③-5 制動のテスト：札幌駅の南の道（ほぼ平ら、約 0.2°）を東へ 3 m/s、凍結用の停止案内（演出、横断歩道の 12 m 手前）でカートの先端がそこに来た所で止まれを出し、15 秒待つ。路面 凍結 0.10。
+# 横断歩道（演出）は停止線の 2〜6 m 先。position_gain 6 で、停止線に着いた所で指示を一気に 0 にする（③-4 と同じ）。
+# return-* はルートを閉じるための戻りの線（7 m 北）。計測はその前で終える。
+schema_version: 2
+meta:
+  world: sapporo-rotary-snow
+name: demo35-guide-ice010
+rate_hz: 50
+start_delay_sec: 3
+loop_count: 1
+vehicles:
+- name: Cart-1
+  route_offset_m: 0
+control:
+  speed_m_s: 3.0
+  lookahead_m: 4.0
+  position_gain: 6.0
+  wheelbase_m: 2.1
+  max_steering_deg: 34.0
+route:
+  closed: true
+  road_width_m: 12
+  points:
+  - name: start
+    east_m: 20.0
+    north_m: -60.7
+    road_friction: 0.1
+  - name: street-mid
+    east_m: 45.0
+    north_m: -55.9
+    road_friction: 0.1
+  - name: guide-ice
+    east_m: 49.19
+    north_m: -54.93
+    dwell_sec: 15
+    road_friction: 0.1
+  - name: s30
+    east_m: 74.23
+    north_m: -49.13
+    road_friction: 0.1
+  - name: s45
+    east_m: 88.84
+    north_m: -45.74
+    road_friction: 0.1
+  - name: end
+    east_m: 98.58
+    north_m: -43.49
+    road_friction: 0.1
+  - name: return-end
+    east_m: 97.0
+    north_m: -36.67
+    road_friction: 0.1
+  - name: return-mid
+    east_m: 43.42
+    north_m: -49.08
+    road_friction: 0.1
+  - name: return-start
+    east_m: 18.42
+    north_m: -53.88
+    road_friction: 0.1

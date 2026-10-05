@@ -1,0 +1,52 @@
+# ③-1 都庁で、ドローンを飛ばす（正常）: 南塔の屋上のヘリポート（H）から浮上し、
+# 屋上の上空 30 m を、屋上の縁の約 5 m 内側でひし形に一回りして下を見回し、H に戻って着陸する。
+# demo31-tocho-drone-gust.yaml は、北西の辺で縁の外（北西）へ突風が吹くもの。
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  loop_count: 1
+  takeoff:
+    rise_m: 10
+    hold_sec: 2
+  waypoints:
+  - name: rise
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+  - name: west
+    east_m: 73
+    north_m: -3
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+  - name: north
+    east_m: 88
+    north_m: 12
+    up_m: 280
+    yaw_deg: 90
+    hold_sec: 2
+  - name: east
+    east_m: 104
+    north_m: -3
+    up_m: 280
+    yaw_deg: 0
+    hold_sec: 2
+  - name: south
+    east_m: 88
+    north_m: -19
+    up_m: 280
+    yaw_deg: -90
+    hold_sec: 2
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

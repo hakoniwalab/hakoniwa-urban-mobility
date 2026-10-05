@@ -173,7 +173,8 @@ def build_car_asset() -> None:
     # Same Release build as the Car route. A multi-config generator (Visual
     # Studio) otherwise builds Debug, which cannot link the Release
     # Foundation libraries (RuntimeLibrary / _ITERATOR_DEBUG_LEVEL mismatch).
-    multi_car.build_car_asset(enable_mirror=True)
+    # A portable package reuses the plant it carries (built with the Mirror).
+    multi_car.ensure_car_asset(enable_mirror=True)
 
 
 def configure(drone_root: Path) -> int:
@@ -232,7 +233,7 @@ def doctor(drone_root: Path) -> int:
         ),
         (
             "Car Mirror asset",
-            multi_car.native_executable(ROOT / "build/bin/urban-car-hakoniwa-asset"),
+            multi_car.plant_executable(),
         ),
         ("Car scenario", car_scenario_path()),
         ("PS4 RC program", drone_root / "drone_api/rc/rc-custom.py"),

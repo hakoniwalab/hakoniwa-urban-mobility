@@ -7,7 +7,6 @@ import argparse
 from dataclasses import dataclass
 import importlib.util
 import json
-import os
 from pathlib import Path
 import platform
 import subprocess
@@ -328,17 +327,14 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     resolved = multi_car.resolve_config(config_path)
     # Road friction reaches the tires only through the Plant Directive path.
     plant_directive = multi_car.needs_plant_directive(resolved)
-    if not getattr(args, "reuse_built_asset", False):
+    # A portable package has no CMake: it reuses the plant it carries.
+    if not (getattr(args, "reuse_built_asset", False) or urban_manifest.portable()):
         multi_car.build_car_asset(enable_mirror=plant_directive)
-    elif not (ROOT / "build/bin/urban-car-hakoniwa-asset.exe").is_file():
-        raise UrbanMobilityError(
-            "--reuse-built-asset requires build/bin/urban-car-hakoniwa-asset.exe"
-        )
-    elif plant_directive and not multi_car.built_with_plant_directive():
-        raise UrbanMobilityError(
-            "a route sets road_friction, but the built Urban Car plant has no Plant Directive path "
-            "(HAKO_URBAN_ENABLE_MIRROR=OFF) and would ignore it; configure without --reuse-built-asset"
-        )
+    else:
+        try:
+            multi_car.require_built_car_asset(enable_mirror=plant_directive)
+        except multi_car.RecipeError as exc:
+            raise UrbanMobilityError(str(exc)) from exc
     if multi_car.configure(resolved) != 0:
         return 1
     if selected is not None:
@@ -381,7 +377,9 @@ def configure_integrated(context: RecipeContext, args: argparse.Namespace | None
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
-    portable_reconfigure = getattr(args, "portable_reconfigure", False)
+    # recipe.py configure resolves sources with Git and installs Python
+    # packages with pip; a portable package already carries both.
+    portable_reconfigure = getattr(args, "portable_reconfigure", False) or urban_manifest.portable()
     if not portable_reconfigure and recipe_command("configure", context) != 0:
         return 1
     if context.use_case == "car-rc":
@@ -431,8 +429,7 @@ def prepare_start(context: RecipeContext, composition_path: Path | None = None) 
 
 def launcher_command(operation: str, context: RecipeContext, args: argparse.Namespace | None = None) -> int:
     if operation == "start":
-        portable = os.environ.get("HAKONIWA_PORTABLE_WORKSPACE") == "1"
-        if not portable and recipe_command("doctor", context) != 0:
+        if not urban_manifest.portable() and recipe_command("doctor", context) != 0:
             return 1
         prepare_start(context, getattr(args, "composition", None))
         lifecycle = spec(context)

@@ -1,0 +1,13 @@
+schema: hakoniwa.composition/v1
+id: demo33-a-current
+world: tokyo-13104-multi-lat35_689-lon139_691
+vehicles:
+- name: Drone-1
+  asset: eams-hexa
+  control: schedule
+  params:
+    schedule: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo33-a-current.yaml
+  spawn:
+    east_m: 18.5
+    north_m: -20.0
+    yaw_deg: 281

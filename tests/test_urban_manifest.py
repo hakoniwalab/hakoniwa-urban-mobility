@@ -82,8 +82,11 @@ class ManifestTest(unittest.TestCase):
                 self.assertEqual(urban_manifest.path("assets.repository"), urban_manifest.ROOT / "assets")
 
     def test_no_tool_guesses_the_business_pack_next_to_this_repository(self):
-        # portable_urban_car builds a portable package's Workspace variables from its own layout.
-        allowed = {"tools/portable_urban_car.py"}
+        # portable_urban_car and urban_portable work in a portable package, whose
+        # layout the Business Pack packager fixes (hakoniwa-business-pack next to
+        # this repository); urban_portable reads $HAKONIWA_WORK_DIR when the
+        # Workspace is active.
+        allowed = {"tools/portable_urban_car.py", "tools/urban_portable.py"}
         guesses = [path.relative_to(ROOT).as_posix() for folder in ("tools", "apps") for path in (ROOT / folder).rglob("*.py")
                    if "hakoniwa-business-pack/work" in path.read_text(encoding="utf-8")
                    or '/ "hakoniwa-business-pack"' in path.read_text(encoding="utf-8")]

@@ -1,0 +1,13 @@
+schema: hakoniwa.composition/v1
+id: demo34-brake-dry
+world: tokyo-13104-multi-lat35_689-lon139_691
+vehicles:
+- name: Cart-1
+  asset: hakoniwa-cart
+  control: api
+  params:
+    scenario: ${repo:hakoniwa-business-pack}/work/urban/scenarios/demo34-brake-dry.yaml
+  spawn:
+    east_m: -26.76
+    north_m: -208.23
+    yaw_deg: 191.4

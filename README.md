@@ -28,6 +28,11 @@ browser visualization and safety-aware interaction.
 > **Quick start (日本語):** [`docs/quickstart-ja.md`](docs/quickstart-ja.md) — open Urban Studio, fly on a
 > plain World, make a PLATEAU City with Environment Studio, and drive or fly on it.
 
+> **Windows portable package (日本語):** [`docs/windows-portable.md`](docs/windows-portable.md) — build a ZIP
+> of Urban Studio with its demos that runs on Windows without Python, Git, or a C++ toolchain
+> (`portable/windows-profile.json`, `tools/urban_portable.py`). The demo Worlds of demos 3-1 to 3-5 are
+> made again on the building machine: [`demos/README.md`](demos/README.md) (`tools/urban_demo_worlds.py`).
+
 The step-by-step migration to the managed Business Pack Recipe/Foundation
 contract is tracked in
 [`docs/foundation-task.md`](docs/foundation-task.md).

@@ -15,6 +15,8 @@ From hakoniwa-business-pack, in the Workspace (python tools/workspace.py enter):
 start runs the Business Pack `recipe.py configure` on this Recipe (it clones
 Environment Studio when missing) and on Environment Studio's own Recipe (its
 Python packages and hakoniwa-envsim), then `env_studio.py start --export-dir`.
+In a Windows portable package (HAKONIWA_PORTABLE_WORKSPACE=1) it skips the
+configure steps, as --no-configure does.
 """
 
 from __future__ import annotations
@@ -60,7 +62,14 @@ def _run(command: list[str]) -> int:
 
 
 def configure() -> int:
-    """This Recipe first (Environment Studio's checkout), then the Studio's own."""
+    """This Recipe first (Environment Studio's checkout), then the Studio's own.
+
+    A portable package (urban_manifest.portable) carries Environment Studio,
+    hakoniwa-envsim, and their Python packages, and has no Git or pip: there
+    is nothing to configure."""
+    if urban_manifest.portable():
+        print("Portable workspace: Environment Studio configure skipped (the package carries it)", flush=True)
+        return 0
     recipe_tool = urban_manifest.business_pack() / "tools/recipe.py"
     for recipe in (RECIPE, None):
         path = recipe if recipe is not None else studio_root() / STUDIO_RECIPE

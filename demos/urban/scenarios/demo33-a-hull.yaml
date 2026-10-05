@@ -1,0 +1,34 @@
+# ③-3 歩道橋 A（公園通りをまたぐ南の歩道橋）の下を、無風でくぐる。
+# 比較用：歩道橋 A を 1 つのメッシュのまま物理エンジンに入れた版（当たり判定は凸包）
+# 公園通りの上（路面 4.5 m）で離陸し、路面から約 3 m（高さ 7.6 m、橋の裏 10.8 m と路面の間の中ほど）を南へ水平に飛ぶ。
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  loop_count: 1
+  takeoff:
+    rise_m: 3.1
+    hold_sec: 2
+  waypoints:
+  - name: north-of-bridge
+    east_m: 18.5
+    north_m: -20.0
+    up_m: 7.6
+    yaw_deg: 281
+    hold_sec: 2
+  - name: south-of-bridge
+    east_m: 29.4
+    north_m: -75.0
+    up_m: 7.6
+    yaw_deg: 281
+    hold_sec: 2
+  land:
+    east_m: 29.4
+    north_m: -75.0
+    up_m: 4.49
+    rise_m: 3.1
+meta:
+  world: tocho-bridge-a-hull
+  takeoff:
+    east_m: 18.5
+    north_m: -20.0

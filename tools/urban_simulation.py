@@ -132,6 +132,12 @@ def prepare_route(selected: "Plan", command: str) -> int:
     operation = {"configure": "configure", "doctor": "doctor"}.get(command)
     if operation is None or selected.managed_recipe is None:
         return 0
+    if urban_manifest.portable():
+        # A portable package carries the repositories, the Foundation, and
+        # the Python packages this Recipe declares; recipe.py would need Git
+        # and pip, which it does not have.
+        print(f"Portable workspace: {selected.route} Recipe {operation} skipped (the package carries what it needs)")
+        return 0
     return subprocess.run(
         [sys.executable, str(BUSINESS_PACK / "tools/recipe.py"), operation, "--recipe", str(selected.managed_recipe)],
         cwd=BUSINESS_PACK, check=False,
