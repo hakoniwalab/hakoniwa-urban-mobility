@@ -456,7 +456,30 @@ class StudioServerTest(StudioTestBase):
             name="Drone-1", asset="fpv-drone-master3x"))
         with mock.patch.object(urban_studio, "USER_COMPOSITIONS", self.work / "compositions"):
             status, body = self.call("GET", "/api/compositions/never-configured/viewer")
-        self.assertEqual((status, body), (200, {"url": None, "collider_url": None, "running": False}))
+        self.assertEqual((status, body), (200, {
+            "url": None, "collider_url": None, "running": False, "lan_url": None, "lan_collider_url": None,
+        }))
+
+    def test_urban_studio_listens_on_every_address(self):
+        """A phone or another PC on the same network can open Urban Studio."""
+        self.assertEqual(urban_studio.STUDIO_BIND, "0.0.0.0")
+        server = urban_studio.make_server(0)
+        self.addCleanup(server.server_close)
+        self.assertEqual(server.server_address[0], "0.0.0.0")
+        self.assertFalse(urban_studio._port_free(server.server_address[1]))
+
+    def test_the_lan_url_replaces_only_a_loopback_host(self):
+        """スマホ・別の PC で見る: the Viewer URL as seen from the local network."""
+        url = "http://127.0.0.1:28100/hakoniwa-map-viewer/src/client/index.html?viewerConfigPath=%2Fx.json"
+        self.assertEqual(
+            urban_studio.lan_url(url, "192.168.2.100"),
+            "http://192.168.2.100:28100/hakoniwa-map-viewer/src/client/index.html?viewerConfigPath=%2Fx.json",
+        )
+        self.assertIsNone(urban_studio.lan_url(url, None))
+        self.assertIsNone(urban_studio.lan_url(None, "192.168.2.100"))
+        self.assertIsNone(urban_studio.lan_url("http://example.org:28100/", "192.168.2.100"))
+        address = urban_studio.lan_address()
+        self.assertTrue(address is None or not address.startswith("127."))
 
     def test_a_viewer_opens_only_while_its_server_listens(self):
         import socket
