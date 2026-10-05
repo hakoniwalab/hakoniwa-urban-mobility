@@ -235,10 +235,11 @@ def register_city(receipt: Path, asset_id: str, title: str, precompile: bool) ->
 
 # --- Steps ----------------------------------------------------------------------------------------
 
-def install_demos(spec: dict, work: Path, force: bool = False) -> dict:
-    """Copy demos/urban (Compositions, scenarios, scenes) into work/urban.
+def install_demos(spec: dict, work: Path, force: bool = False, key: str = "demos") -> dict:
+    """Copy demos/urban (or the showcase, key="showcase": showcase/urban) —
+    Compositions, scenarios, scenes — into work/urban.
     A file that is there with other contents is kept (an edit), unless force."""
-    source = spec_file(spec, spec["demos"]["files"])
+    source = spec_file(spec, spec[key]["files"])
     counts = {"copied": 0, "same": 0, "kept": 0}
     for path in sorted(item for item in source.rglob("*") if item.is_file()):
         target = work / "urban" / path.relative_to(source)
@@ -532,7 +533,7 @@ def check(spec: dict, adopt: bool = False, precompile: bool = True) -> int:
 
 # --- CLI ------------------------------------------------------------------------------------------
 
-STEPS = ("demos", "tocho", "sapporo", "hull")
+STEPS = ("showcase", "demos", "tocho", "sapporo", "hull")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -541,7 +542,7 @@ def parser() -> argparse.ArgumentParser:
     build = commands.add_parser("build", help="make the demo Worlds (and copy the demo Compositions)")
     for step in STEPS:
         build.add_argument(f"--{step}", action="store_true")
-    build.add_argument("--all", action="store_true", help="--demos --tocho --sapporo --hull, in this order")
+    build.add_argument("--all", action="store_true", help="--showcase --demos --tocho --sapporo --hull, in this order")
     build.add_argument("--force", action="store_true", help="make again what is there already")
     build.add_argument("--tocho-build", type=Path, help="use this Envsim City World build for Tocho (no download)")
     build.add_argument("--sapporo-build", type=Path,
@@ -564,8 +565,9 @@ def main(argv: list[str] | None = None) -> int:
         return check(spec, args.adopt, precompile)
     steps = [step for step in STEPS if args.all or getattr(args, step)]
     if not steps:
-        parser().error("build needs --all or one of --demos --tocho --sapporo --hull")
+        parser().error("build needs --all or one of --showcase --demos --tocho --sapporo --hull")
     labels = {
+        "showcase": "まず試すデモ（都庁のカートと人・都庁のドローン・札幌の雪の夜の屋台）を work にコピーします",
         "demos": "デモの Composition・ルート・飛行計画・人のシーンを work にコピーします",
         "tocho": "都庁の City World（PLATEAU、インターネット接続が必要、数十分）",
         "sapporo": "札幌駅南口ロータリー（雪）の World（PLATEAU、インターネット接続が必要）",
@@ -573,8 +575,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     for number, step in enumerate(steps, 1):
         say(f"[{number}/{len(steps)}] {labels[step]}")
-        if step == "demos":
-            install_demos(spec, work_dir(), args.force)
+        if step in ("showcase", "demos"):
+            install_demos(spec, work_dir(), args.force, step)
         elif step == "tocho":
             build_tocho(spec, args.force, args.tocho_build, precompile)
         elif step == "sapporo":

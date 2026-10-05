@@ -1,0 +1,40 @@
+# 札幌駅南口ロータリー (City sapporo-rotary): the Hakoniwa Car runs up and
+# down 北5条手稲通 by the stalls, round and round (east in the eastbound lane,
+# turning east of the stalls, west in the westbound lane, turning again).
+# It yields to the 箱庭カート where their ways meet (the route executor's yield).
+schema_version: 2
+meta:
+  world: sapporo-rotary
+name: Sapporo rotary delivery
+rate_hz: 50
+start_delay_sec: 0.0
+loop_count: forever
+
+vehicles:
+  - name: Delivery-1
+    route_offset_m: 0.0
+
+control:
+  speed_m_s: 2.5
+  lookahead_m: 4.0
+  position_gain: 0.8
+  wheelbase_m: 1.50
+  max_steering_deg: 34.0
+
+route:
+  closed: true
+  points:
+    - {name: west-eastbound, east_m: 64.0, north_m: -50.4}
+    - {name: eastbound, east_m: 86.0, north_m: -46.4}
+    - {name: past-stalls, east_m: 108.0, north_m: -43.4}
+    - {name: uturn1, east_m: 115.0, north_m: -42.6}
+    - {name: uturn2, east_m: 120.0, north_m: -43.4}
+    - {name: uturn3, east_m: 122.2, north_m: -45.8}
+    - {name: uturn4, east_m: 120.5, north_m: -48.7}
+    - {name: uturn5, east_m: 114.0, north_m: -50.0}
+    - {name: westbound, east_m: 94.0, north_m: -51.2}
+    - {name: west-westbound, east_m: 62.0, north_m: -57.3}
+    - {name: west-uturn1, east_m: 56.0, north_m: -58.4}
+    - {name: west-uturn2, east_m: 52.4, north_m: -56.0}
+    - {name: west-uturn3, east_m: 54.0, north_m: -52.6}
+    - {name: west-uturn4, east_m: 58.0, north_m: -51.2}

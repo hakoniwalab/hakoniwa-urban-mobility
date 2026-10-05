@@ -73,14 +73,14 @@ cd ..\hakoniwa-business-pack
 
 `features.json` が `"plant_directive": true` になっていることを確かめます。Urban Studio で摩擦のあるデモ（3-4）を Configure しても、同じ設定で組み立てられます。
 
-### 4. デモの World を Windows で作る
+### 4. まず試すデモと、その World を Windows で作る
 
-デモの Composition は World を ID で指すので、同じ ID で作ります（ID の決まり方は [demos/README.md](../demos/README.md#id-の決まり方)）。PLATEAU からダウンロードするので、インターネット接続が必要です。
+パッケージに入れるのは、README の「Try these first」の 3 つのデモ（`showcase/urban/`）と、それが使う都庁・札幌の World だけです。検証用の細かいデモ（`demos/`）は入れません。デモの Composition は World を ID で指すので、同じ ID で作ります（ID の決まり方は [demos/README.md](../demos/README.md#id-の決まり方)）。PLATEAU からダウンロードするので、インターネット接続が必要です。
 
-まずデモの Composition・ルート・飛行計画・人のシーンを work にコピーします。
+まず 3 つのデモの Composition・ルート・飛行計画・人のシーンを work にコピーします。
 
 ```powershell
-python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --demos
+python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --showcase
 ```
 
 **都庁（`tokyo-13104-multi-lat35_689-lon139_691`）は Environment Studio の画面で作ります**（Windows で Environment Studio を確かめることも兼ねます）。
@@ -106,13 +106,13 @@ python ..\hakoniwa-urban-mobility\tools\urban_studio.py start
 
 診断で新宿区・渋谷区・中野区が出て、生成後に「生成しました — tokyo-13104-multi-lat35_689-lon139_691」と表示されること、Urban Studio の City タブに「新宿区・渋谷区 付近（437 × 434 m）」が登録されることを確かめます。ID が違った（PLATEAU の市区町村が変わった）ときは、手順 5 の `check --adopt` でデモの ID を付けます。画面を使わない代わりの手段は `urban_demo_worlds.py build --tocho` です（同じ条件、同じ処理）。
 
-**札幌（`sapporo-rotary-snow`）と比較用（`tocho-bridge-a-hull`）はスクリプトで作ります**（比較用は都庁から作るので、都庁のあと）。
+**札幌（`sapporo-rotary-snow`）はスクリプトで作ります**。
 
 ```powershell
-python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --sapporo --hull
+python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --sapporo
 ```
 
-札幌は、PLATEAU から札幌駅南口の City World を作り、Environment Studio の部品の Recipe `sapporo-351-exact` にし、リポジトリの `demos/worlds/sapporo-rotary-snow.yaml` を置いて World を書き出し、登録します（[demos/README.md](../demos/README.md)）。全部をスクリプトで作るときは `build --all` です。
+札幌は、PLATEAU から札幌駅南口の City World を作り、Environment Studio の部品の Recipe `sapporo-351-exact` にし、リポジトリの `demos/worlds/sapporo-rotary-snow.yaml` を置いて World を書き出し、登録します（[demos/README.md](../demos/README.md)）。画面を使わずに全部作るときは `build --showcase --tocho --sapporo` です。
 
 ### 5. 3 つの City がデモの ID であることを確かめる
 
@@ -120,7 +120,7 @@ python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --sapporo --h
 python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py check
 ```
 
-3 つの City（都庁、`sapporo-rotary-snow`、`tocho-bridge-a-hull`）が登録されて receipt があること、デモの Composition が work にあり World が見つかることを表示し、そろっていれば `デモの World はそろっています。` で終わります。都庁が別の ID でできていれば `check --adopt` がデモの ID を付けます。
+都庁と `sapporo-rotary-snow` が登録されて receipt があることを確かめます。`check` は検証用デモ（`demos/`）の比較用 World `tocho-bridge-a-hull` と、そのデモの Composition も見るので、それらを作っていなければ MISSING と出ますが、パッケージには入れないので構いません。都庁が別の ID でできていれば `check --adopt` がデモの ID を付けます。
 
 ### 6. collect と doctor
 
@@ -146,7 +146,7 @@ python tools\package_portable_workspace.py --profile urban-studio
 ### 8. 確かめる
 
 1. 英数字だけの短いパス（例 `C:\hako\`）に展開し、`start-urban-studio.bat` を実行する。ブラウザに Urban Studio が開く。日本語や空白を含むパス（例 `C:\箱庭 デモ\`、`C:\hako demo\`）に展開したときは、`start` が「使えない文字が入っています」と知らせて止まることも確かめる。
-2. Simulation タブで、デモ 3-1〜3-5 をそれぞれ Configure → Start → Viewer を開く → Stop。黒いコンソール窓が開かないこと。3-4・3-5 で摩擦が効くこと（凍結で止まりきれない）。
+2. Simulation タブで、3 つのデモ（`showcase-tocho-cart-people`、`showcase-tocho-drone`、`showcase-sapporo-stalls-night`）をそれぞれ Configure → Start → Viewer を開く → Stop。黒いコンソール窓が開かないこと。カートが人を乗せて走ること、ドローンが離陸すること、札幌の雪の路面でカートが走ること。
 3. City タブの「Environment Studio で作る」で小さな街を作り、Compose の World に出ること。
 4. `status-urban-studio.bat`、`stop-urban-studio.bat` で全部止まること（ポート 28090・28097・28100・28865〜28867 が空く）。
 5. フォルダを移動（名前を変える）して、もう一度 start し、デモが動くこと（`デモデータ: フォルダの移動に合わせてパスを書き換えました`）。

@@ -30,14 +30,16 @@ flight controllers or physics engines.
 
 ## Try these first
 
+![The Tokyo Metropolitan Government Building area from above: roads, the pedestrian deck and the towers](docs/images/tocho-aerial.jpg)
+
 | Scene | What you see | Composition |
 |---|---|---|
 | Tokyo Metropolitan Government Building, carts and people | Hakoniwa Carts carry people over the pedestrian deck while a Hakoniwa Car runs on the road below | `showcase-tocho-cart-people` |
 | Tokyo Metropolitan Government Building, drone | An EAMS Hexa takes off from the rooftop heliport and flies its flight plan around the towers | `showcase-tocho-drone` |
-| Sapporo Station, food stalls on a snowy night | A Hakoniwa Cart brings people from the station to twelve lit stalls and a busy square | `showcase-sapporo-stalls-night` |
+| Sapporo Station, food stalls on a snowy night | A Hakoniwa Cart brings people from the station to twelve lit stalls and a busy square (turn on Night mode in the Viewer's panel) | `showcase-sapporo-stalls-night` |
 
 In Urban Studio: **Simulation** tab, pick the Composition, then Configure,
-Start, and open the Viewer.
+Start, and open the Viewer. The files are in [`showcase/urban/`](showcase/urban/).
 
 ## Run it
 

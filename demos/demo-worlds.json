@@ -27,5 +27,9 @@
   "demos": {
     "files": "urban",
     "description": "The Compositions, route and flight scenarios, and people scene of demos 3-1 to 3-5, copied into the work directory as they are (work/urban/...)."
+  },
+  "showcase": {
+    "files": "../showcase/urban",
+    "description": "The three scenes to try first (README): Compositions, routes, the flight plan and the people scene, copied into the work directory as they are (work/urban/...). They use the tocho and sapporo Worlds."
   }
 }

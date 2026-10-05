@@ -1,0 +1,14 @@
+# Showcase: the Tokyo Metropolitan Government Building. Hakoniwa Carts carry
+# Hakoniwa People over the pedestrian deck (scenarios/showcase-tocho-deck-ride.yaml,
+# showcase-tocho-deck-cart2.yaml) while a Hakoniwa Car laps the park street on
+# a dry road (scenarios/showcase-tocho-car-loop.yaml).
+schema: hakoniwa.composition/v1
+id: showcase-tocho-cart-people
+world: tokyo-13104-multi-lat35_689-lon139_691
+vehicles:
+- {name: Cart-1, asset: hakoniwa-cart, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-deck-ride.yaml"}, spawn: {east_m: 49.79, north_m: -8.75, yaw_deg: 101}}
+- {name: Person-1, asset: hakoniwa-person-visitor, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-deck-ride.yaml"}, spawn: {east_m: 50.31, north_m: 0.86, yaw_deg: 180}}
+- {name: Person-2, asset: hakoniwa-person-passerby, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-deck-ride.yaml"}, spawn: {east_m: 50.53, north_m: -0.32, yaw_deg: 180}}
+- {name: Person-3, asset: hakoniwa-person-child, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-deck-ride.yaml"}, spawn: {east_m: 50.75, north_m: -1.5, yaw_deg: 180}}
+- {name: Cart-2, asset: hakoniwa-cart, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-deck-cart2.yaml"}, spawn: {east_m: 35.35, north_m: 67.25, yaw_deg: 101}}
+- {name: Car-1, asset: hakoniwa-car, control: api, params: {scenario: "${repo:hakoniwa-business-pack}/work/urban/scenarios/showcase-tocho-car-loop.yaml"}, spawn: {east_m: 55.0, north_m: -63.9, yaw_deg: 11}}
