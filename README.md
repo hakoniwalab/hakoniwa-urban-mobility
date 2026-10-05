@@ -44,12 +44,13 @@ PLATEAU City World is GPU-heavy.
 |---|---|---|---|---|---|
 | MacBook Pro (Mac14,9) | Apple M2 Pro, 12 cores / 32 GB | M2 Pro, 19 cores | macOS 27.0.1 | Chrome 154 | Car, Drone and integrated demos at RTF 1.0 |
 | Notebook (MouseComputer S4I7G60SRDDC) | Intel Core Ultra 7 155H, 22 threads / 64 GB | Intel Arc (integrated) + NVIDIA GeForce RTX 4060 Laptop | Windows 11 Pro 25H2 | Chrome 154 on the RTX 4060 | Car and Drone demos 3-1 to 3-5 at RTF 1.0, from the repository and from the portable package |
+| iPhone (compact model), as a remote browser | – | – | latest iOS (2026-10) | browser on the phone | Urban Studio operated and the Viewer opened over Wi-Fi, smooth at RTF 1.0 with the simulation on the MacBook Pro |
 
 **Recommended: operate and view from another device.** Urban Studio
 (28090), the viewer's HTTP server (28100) and the WebBridge (28865-28867)
-listen on every address, so a PC, tablet or phone on the same subnet can use
-them; the simulation host needs no browser. A typical field setup runs the
-simulation on a Windows PC and operates Urban Studio from a Mac (or the other
+listen on every address, so a PC or a phone on the same subnet can use
+them (tablets untested); the simulation host needs no browser. A typical
+field setup runs the simulation on a Windows PC and operates Urban Studio from a Mac (or the other
 way round):
 
 - Urban Studio: open `http://<simulation-host>:28090/` (`urban_studio.py start`
