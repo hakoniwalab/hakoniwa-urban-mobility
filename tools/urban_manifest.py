@@ -69,6 +69,17 @@ def _workspace_variable(name: str) -> Path:
     return Path(configured).expanduser().resolve()
 
 
+# Set by the start / status / stop .bat files of a Windows portable package
+# (hakoniwa-business-pack tools/package_portable_workspace.py). There is no
+# pip, Git, or C++ toolchain there: configure reuses what the package carries.
+PORTABLE_ENV = "HAKONIWA_PORTABLE_WORKSPACE"
+
+
+def portable() -> bool:
+    """Whether this runs in a portable package (portable/windows-profile.json)."""
+    return os.environ.get(PORTABLE_ENV) == "1"
+
+
 def business_pack() -> Path:
     """The Business Pack root ($HAKONIWA_WORKSPACE_ROOT)."""
     return _workspace_variable("HAKONIWA_WORKSPACE_ROOT")

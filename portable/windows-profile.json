@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "id": "urban-studio",
+  "package_id": "hako-urban-studio-win64",
+  "recipe_id": "urban-car-rc",
+  "title": "Hakoniwa Urban Studio",
+  "tool": "tools/urban_portable.py",
+  "entrypoint_name": "urban-studio",
+  "readme": "portable/README-WINDOWS.txt",
+  "repositories": [
+    {
+      "name": "hakoniwa-urban-mobility",
+      "required_artifact": "tools/urban_studio.py",
+      "include_paths": [
+        "LICENSE",
+        "README.md",
+        "urban.manifest.yaml",
+        "apps",
+        "assets",
+        "config",
+        "portable",
+        "recipes",
+        "schemas",
+        "tools",
+        "web",
+        "worlds",
+        "build/portable-runtime"
+      ]
+    },
+    {
+      "name": "hakoniwa-environment-studio",
+      "required_artifact": "tools/env_studio.py",
+      "include_paths": [
+        "LICENSE",
+        "README.md",
+        "catalogs",
+        "recipes",
+        "tools",
+        "types",
+        "web"
+      ]
+    },
+    {
+      "name": "hakoniwa-envsim",
+      "required_artifact": "src/city_pipeline/gml_lod1_extract.py",
+      "include_paths": [
+        "LICENSE",
+        "README.md",
+        "hakoniwa-build.yaml",
+        "requirements.txt",
+        "schemas",
+        "src",
+        "tools"
+      ]
+    },
+    {
+      "name": "hakoniwa-drone-core",
+      "required_artifact": "win/win-main_hako_drone_service.exe",
+      "include_paths": [
+        "LICENSE",
+        "LICENSE.md",
+        "LICENSE-ja.md",
+        "VERSION.txt",
+        "MUJOCO_VERSION.txt",
+        "NATIVE_RUNTIME_REQUIREMENTS.yaml",
+        "config",
+        "drone_api",
+        "tools",
+        "vendor/mujoco",
+        "win"
+      ]
+    },
+    {
+      "name": "hakoniwa-threejs-drone",
+      "required_artifact": "index.html",
+      "include_paths": [
+        "LICENSE",
+        "index.html",
+        "assets",
+        "config",
+        "src",
+        "thirdparty"
+      ]
+    },
+    {
+      "name": "hakoniwa-map-viewer",
+      "required_artifact": "src/client/index.html",
+      "include_paths": [
+        "LICENSE",
+        "config",
+        "images",
+        "src",
+        "thirdparty"
+      ]
+    },
+    {
+      "name": "hakoniwa-mbody-registry",
+      "required_artifact": "tools/compose_mujoco_world.py",
+      "include_paths": [
+        "LICENSE",
+        "schemas",
+        "sources",
+        "tools",
+        "bodies/generic_ackermann_golf_cart",
+        "bodies/hakoniwa_car",
+        "bodies/hakoniwa_cart",
+        "bodies/hakoniwa_person"
+      ]
+    },
+    {
+      "name": "hakoniwa-mujoco-robots",
+      "required_artifact": "MUJOCO_VERSION.txt",
+      "include_paths": [
+        "LICENSE",
+        "MUJOCO_VERSION.txt"
+      ]
+    },
+    {
+      "name": "hakoniwa-pdu-registry",
+      "required_artifact": "pdu/python/ackermann_msgs/pdu_conv_AckermannDrive.py",
+      "include_paths": [
+        "LICENSE",
+        "pdu"
+      ]
+    },
+    {
+      "name": "hakoniwa-pdu-python",
+      "required_artifact": "src/hakoniwa_pdu/apps/launcher/hako_launcher.py",
+      "include_paths": [
+        "LICENSE",
+        "src",
+        "tools"
+      ]
+    },
+    {
+      "name": "hakoniwa-fpv-drone",
+      "required_artifact": "tools/fpv.py",
+      "include_paths": [
+        "LICENSE",
+        "README.md",
+        "pyproject.toml",
+        "assembly-interfaces",
+        "assets",
+        "catalogs",
+        "composer",
+        "recipes",
+        "schemas",
+        "src",
+        "tools",
+        "verified-configs",
+        "build/portable-runtime"
+      ]
+    }
+  ],
+  "python_paths": [
+    "hakoniwa-business-pack",
+    "hakoniwa-business-pack/tools",
+    "hakoniwa-business-pack/work/foundation/install/share/hakoniwa/python",
+    "hakoniwa-pdu-python/src",
+    "hakoniwa-urban-mobility/tools",
+    "hakoniwa-urban-mobility/apps/car",
+    "hakoniwa-urban-mobility/apps/drone",
+    "hakoniwa-urban-mobility/apps/people",
+    "hakoniwa-urban-mobility/apps/realtime",
+    "hakoniwa-environment-studio/tools",
+    "hakoniwa-envsim/tools",
+    "hakoniwa-envsim/src/city_pipeline",
+    "hakoniwa-fpv-drone/src",
+    "hakoniwa-drone-core/drone_api/rc"
+  ],
+  "validation_imports": [
+    "yaml",
+    "numpy",
+    "mujoco",
+    "pygame",
+    "trimesh",
+    "shapely",
+    "lxml",
+    "PIL",
+    "hakopy",
+    "hakoniwa_pdu",
+    "fpv_drone_generator",
+    "urban_manifest",
+    "urban_portable",
+    "urban_studio",
+    "urban_simulation",
+    "scenario_executor",
+    "drone_schedule",
+    "env_studio"
+  ],
+  "staging_cleanup": [
+    "hakoniwa-business-pack/work/urban",
+    "hakoniwa-business-pack/work/recipes"
+  ]
+}

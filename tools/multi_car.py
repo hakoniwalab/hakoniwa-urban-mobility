@@ -170,9 +170,26 @@ def needs_plant_directive(resolved: dict) -> bool:
     return any(vehicle.get("tire_friction") for vehicle in resolved["vehicles"])
 
 
-def built_with_plant_directive() -> bool | None:
-    """Whether the Urban Car plant in build/ was configured with the Plant Directive
-    path (HAKO_URBAN_ENABLE_MIRROR); None when there is no CMake cache."""
+PLANT_NAME = "urban-car-hakoniwa-asset"
+# What the plant was built with, written next to it by CMakeLists.txt (and by
+# tools/urban_portable.py collect for a plant built before that): a packaged
+# plant carries it, while build/CMakeCache.txt stays behind.
+PLANT_FEATURES = f"{PLANT_NAME}.features.json"
+
+
+def plant_bin_dirs() -> tuple[Path, Path]:
+    """Where the Urban Car plant is: the CMake output, then the copy a Windows
+    portable package carries (tools/urban_portable.py collect)."""
+    return ROOT / "build/bin", ROOT / "build/portable-runtime/bin"
+
+
+def plant_executable() -> Path:
+    """The built Urban Car plant (the CMake output path when none is built)."""
+    candidates = [native_executable(directory / PLANT_NAME) for directory in plant_bin_dirs()]
+    return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+def _cmake_cache_mirror() -> bool | None:
     cache = ROOT / "build/CMakeCache.txt"
     if not cache.is_file():
         return None
@@ -180,6 +197,50 @@ def built_with_plant_directive() -> bool | None:
         if line.startswith("HAKO_URBAN_ENABLE_MIRROR:"):
             return line.split("=", 1)[1].strip().upper() in {"ON", "1", "TRUE", "YES"}
     return False
+
+
+def built_with_plant_directive(plant: Path | None = None) -> bool | None:
+    """Whether the built Urban Car plant has the Plant Directive path
+    (HAKO_URBAN_ENABLE_MIRROR): from the features file next to it, else (a
+    plant configured before that file existed) from build/CMakeCache.txt;
+    None when neither says."""
+    plant = plant or plant_executable()
+    features = plant.parent / PLANT_FEATURES
+    if features.is_file():
+        try:
+            value = json.loads(features.read_text(encoding="utf-8")).get("plant_directive")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            value = None
+        if isinstance(value, bool):
+            return value
+    return _cmake_cache_mirror()
+
+
+def require_built_car_asset(*, enable_mirror: bool = False) -> Path:
+    """The built Urban Car plant, checked instead of built (a portable
+    package, or configure --reuse-built-asset): it must exist and, for road
+    friction, have the Plant Directive path."""
+    plant = plant_executable()
+    if not plant.is_file():
+        raise RecipeError(f"the built Urban Car plant is not there: {plant}")
+    if enable_mirror and not built_with_plant_directive(plant):
+        raise RecipeError(
+            "a route sets road_friction (or the integrated route needs the Mirror), but the built Urban Car "
+            f"plant {plant} has no Plant Directive path (HAKO_URBAN_ENABLE_MIRROR=OFF) and would ignore it; "
+            "build it with HAKO_URBAN_ENABLE_MIRROR=ON"
+        )
+    return plant
+
+
+def ensure_car_asset(*, enable_mirror: bool = False) -> Path:
+    """Build the Urban Car plant, or in a portable package (no CMake there)
+    reuse the one it carries."""
+    if urban_manifest.portable():
+        plant = require_built_car_asset(enable_mirror=enable_mirror)
+        print(f"Portable workspace: reusing the packaged Urban Car plant {plant}")
+        return plant
+    build_car_asset(enable_mirror=enable_mirror)
+    return plant_executable()
 
 
 def build_car_asset(*, enable_mirror: bool = False) -> None:
@@ -691,7 +752,7 @@ def paths() -> dict[str, Path]:
     return {
         "compose_tool": MBODY / "tools/compose_mujoco_world.py",
         "mujoco_compiler": BUSINESS_PACK / "tools/mujoco_model_compiler.py",
-        "plant": native_executable(ROOT / "build/bin/urban-car-hakoniwa-asset"),
+        "plant": plant_executable(),
         "source_runtime": ROOT / "config/car/runtime.json",
         "ackermann_controller": ROOT / "config/car/controller/ackermann.json",
         "joint_state_output": ROOT / "config/car/state/joint-state.json",
@@ -716,7 +777,7 @@ def mujoco_library() -> Path:
     ).strip()
     if not version:
         raise RecipeError("hakoniwa-mujoco-robots/MUJOCO_VERSION.txt is empty")
-    packaged = ROOT / "build/bin/mujoco.dll"
+    packaged = plant_executable().parent / "mujoco.dll"
     if packaged.is_file():
         return packaged.resolve()
     roots = (
