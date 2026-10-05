@@ -1,6 +1,22 @@
 // Urban Studio frontend (tools/urban_studio.py serves it and the /api it calls).
 
 const $ = (selector, root = document) => root.querySelector(selector);
+
+// Studio opened from another device (http://<simulation-host>:28090/): the
+// URLs the API returns name this host as 127.0.0.1, which on that device is
+// the device itself. Show them with the host the Studio page came from.
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+function forThisPage(url) {
+  if (!url || LOOPBACK_HOSTS.has(location.hostname)) return url;
+  try {
+    const target = new URL(url);
+    if (!LOOPBACK_HOSTS.has(target.hostname)) return url;
+    target.hostname = location.hostname;
+    return target.toString();
+  } catch {
+    return url;
+  }
+}
 const el = (tag, attributes = {}, ...children) => {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attributes)) {
@@ -281,7 +297,7 @@ async function newCity() {
     pollCities();
     const finished = await waitForJob(job.id);
     await pollCities();
-    const url = state.cities.environment_studio.url;
+    const url = forThisPage(state.cities.environment_studio.url);
     if (finished.state === "succeeded" && state.cities.environment_studio.running) {
       if (tab) tab.location.href = url;
       else window.open(url, "_blank");
@@ -1530,13 +1546,59 @@ async function refreshViewer() {
   }
   for (const [link, key] of links) {
     link.hidden = !answer[key];
-    if (answer[key]) link.href = answer[key];
+    if (answer[key]) link.href = forThisPage(answer[key]);
     link.classList.toggle("unavailable", !answer.running);
     link.setAttribute("aria-disabled", String(!answer.running));
     link.tabIndex = answer.running ? 0 : -1;
   }
   $("#viewer-hint").hidden = !answer.url || Boolean(answer.running);
+  viewerLanUrl = answer.lan_url ?? null;
+  $("#viewer-lan-button").hidden = !(viewerLanUrl && answer.running);
+  if (!viewerLanUrl || !answer.running) $("#viewer-lan").hidden = true;
+  else if (!$("#viewer-lan").hidden) await showViewerLan();
 }
+
+// "スマホ・別の PC で見る": the Viewer URL for another device on the local
+// network, with a QR code to open it on a phone.
+let viewerLanUrl = null;
+const QR_SCRIPT = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+let qrLoading = null;
+
+function loadQr() {
+  if (globalThis.qrcode) return Promise.resolve(globalThis.qrcode);
+  qrLoading ??= new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = QR_SCRIPT;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve(globalThis.qrcode);
+    script.onerror = () => { qrLoading = null; reject(new Error("QR library not loaded")); };
+    document.head.append(script);
+  });
+  return qrLoading;
+}
+
+async function showViewerLan() {
+  if (!viewerLanUrl) return;
+  const link = $("#viewer-lan-url");
+  link.href = viewerLanUrl;
+  link.textContent = viewerLanUrl;
+  const box = $("#viewer-lan-qr");
+  try {
+    const qrcode = await loadQr();
+    const qr = qrcode(0, "M");
+    qr.addData(viewerLanUrl);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  } catch {
+    box.textContent = "QR コードを表示できません（インターネット接続を確認してください）";
+  }
+  $("#viewer-lan").hidden = false;
+}
+
+$("#viewer-lan-button").addEventListener("click", async () => {
+  if ($("#viewer-lan").hidden) await showViewerLan();
+  else $("#viewer-lan").hidden = true;
+});
 
 function renderProgress(job) {
   const bar = $("#progress-bar");
