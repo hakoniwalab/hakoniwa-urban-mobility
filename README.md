@@ -10,7 +10,7 @@ The first demonstration target is two Virtual Drone Show drones and multiple
 Ackermann-steered vehicles moving through the same city area, with shared
 browser visualization and safety-aware interaction.
 
-> **Status (2026-09-28):** runnable from Urban Studio or `tools/urban_simulation.py`
+> **Status (2026-10-06):** runnable from Urban Studio or `tools/urban_simulation.py`
 > on a PLATEAU City World or a plain World:
 >
 > - Golf Carts driven by PS5 (`rc`) or by route scenarios (`api`); each Car may
@@ -20,8 +20,9 @@ browser visualization and safety-aware interaction.
 >   `city-car-hexa`);
 > - Drone Core quad fleets laid out automatically (10 drones verified at RTF 1.0).
 >
-> Verified on macOS (Car + Drone on a Sapporo City World at real time, RTF 1.0);
-> the integrated route also starts on Windows. Not yet available: collision
+> Verified on macOS and Windows 11 at real time (RTF 1.0), including the Windows
+> portable package (demos 3-1 to 3-5); see [Verified environments and
+> viewing](#verified-environments-and-viewing). Not yet available: collision
 > avoidance between route Cars (routes that cross can collide), and Drone-Car
 > contact beyond the one-way Drone Mirror.
 
@@ -32,6 +33,47 @@ browser visualization and safety-aware interaction.
 > of Urban Studio with its demos that runs on Windows without Python, Git, or a C++ toolchain
 > (`portable/windows-profile.json`, `tools/urban_portable.py`). The demo Worlds of demos 3-1 to 3-5 are
 > made again on the building machine: [`demos/README.md`](demos/README.md) (`tools/urban_demo_worlds.py`).
+
+## Verified environments and viewing
+
+The simulation itself (MuJoCo plants, Drone services, WebBridge) runs on the
+CPU and needs no GPU. The viewer is a WebGL page in the browser, and drawing a
+PLATEAU City World is GPU-heavy.
+
+| Machine | CPU / memory | GPU | OS | Browser | Verified (2026-10) |
+|---|---|---|---|---|---|
+| MacBook Pro (Mac14,9) | Apple M2 Pro, 12 cores / 32 GB | M2 Pro, 19 cores | macOS 27.0.1 | Chrome 154 | Car, Drone and integrated demos at RTF 1.0 |
+| Notebook (MouseComputer S4I7G60SRDDC) | Intel Core Ultra 7 155H, 22 threads / 64 GB | Intel Arc (integrated) + NVIDIA GeForce RTX 4060 Laptop | Windows 11 Pro 25H2 | Chrome 154 on the RTX 4060 | Car and Drone demos 3-1 to 3-5 at RTF 1.0, from the repository and from the portable package |
+
+**Recommended: view from another PC.** The viewer's HTTP server and the
+WebBridge listen on every address, so a browser on the same subnet can open the
+viewer URL printed by `configure` with `127.0.0.1` replaced by the simulation
+host's address (for example `http://192.168.2.104:28100/...`). The page connects
+to the WebBridge on the host it was loaded from (an explicit `?wsUri=` still
+wins). Allow only the viewer (28100) and WebBridge (28865-28867) ports in the
+host's firewall, for the local subnet only: the viewer's HTTP server serves the
+workspace folder, so use a trusted network. Urban Studio's own API stays on
+`127.0.0.1`.
+
+**Viewing on the same PC: put the browser on the high-performance GPU.** On a
+notebook with two GPUs, Windows runs the browser on the integrated one by
+default. Drawing the City World then saturates it, and the simulation on the
+same chip falls behind in bursts: the viewer stutters every 1-3 s although
+RTF stays 1.0, and other browsers watching the same simulation stutter too.
+Measured on the Windows notebook above (park-street demo, 8 m/s, 10 s):
+
+| Browser rendering on | GPU load | WebBridge gaps over 70 ms | Longest gap |
+|---|---|---|---|
+| no browser | 12 % | 0 | 41 ms |
+| integrated Intel Arc | 97 % | 10-14 | 233-300 ms |
+| NVIDIA RTX 4060 | 31 % (Arc 19 %) | 0 | 41-45 ms |
+
+On Windows: Settings > System > Display > Graphics, choose the browser,
+Options > High performance (the discrete GPU), then restart the browser
+(`chrome://gpu` shows the GPU in use). The simulation settings stay the same
+on every OS: the stutter was not the simulation's time steps, and changing
+them (for example the Conductor `max_delay` or the pacer step) changes how the
+vehicles behave.
 
 The step-by-step migration to the managed Business Pack Recipe/Foundation
 contract is tracked in

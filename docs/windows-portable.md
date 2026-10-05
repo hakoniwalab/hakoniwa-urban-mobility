@@ -158,3 +158,4 @@ python tools\package_portable_workspace.py --profile urban-studio
 - 画面は CDN（unpkg、jsdelivr）と OSM のタイルを読むので、インターネット接続が必要です。街の作成も PLATEAU と Overpass にアクセスします。
 - MAX_PATH：展開先は 60 文字ほどまで。`prepare` は展開前に確かめ、長すぎれば短い場所を案内して止まります。
 - Foundation Python に絶対パスの `.pth`（editable install）があると、packager が断ります。
+- Viewer の描画は GPU を使います。GPU が 2 つあるノート PC では、ブラウザを Windows の設定で「高パフォーマンス」の GPU にしないと、内蔵 GPU が埋まって、同じ CPU のシミュレーションまで遅れ、1〜3 秒ごとにカクつきます（RTF は 1.0 のまま）。別の PC から同じサブネットで見るのが確実です。測定と手順は README の [Verified environments and viewing](../README.md#verified-environments-and-viewing)、利用者向けは `portable/README-WINDOWS.txt` の「画面（Viewer）の見方」。
