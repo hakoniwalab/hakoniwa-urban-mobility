@@ -1826,19 +1826,6 @@ def materialize_browser_visualization(
             }},
         },
     }
-    # browser_visualization.pose_interpolation (#85): read the state PDUs about
-    # every frame (viewer default 100 ms) and draw the vehicles interpolated
-    # between poses, so a 25-50 Hz state stream moves smoothly at 60 Hz. When
-    # omitted it is on for Windows only; other OSes keep the previous viewer.
-    pose_interpolation = visualization.get("pose_interpolation", sys.platform == "win32")
-    if not isinstance(pose_interpolation, bool):
-        raise RecipeError("browser_visualization.pose_interpolation must be boolean")
-    if pose_interpolation:
-        viewer_config["ui"]["statePanelIntervalMsec"] = urban_realtime.VIEWER_READ_MSEC
-        viewer_config["stateInput"]["vehicles"]["interpolation"] = {
-            "enabled": True,
-            "periodMsec": urban_realtime.web_bridge_step_usec(CAR_PLANT_ASSET) // 1000,
-        }
     write_json(viewer_config_path, viewer_config)
     viewer_url = (
         f"http://127.0.0.1:{visualization['http_port']}"
@@ -1954,7 +1941,7 @@ def materialize_launcher(
         "--manifest", str(runtime_files["manifest"]),
         "--realtime-sync-cycle-msec", str(realtime_sync_cycle_msec),
         # Its Conductor's max_delay; the real-time pacer steps within it (tools/urban_realtime.py).
-        "--conductor-max-delay-msec", str(urban_realtime.conductor_max_delay_msec(CAR_PLANT_ASSET)),
+        "--conductor-max-delay-msec", str(urban_realtime.CONDUCTOR_MAX_DELAY_MSEC[CAR_PLANT_ASSET]),
     ]
     if not native_mujoco_viewer:
         plant_args.append("--no-viewer")
@@ -2038,7 +2025,7 @@ def materialize_launcher(
                 "args": [
                     "--config-root", str(browser_files["bridge_root"]),
                     "--node-name", "urban_vehicle_viewer_node1",
-                    "--delta-time-step-usec", str(urban_realtime.web_bridge_step_usec(CAR_PLANT_ASSET)),
+                    "--delta-time-step-usec", "20000",
                 ],
                 "depends_on": ["urban-car-fleet-plant"],
                 "delay_sec": 1,

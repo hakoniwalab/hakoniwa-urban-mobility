@@ -25,7 +25,6 @@ import drone_car_rc  # noqa: E402
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
 import urban_fault_injection  # noqa: E402
-import urban_realtime  # noqa: E402
 
 
 class UrbanComposeError(RuntimeError):
@@ -331,12 +330,6 @@ def _merge_launchers(
         or str(item.get("name", "")).endswith("-ps5-controller")
     ]
     web_bridge = asset(car_launcher, "urban-vehicle-web-bridge")
-    # Here the Drone service owns the Conductor (the Car plant runs with
-    # --external-conductor), so the WebBridge keeps that owner's step (#85).
-    web_bridge["args"] = urban_realtime._set_arg(
-        list(web_bridge["args"]), "--delta-time-step-usec",
-        str(urban_realtime.web_bridge_step_usec("drone-service-1")),
-    )
     web_bridge["depends_on"] = [
         "urban-car-fleet-plant", "visual-state-publisher"
     ]
