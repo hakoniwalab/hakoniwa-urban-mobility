@@ -1826,12 +1826,19 @@ def materialize_browser_visualization(
             }},
         },
     }
-    if sys.platform == "win32":
-        # Windows (#85): read the state PDUs about every frame (default 100 ms)
-        # and draw the vehicles interpolated between poses, so the uneven
-        # WebBridge cadence does not show as jumps. Other OSes unchanged.
-        viewer_config["ui"]["statePanelIntervalMsec"] = urban_realtime.WINDOWS_VIEWER_READ_MSEC
-        viewer_config["stateInput"]["vehicles"]["interpolation"] = {"enabled": True}
+    # browser_visualization.pose_interpolation (#85): read the state PDUs about
+    # every frame (viewer default 100 ms) and draw the vehicles interpolated
+    # between poses, so a 25-50 Hz state stream moves smoothly at 60 Hz. When
+    # omitted it is on for Windows only; other OSes keep the previous viewer.
+    pose_interpolation = visualization.get("pose_interpolation", sys.platform == "win32")
+    if not isinstance(pose_interpolation, bool):
+        raise RecipeError("browser_visualization.pose_interpolation must be boolean")
+    if pose_interpolation:
+        viewer_config["ui"]["statePanelIntervalMsec"] = urban_realtime.VIEWER_READ_MSEC
+        viewer_config["stateInput"]["vehicles"]["interpolation"] = {
+            "enabled": True,
+            "periodMsec": urban_realtime.web_bridge_step_usec(CAR_PLANT_ASSET) // 1000,
+        }
     write_json(viewer_config_path, viewer_config)
     viewer_url = (
         f"http://127.0.0.1:{visualization['http_port']}"
