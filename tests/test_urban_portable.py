@@ -597,3 +597,22 @@ class ChildWindowTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FoundationPythonTest(unittest.TestCase):
+    """doctor finds the Foundation Python in the package (embeddable, at the root) and in a
+    developer Workspace on Windows (a venv, in Scripts)."""
+
+    def test_the_package_python_at_the_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "python.exe").write_bytes(b"")
+            self.assertEqual(urban_portable.foundation_python(root), root / "python.exe")
+
+    def test_the_workspace_venv_in_scripts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Scripts").mkdir()
+            (root / "Scripts/python.exe").write_bytes(b"")
+            self.assertEqual(urban_portable.foundation_python(root), root / "Scripts/python.exe")
+            self.assertTrue(urban_portable.foundation_python(root).is_file())

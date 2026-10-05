@@ -195,3 +195,38 @@ class InstallDemosTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenerationCheckTest(unittest.TestCase):
+    """check notices a Tocho City made with other options: its id comes from the centre only."""
+
+    def write_city(self, root: Path, reduction: str, level: int = 3) -> Path:
+        buildings = root / "components/buildings"
+        buildings.mkdir(parents=True)
+        (buildings / "building-physics-application.json").write_text(json.dumps(
+            {"building_collider_reduction": reduction, "max_physics_level": level}), encoding="utf-8")
+        receipt = root / "world/city-world-receipt.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text(json.dumps({"components": {"buildings_xml": str(buildings / "buildings.xml")}}),
+                           encoding="utf-8")
+        return receipt
+
+    def test_the_request_options_match(self):
+        request = demo.read_json(demo.spec_file(SPEC, SPEC["tocho"]["request"]))
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = self.write_city(Path(directory), request["options"]["building_collider_reduction"])
+            self.assertEqual(demo.generation_mismatch(receipt, request), [])
+
+    def test_a_city_with_the_wrong_merge_option_is_named(self):
+        request = demo.read_json(demo.spec_file(SPEC, SPEC["tocho"]["request"]))
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = self.write_city(Path(directory), "coplanar-union", level=2)
+            wrong = demo.generation_mismatch(receipt, request)
+        self.assertEqual(len(wrong), 2)
+        self.assertIn("coplanar-union", wrong[0])
+        self.assertIn("convex-decompose", wrong[0])
+
+    def test_an_unreadable_receipt_is_not_a_mismatch(self):
+        request = demo.read_json(demo.spec_file(SPEC, SPEC["tocho"]["request"]))
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(demo.generation_mismatch(Path(directory) / "missing.json", request), [])

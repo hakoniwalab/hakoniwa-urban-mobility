@@ -528,6 +528,13 @@ def collect() -> int:
 
 # --- doctor -------------------------------------------------------------------------------------
 
+def foundation_python(python_root: Path) -> Path:
+    """The Foundation's python.exe: the package's embeddable Python at the root, or the
+    developer Workspace's venv in Scripts (as package_portable_workspace._windows_python)."""
+    portable = python_root / "python.exe"
+    return portable if portable.is_file() else python_root / "Scripts" / "python.exe"
+
+
 def required_inputs() -> dict[str, Path]:
     install = FOUNDATION / "install"
     return {
@@ -540,7 +547,7 @@ def required_inputs() -> dict[str, Path]:
         "Foundation の hako-cmd": install / "bin" / "hako-cmd.exe",
         "Foundation の WebBridge": install / "bin" / "hakoniwa-pdu-web-bridge.exe",
         "Foundation の shakoc.dll": install / "bin" / "shakoc.dll",
-        "Foundation の Python": install / "python" / "python.exe",
+        "Foundation の Python": foundation_python(install / "python"),
         "FPV の runtime DLL（fpv_portable.py collect）": FPV_DRONE / "build" / "portable-runtime" / "bin" / "glfw3.dll",
         "Environment Studio": ENVIRONMENT_STUDIO / "tools" / "env_studio.py",
         "hakoniwa-envsim": ENVSIM / "src" / "city_pipeline" / "gml_lod1_extract.py",

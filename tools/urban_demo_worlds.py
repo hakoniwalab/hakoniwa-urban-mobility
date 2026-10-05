@@ -452,6 +452,25 @@ def tocho_candidates(request: dict, export_dir: Path) -> list[Path]:
     return found
 
 
+def generation_mismatch(receipt: Path, request: dict) -> list[str]:
+    """How a City World's building physics differs from the request (empty when it matches
+    or cannot be read). The id comes from the centre only, so a City made with other options
+    (for example the wrong merge option in the page) has the demo id but other colliders."""
+    try:
+        buildings_xml = Path(read_json(receipt)["components"]["buildings_xml"])
+        applied = read_json(buildings_xml.parent / "building-physics-application.json")
+    except (OSError, KeyError, TypeError, ValueError):
+        return []
+    options = request.get("options", {})
+    wrong = []
+    for key, got in (("building_collider_reduction", applied.get("building_collider_reduction")),
+                     ("building_physics_level", applied.get("max_physics_level"))):
+        want = options.get(key)
+        if want is not None and got is not None and got != want:
+            wrong.append(f"{key} が {got}（{want} のはず）")
+    return wrong
+
+
 def check(spec: dict, adopt: bool = False, precompile: bool = True) -> int:
     """Whether the three demo Cities and the demo Compositions are in this Workspace."""
     import urban_assets
@@ -463,7 +482,15 @@ def check(spec: dict, adopt: bool = False, precompile: bool = True) -> int:
     for label, world in worlds:
         asset = registered_city(world["asset_id"])
         if asset is not None:
-            say(f"OK      {label}: {world['asset_id']} -> {asset.resolve(str(asset.data['receipt']))}")
+            receipt = asset.resolve(str(asset.data["receipt"]))
+            if world is spec["tocho"]:
+                wrong = generation_mismatch(receipt, read_json(spec_file(spec, world["request"])))
+                if wrong:
+                    say(f"NG      {label}: {world['asset_id']} は条件が違います（{'、'.join(wrong)}）。"
+                        "build --tocho --force で作り直してください")
+                    problems += 1
+                    continue
+            say(f"OK      {label}: {world['asset_id']} -> {receipt}")
             continue
         if world is spec["tocho"]:
             request = read_json(spec_file(spec, world["request"]))

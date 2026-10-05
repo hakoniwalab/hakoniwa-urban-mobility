@@ -89,7 +89,7 @@ python ..\hakoniwa-urban-mobility\tools\urban_demo_worlds.py build --demos
 python ..\hakoniwa-urban-mobility\tools\urban_studio.py start
 ```
 
-ブラウザで `http://127.0.0.1:28090/` を開き、「City」タブ →「Environment Studio で作る」。地図のページの「作る」タブで次のとおり入力し、「2. データを診断」→「3. City Worldを生成」（数十分）。
+ブラウザで `http://127.0.0.1:28090/` を開き、「City」タブ →「Environment Studio で作る」。地図のページの「作る」タブで次のとおり入力し、「2. Capabilityを診断」→「3. City Worldを生成」（数十分）。
 
 | 欄 | 値 |
 |---|---|
@@ -98,7 +98,9 @@ python ..\hakoniwa-urban-mobility\tools\urban_studio.py start
 | データの種類 | PLATEAU |
 | 建物の当たり判定の細かさ | `3 — P3 → P2 → P1 → P0` |
 | 地形（DEM）が無い所 | 止める（厳密・既定） |
-| 凹んだ面の三角形の当たり判定も、少数の凸形にまとめ直す | オン（ほかの 2 つのまとめ方はオフ） |
+| 同じ平面で隣り合う凸面をまとめる | オン（下をオンにすると自動でオンになる） |
+| 凹んだ面の三角形の当たり判定も、少数の凸形にまとめ直す | オン |
+| 壁面を最大 5 cm の近似でまとめる | オフ |
 | 橋の下の地形（DEM）を、周りの低い地面まで下げる | オン |
 | 橋の床の縁と地形（DEM）の段差を、なめらかにつなぐ | オン |
 
