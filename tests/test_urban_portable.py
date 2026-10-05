@@ -616,3 +616,50 @@ class FoundationPythonTest(unittest.TestCase):
             (root / "Scripts/python.exe").write_bytes(b"")
             self.assertEqual(urban_portable.foundation_python(root), root / "Scripts/python.exe")
             self.assertTrue(urban_portable.foundation_python(root).is_file())
+
+
+class AsciiPathTest(unittest.TestCase):
+    """MuJoCo on Windows cannot open a path outside ASCII, so prepare refuses such a
+    folder with a way out; spaces are fine."""
+
+    def test_spaces_and_ampersands_are_fine(self):
+        urban_portable.check_ascii_path(Path("C:/hako demo & co/hako-urban-studio-win64"))
+
+    def test_a_japanese_folder_is_refused_with_the_characters_and_a_way_out(self):
+        with self.assertRaises(urban_portable.PortableError) as raised:
+            urban_portable.check_ascii_path(Path("C:/Users/山田/Downloads/hako-urban-studio-win64"))
+        message = str(raised.exception)
+        self.assertIn("山田", message)
+        self.assertIn("C:\\hako", message)
+
+    def test_prepare_checks_the_package_folder_before_anything_else(self):
+        with mock.patch.object(urban_portable, "portable_package", return_value=True), \
+                mock.patch.object(urban_portable, "PACKAGE_ROOT", Path("C:/箱庭 デモ/pkg")), \
+                mock.patch.object(urban_portable, "relocate_foundation_receipts") as relocate:
+            with self.assertRaises(urban_portable.PortableError):
+                urban_portable.prepare()
+        relocate.assert_not_called()
+
+
+class ChildOutputEncodingTest(unittest.TestCase):
+    """A child's error in Japanese (a path) reaches the message instead of a decode error."""
+
+    def test_world_height_reads_the_compile_error_as_utf8(self):
+        import world_height
+
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="Error opening file 'C:/箱庭/terrain.hf'\n")
+        with mock.patch.object(world_height.subprocess, "run", return_value=failed) as run:
+            with self.assertRaises(world_height.WorldHeightError) as raised:
+                world_height._compile_in_process(0, Path("a.xml"), Path("a.mjb"))
+        self.assertIn("箱庭", str(raised.exception))
+        options = run.call_args.kwargs
+        self.assertEqual(options["encoding"], "utf-8")
+        self.assertEqual(options["env"]["PYTHONIOENCODING"], "utf-8")
+
+    def test_a_missing_stderr_does_not_hide_the_failure(self):
+        import world_height
+
+        failed = subprocess.CompletedProcess([], 1, stdout=None, stderr=None)
+        with mock.patch.object(world_height.subprocess, "run", return_value=failed):
+            with self.assertRaises(world_height.WorldHeightError):
+                world_height._compile_in_process(0, Path("a.xml"), Path("a.mjb"))

@@ -729,6 +729,21 @@ def read_bundle_manifest(bundle: Path) -> dict:
         raise PortableError(f"デモデータが壊れています: {bundle}: {exc}") from exc
 
 
+def check_ascii_path(folder: Path) -> None:
+    """MuJoCo (3.13, Windows) cannot open a file whose path has a character outside
+    ASCII: the World, the Car plant and Drone Core all load MJCF/MJB by path. A
+    Windows user name in Japanese puts Downloads and Desktop on such a path."""
+    text = str(folder)
+    others = sorted({character for character in text if ord(character) > 127})
+    if others:
+        raise PortableError(
+            f"展開先のフォルダのパスに、英数字以外の文字（{''.join(others)}）が入っています: {text}\n"
+            "物理エンジン（MuJoCo）が、このようなパスのファイルを開けません。"
+            "C:\\hako のような、英数字だけのフォルダに展開し直してください"
+            "（空白は使えます。ユーザー名が日本語のときは、ダウンロードやデスクトップのフォルダも使えません）"
+        )
+
+
 def check_path_budget(work: Path, longest_relative: str) -> None:
     """Windows MAX_PATH: the deepest demo file must fit under this folder."""
     total = len(str(work)) + 1 + len(longest_relative)
@@ -845,6 +860,7 @@ def prepare() -> int:
             "prepare は展開したパッケージの中でだけ動きます（HAKONIWA_PORTABLE_WORKSPACE=1 と "
             ".hakoniwa-repository-root）。作成元の Workspace のデータは書き換えません"
         )
+    check_ascii_path(PACKAGE_ROOT)
     relocate_foundation_receipts()
     relocate_core_config()
     result = prepare_workspace()

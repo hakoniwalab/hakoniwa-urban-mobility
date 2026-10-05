@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -293,11 +294,14 @@ def load_yaml(path: Path) -> dict:
         ],
         cwd=ROOT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if result.returncode != 0:
-        raise RecipeError(f"failed to load configuration {path}: {result.stderr.strip()}")
+        raise RecipeError(f"failed to load configuration {path}: {(result.stderr or '').strip()}")
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError as error:
