@@ -54,6 +54,30 @@ CONDUCTOR_MAX_DELAY_MSEC = {
     "drone-service-1": 20,          # Drone Core built-in Conductor
     "fpv-drone-service": 20,
 }
+# Windows (#85): the Car route runs on an even 40 ms cadence there: the
+# Conductor's max_delay, the pacer's step and the WebBridge's step are all
+# 40 ms, so the WebBridge sends at 25 Hz with less jitter than 10/20 ms steps
+# give under Windows sleep granularity. Other OSes and the Drone routes keep
+# the values above.
+WINDOWS_CAR_STEP_MSEC = 40
+CAR_PLANT_ASSET = "urban-car-fleet-plant"
+
+
+def _windows_car(conductor: str) -> bool:
+    return sys.platform == "win32" and conductor == CAR_PLANT_ASSET
+
+
+def conductor_max_delay_msec(conductor: str) -> int:
+    if _windows_car(conductor):
+        return WINDOWS_CAR_STEP_MSEC
+    return CONDUCTOR_MAX_DELAY_MSEC[conductor]
+
+
+def web_bridge_step_usec(conductor: str) -> int:
+    """The WebBridge step (--delta-time-step-usec) under this Conductor owner."""
+    return (WINDOWS_CAR_STEP_MSEC if _windows_car(conductor) else 20) * 1000
+
+
 # Drone services sleep this long per step unless told otherwise.
 DRONE_SLEEP_ARG = "--real-sleep-msec"
 
@@ -66,9 +90,9 @@ def pacer_asset(python: str, conductor: str) -> dict:
     """Return the pacer Launcher asset for a Conductor owner."""
     if conductor not in CONDUCTOR_MAX_DELAY_MSEC:
         raise RealtimeError(f"unknown Conductor owner for the pacer: {conductor}")
-    max_delay = CONDUCTOR_MAX_DELAY_MSEC[conductor]
+    max_delay = conductor_max_delay_msec(conductor)
     # The pacer's step must not exceed the Conductor's max_delay (deadlock-freedom).
-    delta = min(DELTA_MSEC, max_delay)
+    delta = WINDOWS_CAR_STEP_MSEC if _windows_car(conductor) else min(DELTA_MSEC, max_delay)
     return {
         "name": PACER_ASSET,
         # The pacer must register before hako-cmd start so the Conductor

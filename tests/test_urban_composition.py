@@ -1410,6 +1410,23 @@ class RealtimePacerTest(IntegratedFixture):
         with mock.patch.object(urban_realtime.sys, "platform", "darwin"):
             self.assertNotIn("--sleep-to-deadline", urban_realtime.pacer_asset("/python", "drone-service-1")["args"])
 
+    def test_windows_car_route_runs_on_an_even_40_ms_cadence(self):
+        """#85: Windows Car route: max_delay, pacer step and WebBridge step are 40 ms."""
+        with mock.patch.object(urban_realtime.sys, "platform", "win32"):
+            args = urban_realtime.pacer_asset("/python", "urban-car-fleet-plant")["args"]
+            self.assertEqual(args[args.index("--delta-msec") + 1], "40")
+            self.assertEqual(args[args.index("--max-delay-msec") + 1], "40")
+            self.assertEqual(urban_realtime.web_bridge_step_usec("urban-car-fleet-plant"), 40000)
+            # Drone Conductor owners are unchanged on Windows.
+            args = urban_realtime.pacer_asset("/python", "drone-service-1")["args"]
+            self.assertEqual(args[args.index("--delta-msec") + 1], "10")
+            self.assertEqual(urban_realtime.web_bridge_step_usec("drone-service-1"), 20000)
+        with mock.patch.object(urban_realtime.sys, "platform", "darwin"):
+            args = urban_realtime.pacer_asset("/python", "urban-car-fleet-plant")["args"]
+            self.assertEqual(args[args.index("--delta-msec") + 1], "10")
+            self.assertEqual(args[args.index("--max-delay-msec") + 1], "20")
+            self.assertEqual(urban_realtime.web_bridge_step_usec("urban-car-fleet-plant"), 20000)
+
     def test_apply_pacer_follows_the_conductor_and_stops_drone_sleeps(self):
         launcher = {"assets": [
             {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},
