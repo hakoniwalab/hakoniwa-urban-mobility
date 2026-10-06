@@ -44,15 +44,25 @@ class SpecTest(unittest.TestCase):
             for relative in re.findall(r"\$\{repo:hakoniwa-urban-mobility\}/([^\s\"']+)", text):
                 self.assertTrue((ROOT / relative).is_file(), f"{path.name} -> {relative}")
 
-    def test_the_portable_bundle_takes_what_build_demos_installs(self):
+    def test_the_portable_bundle_takes_what_build_showcase_installs(self):
         spec = json.loads(urban_portable.DEMO_SPEC.read_text(encoding="utf-8"))
+        showcase = demo.spec_file(SPEC, SPEC["showcase"]["files"])
         for pattern in spec["include"]:
             if pattern.startswith(("urban/compositions/", "urban/scenarios/", "urban/scenes/")):
-                self.assertTrue(list(DEMO_URBAN.glob(pattern.removeprefix("urban/"))), pattern)
-        for name in ("tocho", "sapporo", "hull"):
+                self.assertTrue(list(showcase.glob(pattern.removeprefix("urban/"))), pattern)
+        for name in ("tocho", "sapporo"):
             self.assertIn(f"urban/assets/cities/{SPEC[name]['asset_id']}.asset.yaml", spec["include"])
-        self.assertIn(SPEC["hull"]["out"], spec["include"])
         self.assertIn(f"recipes/environment-studio/urban/{SPEC['sapporo']['asset_id']}", spec["include"])
+
+    def test_the_showcase_uses_only_the_tocho_and_sapporo_worlds(self):
+        showcase = demo.spec_file(SPEC, SPEC["showcase"]["files"])
+        worlds = {(yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("world")
+                  for path in (showcase / "compositions").glob("*.yaml")}
+        self.assertEqual(worlds, {SPEC["tocho"]["asset_id"], SPEC["sapporo"]["asset_id"]})
+        # Every work/urban file the showcase names is in the showcase itself.
+        for path in (showcase / "compositions").glob("*.yaml"):
+            for ref in re.findall(r"work/urban/([\w./-]+\.yaml)", path.read_text(encoding="utf-8")):
+                self.assertTrue((showcase / ref).is_file(), f"{path.name}: {ref}")
 
     def test_the_tocho_request_is_the_one_the_demo_was_made_with(self):
         request = demo.read_json(demo.spec_file(SPEC, SPEC["tocho"]["request"]))

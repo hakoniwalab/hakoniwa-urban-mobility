@@ -1,0 +1,52 @@
+# Showcase flight: from the heliport (H) on the roof of the south tower of the
+# Tokyo Metropolitan Government Building, climb, fly a diamond 30 m above the
+# roof about 5 m inside its edge looking down, return to H and land.
+drones:
+- name: Drone-1
+  start_delay_sec: 20
+  speed_m_s: 4
+  loop_count: 1
+  takeoff:
+    rise_m: 10
+    hold_sec: 2
+  waypoints:
+  - name: rise
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+  - name: west
+    east_m: 73
+    north_m: -3
+    up_m: 280
+    yaw_deg: 180
+    hold_sec: 2
+  - name: north
+    east_m: 88
+    north_m: 12
+    up_m: 280
+    yaw_deg: 90
+    hold_sec: 2
+  - name: east
+    east_m: 104
+    north_m: -3
+    up_m: 280
+    yaw_deg: 0
+    hold_sec: 2
+  - name: south
+    east_m: 88
+    north_m: -19
+    up_m: 280
+    yaw_deg: -90
+    hold_sec: 2
+  land:
+    east_m: 89.25
+    north_m: -3.82
+    up_m: 248.93
+    rise_m: 10
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+  takeoff:
+    east_m: 89.25
+    north_m: -3.82

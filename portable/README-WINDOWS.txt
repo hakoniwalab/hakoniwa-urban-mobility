@@ -73,15 +73,42 @@ Urban Studio の「Simulation」タブで Composition（シミュレーション
 の順に押します。Configure は、その Composition を初めて動かすときと、
 街や車両の組み合わせを変えたときだけ必要です（初回は数分かかることがあります）。
 
-  3-1  demo31-tocho-drone-*   都庁でドローンを飛ばす（通常・突風・故障・もしも）
-  3-2  demo32-*               都庁の外壁点検（北西・南東・南西の面、通常・突風・故障）
-  3-3  demo33-a-current / demo33-a-hull
-                              歩道橋の下をくぐる（当たり判定の作り方による違いの比較）
-  3-4  demo34-*               都庁の南西の坂道を走る箱庭カート（乾燥・濡れ・雪・凍結の路面）
-  3-5  demo35-*               雪の日の札幌駅南口ロータリー（凍結路面での停止、人とお祭りの屋台）
+  showcase-tocho-cart-people     都庁の歩行者デッキを、人を乗せた箱庭カートが走り、
+                                 下の道路を箱庭カーが周回する
+  showcase-tocho-drone           都庁の屋上のヘリポートから、ドローンが飛び立って一回りする
+  showcase-sapporo-stalls-night  雪の夜の札幌駅南口。箱庭カートが人を屋台の並ぶ広場へ運ぶ
+                                 （Viewer の左のパネルで Night mode をオンにすると、屋台が灯ります）
 
 「Compose」タブで車両を置き換えたり、「Route」「Flight」タブで走る道や飛ぶ経路を作ったりして、
 「保存して検証」したものも、同じように動かせます。
+
+
+■ 画面（Viewer）の見方（重要：GPU）
+
+シミュレーションは CPU だけで動きます。街の 3D 表示はブラウザが GPU で描きます。
+
+- おすすめ：別の PC やスマホから操作・表示する
+    同じネットワーク（同じサブネット）の Mac・PC・スマホから、次を開けます。
+    このパソコンでブラウザを開く必要はありません。
+      Urban Studio : http://<このパソコンの IP アドレス>:28090/
+                     （start-urban-studio.bat の画面に表示されます）
+      Viewer       : Simulation タブの「スマホ・別の PC で見る」で URL と QR コードを表示
+    使うには、このパソコンのファイアウォールで、ポートを同じネットワークからだけ
+    許可します。管理者の PowerShell で次を実行してください（使い終わったら 2 行目で消します）。
+      New-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)" -Direction Inbound -Protocol TCP -LocalPort 28090,28100,28865-28867 -RemoteAddress LocalSubnet -Action Allow -Profile Any
+      Remove-NetFirewallRule -DisplayName "Hakoniwa Urban (LAN)"
+    ポートに届く人は、シミュレーションを動かしたり止めたり、展開したフォルダの中身を
+    見たりできます。信頼できるネットワークだけで使ってください。
+    新しい街を作る Environment Studio（28097）は、このパソコンからだけ使えます。
+
+- このパソコンで見るとき：ブラウザを「高パフォーマンス」の GPU にする
+    GPU が 2 つあるノートパソコン（内蔵 GPU と NVIDIA など）では、Windows は
+    ブラウザを内蔵 GPU で動かします。内蔵 GPU が街の描画でいっぱいになると、
+    同じ CPU で動くシミュレーションまで遅れて、1〜3 秒ごとに画面がカクつきます。
+    1. 設定 → システム → ディスプレイ → グラフィック
+    2. 使うブラウザ（Chrome / Edge）を選び、「オプション」→「高パフォーマンス」→ 保存
+    3. ブラウザをすべて閉じて、開き直す
+    （Chrome では chrome://gpu、Edge では edge://gpu で、使っている GPU を確認できます）
 
 
 ■ 新しい街を作る
@@ -120,6 +147,9 @@ Urban Studio の「Simulation」タブで Composition（シミュレーション
 - Viewer に何も表示されない、画面が真っ白
     インターネットに接続されているか確認してください。社内のプロキシなどで
     unpkg.com / cdn.jsdelivr.net への接続が止められていると表示できません。
+- 画面が 1〜3 秒ごとにカクつく（RTF は 1.0 のまま）
+    ブラウザが内蔵 GPU で描いています。「画面（Viewer）の見方」の手順で、
+    ブラウザを「高パフォーマンス」の GPU にしてください。別の PC で見るのも有効です。
 - Start が失敗する
     Simulation タブの出力の最後の行と、下のログを確認してください。
     Configure をもう一度実行すると直ることがあります。

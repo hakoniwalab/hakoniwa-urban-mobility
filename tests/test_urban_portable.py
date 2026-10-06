@@ -352,12 +352,17 @@ class BundleTest(unittest.TestCase):
         with self.assertRaisesRegex(urban_portable.PortableError, "短い場所"):
             urban_portable.check_path_budget(Path("C:/" + "d" * 100 + "/hakoniwa-business-pack/work"), "x" * 150)
 
-    def test_the_demo_data_spec_names_the_demo_worlds_and_leaves_out_caches(self):
+    def test_the_demo_data_spec_carries_the_showcase_only_and_leaves_out_caches(self):
         spec = json.loads(urban_portable.DEMO_SPEC.read_text(encoding="utf-8"))
-        for world in ("tokyo-13104-multi-lat35_689-lon139_691", "tocho-bridge-a-hull", "sapporo-rotary-snow"):
+        for world in ("tokyo-13104-multi-lat35_689-lon139_691", "sapporo-rotary-snow"):
             self.assertIn(f"urban/assets/cities/{world}.asset.yaml", spec["include"])
-        for demo in range(31, 36):
-            self.assertIn(f"urban/compositions/demo{demo}-*.yaml", spec["include"])
+        for kind in ("compositions", "scenarios", "scenes"):
+            self.assertIn(f"urban/{kind}/showcase-*.yaml", spec["include"])
+        # The detailed verification demos (demos/) are not carried.
+        self.assertFalse([item for item in spec["include"] if "demo3" in item or "hull" in item])
+        showcase = urban_portable.ROOT / "showcase" / "urban" / "compositions"
+        self.assertEqual(sorted(path.stem for path in showcase.glob("*.yaml")), [
+            "showcase-sapporo-stalls-night", "showcase-tocho-cart-people", "showcase-tocho-drone"])
         self.assertIn("urban/cache", spec["exclude"])
         self.assertIn("*/build/source", spec["exclude"])
 

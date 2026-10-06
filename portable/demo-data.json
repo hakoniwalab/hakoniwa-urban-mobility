@@ -1,27 +1,17 @@
 {
   "schema_version": 1,
-  "description": "The Urban Studio data a Windows portable package carries (tools/urban_portable.py collect): the demo Cities and the Compositions, route scenarios, flights, and people scenes of demos 3-1 to 3-5, as this Workspace has them (tools/urban_demo_worlds.py makes them there; demos/README.md). Paths are relative to the Business Pack work directory ($HAKONIWA_WORK_DIR); collect also takes every file these reference there, and replaces the absolute paths in them with placeholders that prepare fills in for the extraction folder.",
+  "description": "The Urban Studio data a Windows portable package carries (tools/urban_portable.py collect): the Tocho and Sapporo Cities and the three scenes to try first (showcase/urban: Compositions, routes, the flight plan and the people scene), as this Workspace has them (tools/urban_demo_worlds.py build --showcase --tocho --sapporo makes them there). The detailed verification demos (demos/) are not carried. Paths are relative to the Business Pack work directory ($HAKONIWA_WORK_DIR); collect also takes every file these reference there, and replaces the absolute paths in them with placeholders that prepare fills in for the extraction folder.",
   "include": [
     "urban/assets/cities/tokyo-13104-multi-lat35_689-lon139_691.asset.yaml",
-    "urban/assets/cities/tocho-bridge-a-hull.asset.yaml",
     "urban/assets/cities/sapporo-rotary-snow.asset.yaml",
     "urban/studio-cities/tokyo-13104-multi-lat35_689-lon139_691",
     "recipes/environment-studio/city-worlds/tokyo-13104-multi-lat35_689-lon139_691/job.json",
     "recipes/environment-studio/city-worlds/tokyo-13104-multi-lat35_689-lon139_691/build/world",
     "recipes/environment-studio/city-worlds/tokyo-13104-multi-lat35_689-lon139_691/build/components",
-    "urban/comparison-worlds/tocho-bridge-a-hull",
     "recipes/environment-studio/urban/sapporo-rotary-snow",
-    "urban/compositions/demo31-*.yaml",
-    "urban/compositions/demo32-*.yaml",
-    "urban/compositions/demo33-*.yaml",
-    "urban/compositions/demo34-*.yaml",
-    "urban/compositions/demo35-*.yaml",
-    "urban/scenarios/demo31-*.yaml",
-    "urban/scenarios/demo32-*.yaml",
-    "urban/scenarios/demo33-*.yaml",
-    "urban/scenarios/demo34-*.yaml",
-    "urban/scenarios/demo35-*.yaml",
-    "urban/scenes/demo35-festival-stalls.yaml"
+    "urban/compositions/showcase-*.yaml",
+    "urban/scenarios/showcase-*.yaml",
+    "urban/scenes/showcase-*.yaml"
   ],
   "exclude": [
     "urban/cache",

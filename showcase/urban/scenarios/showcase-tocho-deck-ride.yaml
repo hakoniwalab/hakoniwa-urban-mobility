@@ -1,0 +1,66 @@
+# 箱庭カート on the pedestrian deck west of the Tokyo Metropolitan Government
+# Building (bridge 90a2e69c, flat at 10.9 m, about 19 m wide). Three people
+# wait at the station (N 0) and ride to the destination (N 55), where they
+# get off and walk to the deck's west side; the cart keeps going round:
+# northbound in the west lane, southbound in the east lane (4 m from the
+# deck's centre line), U-turns of 4 m radius at N -8 and N 68, forever.
+# The people: section is the people's side (apps/people/ride_plan.py).
+schema_version: 2
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+name: Tocho deck ride
+rate_hz: 50
+start_delay_sec: 0.0
+loop_count: forever
+
+vehicles:
+  - name: Cart-1
+    route_offset_m: 0.0
+
+control:
+  speed_m_s: 3.0
+  lookahead_m: 4.0
+  position_gain: 0.8
+  wheelbase_m: 2.10
+  max_steering_deg: 34.0
+
+route:
+  closed: true
+  points:
+    - {name: south-start, east_m: 49.79, north_m: -8.75}
+    - {name: station, east_m: 48.27, north_m: -0.75, dwell_sec: 61.0}
+    # round the stair house standing on the deck (bldg_9573d0d8, E 46-50, N 7.5-12.5) on its east side
+    - {name: pass-stairs-1, east_m: 52.5, north_m: 5.0}
+    - {name: pass-stairs-2, east_m: 52.5, north_m: 15.0}
+    - {name: deck-mid, east_m: 42.95, north_m: 27.25}
+    - {name: destination, east_m: 37.82, north_m: 54.25, dwell_sec: 20.0}
+    - {name: north-end, east_m: 35.35, north_m: 67.25}
+    - {name: uturn-north-1, east_m: 35.5, north_m: 69.32}
+    - {name: uturn-north-2, east_m: 36.67, north_m: 71.03}
+    - {name: uturn-north-3, east_m: 38.53, north_m: 71.93}
+    - {name: uturn-north-4, east_m: 40.6, north_m: 71.78}
+    - {name: uturn-north-5, east_m: 42.31, north_m: 70.61}
+    - {name: back-north, east_m: 43.21, north_m: 68.75}
+    - {name: back-mid, east_m: 50.43, north_m: 30.75}
+    - {name: back-south, east_m: 57.65, north_m: -7.25}
+    - {name: uturn-south-1, east_m: 57.5, north_m: -9.32}
+    - {name: uturn-south-2, east_m: 56.33, north_m: -11.03}
+    - {name: uturn-south-3, east_m: 54.47, north_m: -11.93}
+    - {name: uturn-south-4, east_m: 52.4, north_m: -11.78}
+    - {name: uturn-south-5, east_m: 50.69, north_m: -10.61}
+
+people:
+  vehicle: Cart-1
+  riders:
+    - name: Person-1
+      wait: [50.31, 0.86]
+      board: {stop: station, seat: passenger}
+      alight: {stop: destination, then: [34.69, 54.68]}
+    - name: Person-2
+      wait: [50.53, -0.32]
+      board: {stop: station, seat: rear_right}
+      alight: {stop: destination, then: [34.38, 53.09]}
+    - name: Person-3
+      wait: [50.75, -1.5]
+      board: {stop: station, seat: rear_left}
+      alight: {stop: destination, then: [34.07, 51.5]}

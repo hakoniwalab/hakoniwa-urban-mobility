@@ -1,0 +1,87 @@
+# Showcase route: a Hakoniwa Car laps the park street (公園通り) south of the
+# Tokyo Metropolitan Government Building on a dry road, at 8 m/s, without end.
+schema_version: 2
+meta:
+  world: tokyo-13104-multi-lat35_689-lon139_691
+name: Tocho Koen-dori loop (dry)
+rate_hz: 50
+start_delay_sec: 0
+loop_count: forever
+vehicles:
+- name: Car-1
+  route_offset_m: 0
+control:
+  speed_m_s: 8
+  lookahead_m: 8
+  position_gain: 0.8
+  wheelbase_m: 1.55
+  max_steering_deg: 32
+route:
+  closed: true
+  points:
+  - name: north-m20
+    east_m: 10.9
+    north_m: -21.47
+  - name: north-10
+    east_m: 4.9
+    north_m: 8.53
+  - name: north-40
+    east_m: -1.1
+    north_m: 38.53
+  - name: north-70
+    east_m: -7.1
+    north_m: 68.53
+  - name: north-end
+    east_m: -13.1
+    north_m: 98.53
+  - name: uturn-north-1
+    east_m: -12.85
+    north_m: 102.4
+  - name: uturn-north-2
+    east_m: -10.7
+    north_m: 105.63
+  - name: uturn-north-3
+    east_m: -7.22
+    north_m: 107.35
+  - name: uturn-north-4
+    east_m: -3.35
+    north_m: 107.1
+  - name: uturn-north-5
+    east_m: -0.12
+    north_m: 104.95
+  - name: south-start
+    east_m: 1.6
+    north_m: 101.47
+  - name: south-70
+    east_m: 7.6
+    north_m: 71.47
+  - name: south-40
+    east_m: 13.6
+    north_m: 41.47
+  - name: south-10
+    east_m: 19.6
+    north_m: 11.47
+  - name: south-m20
+    east_m: 25.6
+    north_m: -18.53
+  - name: south-end
+    east_m: 34
+    north_m: -60.53
+  - name: uturn-south-1
+    east_m: 33.75
+    north_m: -64.4
+  - name: uturn-south-2
+    east_m: 31.6
+    north_m: -67.63
+  - name: uturn-south-3
+    east_m: 28.12
+    north_m: -69.35
+  - name: uturn-south-4
+    east_m: 24.25
+    north_m: -69.1
+  - name: uturn-south-5
+    east_m: 21.02
+    north_m: -66.95
+  - name: north-south-end
+    east_m: 15.9
+    north_m: -46.47
