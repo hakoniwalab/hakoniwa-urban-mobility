@@ -394,6 +394,22 @@ class PortableModeTest(unittest.TestCase):
             self.assertEqual(urban_mobility.configure(context, Namespace()), 0)
         recipe.assert_not_called()
 
+    def test_a_plant_built_with_the_plant_directive_is_not_rebuilt_without_it(self):
+        """A dry route must not flip a MIRROR=ON plant back to OFF (and the next friction route back to ON)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            plant = Path(temporary) / "urban-car-hakoniwa-asset"
+            plant.write_text("", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"HAKONIWA_PORTABLE_WORKSPACE": ""}), \
+                    mock.patch.object(multi_car, "plant_executable", return_value=plant), \
+                    mock.patch.object(multi_car, "build_car_asset") as build:
+                with mock.patch.object(multi_car, "built_with_plant_directive", return_value=True):
+                    multi_car.ensure_car_asset(enable_mirror=False)
+                build.assert_called_once_with(enable_mirror=True)
+                build.reset_mock()
+                with mock.patch.object(multi_car, "built_with_plant_directive", return_value=False):
+                    multi_car.ensure_car_asset(enable_mirror=False)
+                build.assert_called_once_with(enable_mirror=False)
+
     def test_the_car_route_reuses_the_packaged_plant_instead_of_cmake(self):
         context = urban_mobility.RecipeContext(path=Path("r.yaml"), data={}, recipe_id="urban-car-rc", use_case="car-rc")
         with mock.patch.dict(os.environ, PORTABLE_ON), \

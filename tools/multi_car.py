@@ -250,6 +250,12 @@ def ensure_car_asset(*, enable_mirror: bool = False) -> Path:
         plant = require_built_car_asset(enable_mirror=enable_mirror)
         print(f"Portable workspace: reusing the packaged Urban Car plant {plant}")
         return plant
+    plant = plant_executable()
+    if not enable_mirror and plant.is_file() and built_with_plant_directive(plant):
+        # A plant built with the Plant Directive path does everything one
+        # without it does: keep it, rather than rebuilding it without the path
+        # and back again for the next route with road friction.
+        enable_mirror = True
     build_car_asset(enable_mirror=enable_mirror)
     return plant_executable()
 
