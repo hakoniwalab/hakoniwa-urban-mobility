@@ -5,9 +5,9 @@
 # (scenes/showcase-sapporo-stalls.yaml, run by the festival director); a
 # Hakoniwa Car runs up and down the street (scenarios/showcase-sapporo-delivery.yaml).
 # Turn on Night mode in the Viewer's panel for the lit stalls.
-# 25 people (stall staff 12, guests 6, children 2, riders and stop staff 5): the
-# People plant computes them on one core, and with more of them a Windows
-# notebook (Core Ultra 7 155H) fell to RTF 0.5.
+# 20 people (stall staff 12, guests 3, riders and stop staff 5): the People
+# plant computes them on one core; on a Windows notebook (Core Ultra 7 155H)
+# 59 people ran at RTF 0.50 and 25 at 0.97.
 schema: hakoniwa.composition/v1
 id: showcase-sapporo-stalls-night
 world: sapporo-rotary-snow
@@ -34,8 +34,3 @@ vehicles:
 - {name: Guest-1, asset: hakoniwa-person-visitor, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 81.4, north_m: -64.8, yaw_deg: -90}}
 - {name: Guest-2, asset: hakoniwa-person-passerby, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 68.2, north_m: -82.1, yaw_deg: 90}}
 - {name: Guest-3, asset: hakoniwa-person-visitor, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 67.6, north_m: -74.3, yaw_deg: 90}}
-- {name: Guest-4, asset: hakoniwa-person-passerby, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 101.6, north_m: -64.9, yaw_deg: 0}}
-- {name: Guest-5, asset: hakoniwa-person-visitor, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 102.4, north_m: -75.5, yaw_deg: 0}}
-- {name: Guest-6, asset: hakoniwa-person-passerby, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 86.5, north_m: -78.1, yaw_deg: 180}}
-- {name: Child-1, asset: hakoniwa-person-child, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 103.7, north_m: -70.1, yaw_deg: 180}}
-- {name: Child-2, asset: hakoniwa-person-child, control: api, program: "${repo:hakoniwa-urban-mobility}/apps/people/festival_director.py", args: ["${repo:hakoniwa-business-pack}/work/urban/scenes/showcase-sapporo-stalls.yaml", "--people-pdu-def", "${runtime.pdu_def}", "--car-pdu-def", "${runtime.car_pdu_def}", "--duration", "3600"], spawn: {east_m: 99.5, north_m: -64.1, yaw_deg: 0}}
