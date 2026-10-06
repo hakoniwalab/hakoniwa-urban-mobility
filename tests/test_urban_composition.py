@@ -1398,6 +1398,15 @@ class RealtimePacerTest(IntegratedFixture):
             source = (urban_realtime.ROOT / "tools" / name).read_text(encoding="utf-8")
             self.assertNotIn('"--bind", "127.0.0.1"', source, name)
 
+    def test_readiness_probes_wait_10_s_like_the_drone_service(self):
+        """A 2 s `hako-cmd ls` probe never succeeds on Windows once a Plant runs."""
+        import drone_one
+        self.assertEqual(multi_car.READINESS_PROBE_SEC, 10)
+        self.assertEqual(drone_one.DRONE_SERVICE_READINESS_PROBE_SEC, 10)
+        for name in ("multi_car.py", "people_sim.py", "urban_people.py", "drone_car_rc.py"):
+            source = (urban_realtime.ROOT / "tools" / name).read_text(encoding="utf-8")
+            self.assertNotRegex(source, r'"command_timeout_sec": 2\b', name)
+
     def test_apply_pacer_follows_the_conductor_and_stops_drone_sleeps(self):
         launcher = {"assets": [
             {"name": "drone-service-1", "args": ["fleet.json", "pdudef.json"]},

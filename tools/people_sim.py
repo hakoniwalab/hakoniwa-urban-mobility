@@ -26,6 +26,7 @@ Run it in the Business Pack Workspace.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import subprocess
@@ -152,6 +153,28 @@ def vehicle_box(asset_data: dict) -> dict:
     clearance = float(asset_data.get("spawn", {}).get("ground_clearance_m", 0.0))
     return {"half": [size["length_m"] / 2, size["width_m"] / 2, VEHICLE_HEIGHT_M / 2],
             "pos": [0.0, 0.0, VEHICLE_HEIGHT_M / 2 - clearance]}
+
+
+def compile_world(world: Path) -> Path:
+    """The people world compiled once: <world>.mjb next to the XML, reused while
+    the XML (and MuJoCo) stay the same. Compiling a city's people world from XML
+    takes 35 s or more (Sapporo: 4679 meshes), longer than the Launcher waits for
+    the People plant to register; loading the MJB takes a moment. Raises if the
+    world does not load."""
+    import mujoco
+
+    mjb = world.with_suffix(".mjb")
+    stamp = world.with_suffix(".mjb.json")
+    key = {"xml_sha256": hashlib.sha256(world.read_bytes()).hexdigest(), "mujoco": mujoco.__version__}
+    try:
+        if mjb.is_file() and json.loads(stamp.read_text(encoding="utf-8")) == key:
+            return mjb
+    except (OSError, json.JSONDecodeError):
+        pass
+    model = mujoco.MjModel.from_xml_path(str(world))
+    mujoco.mj_saveModel(model, str(mjb), None)
+    multi_car.write_json(stamp, key)
+    return mjb
 
 
 def world_xml(resolved: dict, city: dict | None = None, vehicles: dict | None = None) -> str:
@@ -283,12 +306,11 @@ def configure(resolved: dict) -> int:
     city = city_world(receipt) if receipt else None
     world = config / "people-world.xml"
     world.write_text(world_xml(resolved, city), encoding="utf-8")
-    import mujoco
-
-    mujoco.MjModel.from_xml_path(str(world))  # stops here if the world does not load
+    world_mjb = compile_world(world)  # stops here if the world does not load
     pdus = pdu_files(resolved, config)
     multi_car.write_json(config / "people-plant.json", {
         "asset_name": PLANT_ASSET, "state_robot": STATE_ROBOT, "world_xml": str(world),
+        "world_mjb": str(world_mjb),
         "pdu_def": str(pdus["pdu_def"]), "delta_usec": 10000, "state_period_usec": 20000,
         "owns_conductor": True, "realtime": True, "people": resolved["people"],
         "contact_log": str(work / "logs/people-contacts.jsonl"),
@@ -334,7 +356,7 @@ def launcher(resolved: dict, config: Path, browser: dict) -> dict:
             {"name": "people-plant", "activation_timing": "before_start", "command": str(python),
              "args": [str(PLANT), str(config / "people-plant.json")], "delay_sec": 2,
              "readiness": {"type": "hako_asset", "asset_name": PLANT_ASSET, "timeout_sec": 60,
-                           "poll_interval_sec": 0.2, "command_timeout_sec": 2}},
+                           "poll_interval_sec": 0.2, "command_timeout_sec": multi_car.READINESS_PROBE_SEC}},
             {"name": "people-web-bridge", "activation_timing": "before_start", "command": str(source["web_bridge"]),
              "args": ["--config-root", str(browser["bridge_root"]), "--node-name", "urban_vehicle_viewer_node1",
                       "--delta-time-step-usec", "20000"],

@@ -52,6 +52,11 @@ COMMAND_PDU = "ackermann_cmd"
 # geom_friction component applies it.
 TIRE_FRICTION_PDU = "tire_friction"
 CAR_PLANT_ASSET = "urban-car-fleet-plant"
+# One `hako-cmd ls` readiness probe waits this long. On Windows, with a Plant
+# and the pacer already running, one probe takes 2-4.4 s, so a 2 s probe never
+# succeeds and the Launcher gives up; the Drone service uses 10 s for the same
+# reason (drone_one.DRONE_SERVICE_READINESS_PROBE_SEC).
+READINESS_PROBE_SEC = 10
 # The viewer's HTTP server listens on every address, so the viewer can be
 # opened from another machine (http://<this-host>:<http_port>/...; the page
 # reaches the WebBridge, which already listens on every address, on the same
@@ -1962,7 +1967,7 @@ def materialize_launcher(
                 "asset_name": FLEET_ASSET_NAME,
                 "timeout_sec": 120,
                 "poll_interval_sec": 0.2,
-                "command_timeout_sec": 2,
+                "command_timeout_sec": READINESS_PROBE_SEC,
             },
         }
     ]

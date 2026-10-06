@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import math
 import sys
 from pathlib import Path
@@ -28,6 +29,28 @@ plant = load("people_plant", ROOT / "apps/people/people_plant.py")
 sys.path.insert(0, str(ROOT / "apps/people"))
 people_sim = load("people_sim", ROOT / "tools/people_sim.py")
 
+
+
+class PeopleWorldCompileTest(unittest.TestCase):
+    def test_the_people_world_is_compiled_once_and_reused(self):
+        """Loading a city's people world from XML takes 35 s or more; the plant loads the MJB."""
+        try:
+            import mujoco  # noqa: F401
+        except ImportError:
+            self.skipTest("mujoco is not installed")
+        with tempfile.TemporaryDirectory() as temporary:
+            world = Path(temporary) / "people-world.xml"
+            world.write_text('<mujoco><worldbody><geom type="plane" size="5 5 0.1"/></worldbody></mujoco>',
+                             encoding="utf-8")
+            mjb = people_sim.compile_world(world)
+            self.assertEqual(mjb, world.with_suffix(".mjb"))
+            first = mjb.stat().st_mtime_ns
+            self.assertEqual(people_sim.compile_world(world).stat().st_mtime_ns, first)  # reused
+            world.write_text(world.read_text(encoding="utf-8").replace("5 5", "6 6"), encoding="utf-8")
+            before = json.loads(world.with_suffix(".mjb.json").read_text(encoding="utf-8"))["xml_sha256"]
+            people_sim.compile_world(world)  # the XML changed: compiled again
+            after = json.loads(world.with_suffix(".mjb.json").read_text(encoding="utf-8"))["xml_sha256"]
+            self.assertNotEqual(before, after)
 
 class AnimationTest(unittest.TestCase):
     def test_walking_swings_arms_against_legs(self):
