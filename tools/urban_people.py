@@ -52,11 +52,13 @@ def apply(work: Path, composition, launcher: dict, conductor: str) -> None:
         vehicles[car.name] = entry
     world = config / "people-world.xml"
     world.write_text(people_sim.world_xml(resolved, city, vehicles), encoding="utf-8")
+    world_mjb = people_sim.compile_world(world)
     fleet_types = work / "config/car/urban-fleet-state-pdutypes.json"
     pdus = people_sim.pdu_files(resolved, config, (multi_car.FLEET_PDU_ROBOT, fleet_types))
     multi_car.write_json(config / "people-plant.json", {
         "vehicle_state_robot": multi_car.FLEET_PDU_ROBOT, "vehicles": vehicles,
         "asset_name": people_sim.PLANT_ASSET, "state_robot": people_sim.STATE_ROBOT, "world_xml": str(world),
+        "world_mjb": str(world_mjb),
         "pdu_def": str(pdus["pdu_def"]), "delta_usec": 10000, "state_period_usec": 20000,
         # The Car plant owns the Conductor and the pacer keeps real time.
         "owns_conductor": False, "realtime": False, "people": people,
