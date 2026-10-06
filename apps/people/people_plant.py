@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from collections import deque
@@ -176,7 +177,13 @@ class PeoplePlant:
 
         self.mujoco = mujoco
         self.config = config
-        self.model = mujoco.MjModel.from_xml_path(config["world_xml"])
+        # The world compiled at configure (people_sim.compile_world) loads in a
+        # moment; compiling a city's world XML here takes 35 s or more.
+        world_mjb = config.get("world_mjb")
+        if world_mjb and os.path.isfile(world_mjb):
+            self.model = mujoco.MjModel.from_binary_path(world_mjb)
+        else:
+            self.model = mujoco.MjModel.from_xml_path(config["world_xml"])
         self.data = mujoco.MjData(self.model)
         self.delta_usec = int(config["delta_usec"])
         self.substeps = max(1, round(self.delta_usec / 1e6 / self.model.opt.timestep))
