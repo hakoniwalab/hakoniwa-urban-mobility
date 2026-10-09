@@ -128,6 +128,9 @@ export CCACHE_TEMPDIR="${OUT_DIR}/ccache-tmp"
 export VIRTUAL_ENV="${VENV_DIR}"
 export PATH="${VENV_DIR}/bin:${PATH}"
 unset PYTHONPATH PYTHONHOME
+# PX4's code generators are Python scripts in the source tree; their bytecode
+# would land in __pycache__ next to them. Keep it in the output directory.
+export PYTHONPYCACHEPREFIX="${OUT_DIR}/pycache"
 
 if [[ ! -f "${BUILD_DIR}/build.ninja" ]]; then
   echo "[build-px4-sitl] configuring: ${BUILD_DIR}"
