@@ -672,44 +672,77 @@ def to_car_config(
 
 # --- Drone (tools/drone_one.py) -----------------------------------------------
 
-def _drone_recipe(
-    composition: Composition,
-    drone: Vehicle,
-    ground: Callable[[float, float], float],
-) -> dict:
-    receipt = city_receipt(composition)
-    profile = drone.asset.data.get("source", {}).get("profile")
-    if profile not in DRONE_PROFILES:
+def _drone_names(drones: list[Vehicle]) -> None:
+    """Drone Core names a fleet's Drones Drone-1..N (their PDUs, RPC services and Viewer
+    models), so the Composition's Drones must carry those names (Studio gives them)."""
+    expected = {f"Drone-{index}" for index in range(1, len(drones) + 1)}
+    names = [drone.name for drone in drones]
+    if set(names) != expected:
         raise CompositionError(
-            f"vehicle {drone.name}: tools/drone_one.py runs the {' and '.join(sorted(DRONE_PROFILES))} profiles only"
+            f"the Drones must be named Drone-1..Drone-{len(drones)} (Drone Core's fleet names): {names}"
         )
-    mission = DRONE_DEFAULT_MISSION
-    if drone.control == "api":
-        mission = _param_path(composition, drone.params["mission"])
+
+
+def _drone_spawn(drone: Vehicle, ground: Callable[[float, float], float]) -> tuple[dict, dict]:
+    """(spawn_pose_enu, rooftop) of one Drone."""
     spawn = drone.spawn
     surface = _surface(drone, ground)
     clearance = float(drone.asset.data["spawn"]["ground_clearance_m"])
-    return {
+    return (
+        {"east_m": spawn["east_m"], "north_m": spawn["north_m"], "up_m": surface + clearance,
+         "yaw_deg": spawn["yaw_deg"]},
+        # urban_composer.py reads the spawn surface under this name.
+        {"surface_height_m": surface, "base_clearance_m": clearance},
+    )
+
+
+def _drone_recipe(
+    composition: Composition,
+    drones: list[Vehicle],
+    ground: Callable[[float, float], float],
+) -> dict:
+    """The tools/drone_one.py recipe: drone: holds the shared settings and Drone-1's
+    spawn; with more Drones, drones: holds every Drone's spawn by name."""
+    receipt = city_receipt(composition)
+    _drone_names(drones)
+    drones = sorted(drones, key=lambda drone: int(drone.name.split("-")[1]))
+    profiles = {drone.asset.data.get("source", {}).get("profile") for drone in drones}
+    if len(profiles) != 1:
+        raise CompositionError(f"the Drones must share one Asset profile (they fly in one Drone service): {sorted(map(str, profiles))}")
+    profile = profiles.pop()
+    if profile not in DRONE_PROFILES:
+        raise CompositionError(
+            f"vehicle {drones[0].name}: tools/drone_one.py runs the {' and '.join(sorted(DRONE_PROFILES))} profiles only"
+        )
+    controls = {drone.control for drone in drones}
+    if len(drones) > 1 and controls - {"schedule"}:
+        raise CompositionError("more than one Drone fly by schedule only (the schedule control)")
+    first = drones[0]
+    mission = DRONE_DEFAULT_MISSION
+    if first.control == "api":
+        mission = _param_path(composition, first.params["mission"])
+    spawn, rooftop = _drone_spawn(first, ground)
+    recipe = {
         "version": 1,
         "id": composition.id,
         "fleet_experiment": {"path": DRONE_FLEET_EXPERIMENT.as_posix()},
         "city_world": {"receipt": receipt.as_posix()},
         "drone": {
             "profile": profile,
-            "spawn_pose_enu": {
-                "east_m": spawn["east_m"],
-                "north_m": spawn["north_m"],
-                "up_m": surface + clearance,
-                "yaw_deg": spawn["yaw_deg"],
-            },
+            "spawn_pose_enu": spawn,
             "launch_area": DRONE_LAUNCH_AREA,
-            # urban_composer.py reads the spawn surface under this name.
-            "rooftop": {"surface_height_m": surface, "base_clearance_m": clearance},
+            "rooftop": rooftop,
         },
-        "control": {"mode": DRONE_CONTROL_MODES[drone.control]},
+        "control": {"mode": DRONE_CONTROL_MODES[first.control]},
         "mission": {"path": mission.as_posix()},
         "viewer": {"map_layout": "bottom-left", "collider_overlay_default": False},
     }
+    if len(drones) > 1:
+        recipe["drones"] = {}
+        for drone in drones:
+            pose, surface = _drone_spawn(drone, ground)
+            recipe["drones"][drone.name] = {"spawn_pose_enu": pose, "rooftop": surface}
+    return recipe
 
 
 def to_drone_recipe(
@@ -717,13 +750,11 @@ def to_drone_recipe(
     *,
     ground: Callable[[float, float], float] | None = None,
 ) -> dict:
-    """Return the tools/drone_one.py recipe for a City + one Drone Composition."""
+    """Return the tools/drone_one.py recipe for a City + Drones Composition."""
     _require_simulators(composition, {DRONE_SIMULATOR}, "Drone")
-    if len(composition.vehicles) != 1:
-        raise CompositionError("the Drone adapter runs exactly one Drone (tools/drone_one.py)")
     if composition.interactions:
-        raise CompositionError("interactions need Cars; this Composition has one Drone only")
-    return _drone_recipe(composition, composition.vehicles[0], _ground(composition, ground))
+        raise CompositionError("interactions need Cars; this Composition has Drones only")
+    return _drone_recipe(composition, list(composition.vehicles), _ground(composition, ground))
 
 
 # --- Drone fleet (tools/drone_fleet.py) -------------------------------------------
@@ -777,15 +808,16 @@ def to_integrated(
     """
     _require_simulators(composition, {CAR_SIMULATOR, DRONE_SIMULATOR}, "Car + Drone")
     drones = composition.by_simulator(DRONE_SIMULATOR)
-    if len(drones) != 1:
-        raise CompositionError("the Car + Drone adapter runs exactly one Drone (tools/urban_composer.py)")
-    drone = drones[0]
+    if not drones:
+        raise CompositionError("the Car + Drone adapter needs a Drone (tools/urban_composer.py)")
+    by_name = {drone.name: drone for drone in drones}
     cars = composition.by_simulator(CAR_SIMULATOR)
     # One World model serves every vehicle's spawn height.
     ground = _ground(composition, ground)
     inputs = _car_inputs(composition, cars, DEFAULT_INTEGRATED_WEB_BRIDGE_PORT, ground)
     mirrors = []
     for interaction in composition.interactions:
+        drone = by_name[interaction["drone"]]
         mirror = drone.asset.data["interactions"]["drone-mirror"]
         mirrors.append({
             "name": interaction["drone"],
@@ -805,7 +837,7 @@ def to_integrated(
     if route_scenarios:
         scenarios["car"] = [item["path"] for item in route_scenarios]
     config["scenarios"] = scenarios
-    return config, _drone_recipe(composition, drone, ground)
+    return config, _drone_recipe(composition, drones, ground)
 
 
 # --- FPV Drone on a plain World (tools/fpv.py) --------------------------------------

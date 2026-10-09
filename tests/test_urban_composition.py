@@ -451,11 +451,35 @@ class DroneCompositionTest(Fixture):
         loaded = drone_one.load_urban_recipe(self.render(recipe))
         self.assertEqual((loaded.control_mode, loaded.mission), ("fleet-rpc", mission.resolve()))
 
-    def test_drone_adapter_runs_one_drone_only(self):
+    def test_several_drones_get_their_own_spawns_in_fleet_order(self):
+        schedule = self.work / "flight.yaml"
+        schedule.write_text("drones: []\n", encoding="utf-8")
+        drones = [{"name": f"Drone-{index}", "asset": "eams-hexa", "control": "schedule",
+                   "params": {"schedule": str(schedule)},
+                   "spawn": {"east_m": float(index), "north_m": 2.0, "yaw_deg": 0.0}} for index in (2, 1)]
+        composition = self.load(self.composition(world="test-city", vehicles=drones))
+        recipe = urban_composition.to_drone_recipe(composition, ground=lambda east, north: 1.0)
+        self.assertEqual(list(recipe["drones"]), ["Drone-1", "Drone-2"])
+        loaded = drone_one.load_urban_recipe(self.render(recipe))
+        self.assertEqual(loaded.drone_count, 2)
+        self.assertEqual([(name, pose["east_m"]) for name, pose in loaded.spawns()],
+                         [("Drone-1", 1.0), ("Drone-2", 2.0)])
+        self.assertEqual(loaded.spawn_pose_enu, dict(loaded.spawns())["Drone-1"])
+
+    def test_several_drones_must_carry_the_fleet_names(self):
+        drones = [{"name": name, "asset": "eams-hexa", "control": "schedule",
+                   "params": {"schedule": "x.yaml"},
+                   "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}} for name in ("Drone-1", "Scout")]
+        (self.work / "x.yaml").write_text("drones: []\n", encoding="utf-8")
+        composition = self.load(self.composition(world="test-city", vehicles=drones))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "Drone-1..Drone-2"):
+            urban_composition.to_drone_recipe(composition, ground=lambda east, north: 0.0)
+
+    def test_several_drones_fly_by_schedule_only(self):
         drones = [{"name": f"Drone-{index}", "asset": "eams-hexa", "control": "rc",
                    "spawn": {"east_m": index, "north_m": 0, "yaw_deg": 0}} for index in (1, 2)]
         composition = self.load(self.composition(world="test-city", vehicles=drones))
-        with self.assertRaisesRegex(urban_composition.CompositionError, "exactly one Drone"):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "by schedule only"):
             urban_composition.to_drone_recipe(composition, ground=lambda east, north: 0.0)
 
     def test_drone_only_composition_is_run_by_drone_one(self):
@@ -818,6 +842,22 @@ class ControlsTest(IntegratedFixture):
         )
         legacy = json.loads(legacy_path.read_text(encoding="utf-8"))["assets"][1]
         self.assertSameProcess(generated, legacy)
+
+    def test_one_schedule_process_flies_every_drone(self):
+        paths = self.drone_paths()
+        schedule = self.work / "flight.yaml"
+        schedule.write_text("drones: []\n", encoding="utf-8")
+        drones = [{"name": f"Drone-{index}", "asset": "eams-hexa", "control": "schedule",
+                   "params": {"schedule": str(schedule)},
+                   "spawn": {"east_m": index, "north_m": 0, "yaw_deg": 0}} for index in (1, 2)]
+        composition = self.composition(world="test-city", vehicles=drones)
+        [process] = self.processes(
+            composition, {"drone-core": self.drone_runtime(paths, paths.recipe_config / "pdudef/x.json")}
+        )
+        self.assertEqual(process["name"], "control-drone-core-schedule")
+        args = process["args"]
+        flights = [args[index + 1] for index, arg in enumerate(args) if arg == "--flight"]
+        self.assertEqual(flights, [f"Drone-1={schedule.resolve()}", f"Drone-2={schedule.resolve()}"])
 
     def test_params_reach_the_control_arguments(self):
         [process] = self.processes(

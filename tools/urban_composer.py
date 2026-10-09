@@ -82,7 +82,7 @@ def _drone_paths(recipe_id: str):
     return drone_one._paths(recipe_id)
 
 
-def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
+def _patch_browser(resolved: dict, paths: object, drone_count: int = 1) -> dict[str, Path | str]:
     root = resolved["work"] / "config"
     three = root / "threejs"
     bridge = root / "web-bridge"
@@ -201,20 +201,20 @@ def _patch_browser(resolved: dict, paths: object) -> dict[str, Path | str]:
     fleet_options = copy.deepcopy(drone_viewer["stateInput"]["fleets"])
     fleet_options["dynamicSpawn"] = True
     fleet_options["templateDroneIndex"] = 0
-    fleet_options["maxDynamicDrones"] = 1
+    fleet_options["maxDynamicDrones"] = drone_count
     for viewer_path in viewer_paths:
         viewer = multi_car.load_json(viewer_path, "integrated viewer")
         viewer["ui"]["enableAttachedCameras"] = True
         viewer["stateInput"]["mode"] = "fleets"
         viewer["stateInput"]["fleets"] = copy.deepcopy(fleet_options)
         multi_car.write_json(viewer_path, viewer)
-    robot_name, disturb_type = urban_fault_injection.disturbance_target(
+    robot_names, disturb_type = urban_fault_injection.disturbance_targets(
         paths.recipe_config / "pdudef/drone-pdudef-current.json"
     )
     rotors = urban_fault_injection.rotor_count(drone_one.URBAN_HEXA_ROOT / "drone_config_0.json")
-    urban_fault_injection.add_to_bridge(bridge, robot_name, disturb_type)
+    urban_fault_injection.add_to_bridge(bridge, robot_names, disturb_type)
     for viewer_path in viewer_paths:
-        urban_fault_injection.add_to_viewer(viewer_path, robot_name, rotors)
+        urban_fault_injection.add_to_viewer(viewer_path, robot_names[0], rotors)
 
     viewer_config = three / "viewer-config.json"
     collider_config = three / "viewer-config-colliders.json"
@@ -311,7 +311,10 @@ def _merge_launchers(
     # A PX4 SITL Drone (tools/drone_px4.py): PX4 starts first, and the aircraft
     # service takes the PX4 simulator address before the fleet config and PDU definition.
     names = {item.get("name") for item in drone_launcher.get("assets", [])}
-    px4_assets = [asset(drone_launcher, drone_px4.PX4_ASSET)] if drone_px4.PX4_ASSET in names else []
+    # One PX4 SITL per Drone (px4-sitl, px4-sitl-1, ...), in their Launcher order.
+    px4_assets = [
+        copy.deepcopy(item) for item in drone_launcher.get("assets", []) if drone_px4.is_px4_asset(item.get("name"))
+    ]
     pdu_index = 3 if px4_assets else 1
     if len(drone_service["args"]) <= pdu_index:
         raise UrbanComposeError("Drone service has no PDU definition argument")
@@ -402,6 +405,7 @@ def configure(
         drone_recipe.fleet_experiment,
         drone_root,
         drone_one.DEFAULT_VIEWER_ROOT,
+        drone_count_override=drone_recipe.drone_count,
         workspace=paths,
         launcher_writer=drone_one.urban_launcher_writer(drone_recipe),
     ) != 0:
@@ -417,13 +421,17 @@ def configure(
         / "drone/mujoco-city-fleet/process-01/hexa-body.xml"
     )
     multi_car.required(generated_body, "generated Urban Hexa mirror model")
-    if len(resolved["mirrors"]) > 1:
-        raise UrbanComposeError("integrated demo supports at most one Drone Mirror")
     spawn = drone_scenario["spawn"]
+    spawns = dict(drone_recipe.spawns())
+    # One mirror per Drone that has a drone-mirror interaction, each at its own
+    # spawn (tools/multi_car.py prefixes every mirror body mirror_drone_<i>_).
     for mirror in resolved["mirrors"]:
+        if mirror["name"] not in spawns:
+            raise UrbanComposeError(f"Drone Mirror {mirror['name']} names no configured Drone")
+        mirrored = spawns[mirror["name"]]
         mirror["mjcf_model"] = generated_body
         mirror["initial_position_mjcf"] = (
-            spawn["north_m"], -spawn["east_m"], spawn["up_m"]
+            mirrored["north_m"], -mirrored["east_m"], mirrored["up_m"]
         )
     if multi_car.configure(resolved) != 0:
         return 1
@@ -432,7 +440,7 @@ def configure(
         paths.recipe_config / "pdudef/drone-pdudef-current.json",
     )
 
-    browser = _patch_browser(resolved, paths)
+    browser = _patch_browser(resolved, paths, drone_recipe.drone_count)
     launcher = _merge_launchers(resolved, drone_launcher)
     viewer_contract = {
         "url": browser["viewer_url"],

@@ -38,6 +38,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 MAVLINK_DIR = ROOT / "apps" / "drone" / "mavlink"
+# How long to wait for PX4's first heartbeat: with several PX4 SITL processes
+# one can take well over 20 s to open its API link.
+MAVLINK_HEARTBEAT_TIMEOUT_SEC = 120.0
 
 
 class DroneLinkError(RuntimeError):
@@ -175,7 +178,8 @@ class MavlinkDroneLink:
 
     def _mavlink(self):
         if self._client is None:
-            self._client = _import_mavlink_client()(connection=self._connection)
+            self._client = _import_mavlink_client()(connection=self._connection,
+                                                    heartbeat_timeout_sec=MAVLINK_HEARTBEAT_TIMEOUT_SEC)
         return self._client
 
     def _relative(self, x_world: float, y_world: float, z_world: float) -> tuple[float, float, float]:

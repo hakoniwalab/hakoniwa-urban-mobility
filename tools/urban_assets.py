@@ -30,7 +30,7 @@ KINDS = {"vehicle", "city", "plain"}
 CATEGORIES = {"car", "drone", "person"}
 SIMULATORS = {"ackermann-mujoco", "drone-core", "hakoniwa-people"}
 CONTROLS = {"rc", "api", "schedule", "external"}
-SCOPES = {"vehicle", "composition"}
+SCOPES = {"vehicle", "composition", "shared"}
 REPO_REFERENCE = re.compile(r"\$\{repo:([A-Za-z0-9_.-]+)\}")
 
 
@@ -123,9 +123,10 @@ def validate(asset: Asset) -> None:
         if not isinstance(control, dict) or not isinstance(control.get("program"), str):
             raise AssetError(f"Asset {asset.id} control {name} has no program")
         if control.get("scope", "vehicle") not in SCOPES:
-            raise AssetError(f"Asset {asset.id} control {name} scope must be vehicle or composition")
-        if not isinstance(control.get("args", []), list):
-            raise AssetError(f"Asset {asset.id} control {name} args must be a list")
+            raise AssetError(f"Asset {asset.id} control {name} scope must be vehicle, composition or shared")
+        for key in ("args", "vehicle_args"):
+            if not isinstance(control.get(key, []), list):
+                raise AssetError(f"Asset {asset.id} control {name} {key} must be a list")
     dimensions = data.get("dimensions")
     if dimensions is not None:
         # The Car's outer size [m]; route checks keep half its width off walls.

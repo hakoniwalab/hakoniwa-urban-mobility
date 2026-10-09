@@ -85,10 +85,11 @@ class MavlinkDroneClient:
         drone_name: str = "Drone",
         autopilot: str = "auto",
         ready_timeout_sec: float = 30.0,
+        heartbeat_timeout_sec: float = 20.0,
     ) -> None:
         self.drone_name = drone_name
         self.ready_timeout_sec = ready_timeout_sec
-        self.link = VehicleLink(connection)
+        self.link = VehicleLink(connection, heartbeat_timeout_sec=heartbeat_timeout_sec)
         self.backend = select_backend(self.link, autopilot)
         self.link.pump(0.5)
 

@@ -79,6 +79,46 @@ class UrbanDroneRecipe:
     controller_params: Path | None
     map_layout: str
     collider_overlay_default: bool
+    # Every Drone's (name, spawn ENU) in fleet order when the recipe has more
+    # than one (its drones: section); empty for one Drone, Drone-1 at spawn_pose_enu.
+    drone_spawns: tuple[tuple[str, dict[str, float]], ...] = ()
+
+    def spawns(self) -> list[tuple[str, dict[str, float]]]:
+        """Every Drone's (name, spawn ENU), Drone-1 first."""
+        return list(self.drone_spawns) or [(FIRST_DRONE, self.spawn_pose_enu)]
+
+    @property
+    def drone_count(self) -> int:
+        return len(self.spawns())
+
+
+FIRST_DRONE = "Drone-1"
+
+
+def _spawn_pose(value: object, label: str) -> dict[str, float]:
+    pose = _recipe_mapping(value, label)
+    try:
+        return {key: float(pose[key]) for key in ("east_m", "north_m", "up_m", "yaw_deg")}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise base.RecipeError(f"{label} is invalid") from exc
+
+
+def _drone_spawns(value: object, first: dict[str, float]) -> tuple[tuple[str, dict[str, float]], ...]:
+    """The recipe's drones: section (name -> spawn_pose_enu), Drone-1..N in order."""
+    if value is None:
+        return ()
+    drones = _recipe_mapping(value, "drones")
+    expected = [f"Drone-{index}" for index in range(1, len(drones) + 1)]
+    if sorted(drones, key=lambda name: (len(name), name)) != expected:
+        raise base.RecipeError(f"drones must be named Drone-1..Drone-{len(drones)}: {list(drones)}")
+    spawns = tuple(
+        (name, _spawn_pose(_recipe_mapping(drones[name], f"drones.{name}").get("spawn_pose_enu"),
+                           f"drones.{name}.spawn_pose_enu"))
+        for name in expected
+    )
+    if spawns[0][1] != first:
+        raise base.RecipeError("drones.Drone-1.spawn_pose_enu must equal drone.spawn_pose_enu")
+    return spawns if len(spawns) > 1 else ()
 
 
 def _recipe_path(recipe_path: Path, value: object, label: str) -> Path:
@@ -178,7 +218,11 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
         controller_params=controller_params,
         map_layout=map_layout,
         collider_overlay_default=collider_default,
+        drone_spawns=_drone_spawns(data.get("drones"), spawn_pose_enu),
     )
+    if result.drone_count > 1:
+        if control_mode != "fleet-rpc":
+            raise base.RecipeError("more than one Drone fly by schedule (control.mode fleet-rpc)")
     for label, required in (
         ("fleet_experiment.path", result.fleet_experiment),
         ("city_world.receipt", result.city_receipt),
@@ -214,8 +258,19 @@ def write_selected_recipe(paths: object, recipe: UrbanDroneRecipe) -> Path:
         ),
         "map_layout": recipe.map_layout,
         "collider_overlay_default": recipe.collider_overlay_default,
+        "drone_spawns": [[name, pose] for name, pose in recipe.drone_spawns],
     }, indent=2) + "\n", encoding="utf-8")
     return output
+
+
+def configured_drone_count(paths: object | None = None) -> int:
+    """How many Drones the configured recipe flies (1 before configure)."""
+    try:
+        paths = paths or _paths()
+        data = json.loads((paths.recipe_config / SELECTED_RECIPE_FILE).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, AttributeError, RuntimeError):
+        return 1
+    return max(1, len(data.get("drone_spawns") or []))
 
 
 def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
@@ -245,6 +300,10 @@ def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
             ),
             map_layout=data["map_layout"],
             collider_overlay_default=data["collider_overlay_default"],
+            drone_spawns=tuple(
+                (str(name), {key: float(pose[key]) for key in ("east_m", "north_m", "up_m", "yaw_deg")})
+                for name, pose in data.get("drone_spawns", [])
+            ),
         )
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise base.RecipeError(
@@ -518,7 +577,8 @@ def open_viewer(
         raise base.RecipeError(
             "Collider viewer is not configured; run configure before open-viewer"
         )
-    url = base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT)
+    url = base.viewer_url(configured_drone_count(paths), map_viewer=True, http_port=VIEWER_HTTP_PORT,
+                          websocket_port=WEB_BRIDGE_PORT)
     url += map_origin_query(paths)
     if map_layout == "bottom-left":
         url += "&layout=three-main"
@@ -596,10 +656,12 @@ def apply_fault_injection(path: Path, paths: object) -> Path:
     if source.resolve() != target.resolve():
         shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(source, target)
-    robot_name, disturb_type = urban_fault_injection.disturbance_target(
+    robot_names, disturb_type = urban_fault_injection.disturbance_targets(
         paths.recipe_config / "pdudef/drone-pdudef-current.json"
     )
-    urban_fault_injection.add_to_bridge(target, robot_name, disturb_type)
+    # The panel drives the first Drone; every Drone's route lets the schedule's wind reach it.
+    robot_name = robot_names[0]
+    urban_fault_injection.add_to_bridge(target, robot_names, disturb_type)
     args[index] = str(target)
     path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
 
@@ -611,7 +673,8 @@ def apply_fault_injection(path: Path, paths: object) -> Path:
             continue
         urban_fault_injection.add_to_viewer(viewer_path, robot_name, rotors)
         pdudef = json.loads(viewer_path.read_text(encoding="utf-8"))["pdu"]["pduDefPath"]
-        urban_fault_injection.add_to_pdudef(viewer_path.parent / pdudef, robot_name, disturb_type)
+        for name in robot_names:
+            urban_fault_injection.add_to_pdudef(viewer_path.parent / pdudef, name, disturb_type)
     return path
 
 
@@ -783,6 +846,20 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element, *, landing_box: bool =
     }
 
 
+def _body_prefix(index: int) -> str:
+    return f"d{index}_"
+
+
+def _prefixed(body: ET.Element, prefix: str) -> ET.Element:
+    """A copy of a body whose every name (bodies, joints, geoms, sites) starts with prefix."""
+    result = copy.deepcopy(body)
+    for element in result.iter():
+        name = element.get("name")
+        if name:
+            element.set("name", prefix + name)
+    return result
+
+
 def materialize_eams_city_model(
     marker: dict,
     drone_root: Path,
@@ -816,10 +893,29 @@ def materialize_eams_city_model(
     hexa_body.set("pos", "0 0 0")
     contact_policy = apply_eams_city_contact_policy(hexa_body, landing_box=not px4)
     ET.indent(tree, space="  ")
+    # One Drone's body: the Car world's mirror model, and the World's Drone
+    # when it flies alone.
     tree.write(body_only, encoding="utf-8", xml_declaration=True)
+
+    fleet_path = Path(marker["fleet_config"])
+    fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
+    drones = fleet_config.get("drones")
+    if not isinstance(drones, list) or not drones:
+        raise base.RecipeError("the Fleet config has no Drone")
+    world_bodies = body_only
+    if len(drones) > 1:
+        # Several Drones in one World: a copy of the body per Drone, every name
+        # prefixed d<i>_ (as the fleet show's models). They collide with each
+        # other as with the City.
+        worldbody.remove(hexa_body)
+        for index in range(1, len(drones) + 1):
+            worldbody.append(_prefixed(hexa_body, _body_prefix(index)))
+        ET.indent(tree, space="  ")
+        world_bodies = process_dir / "hexa-fleet-body.xml"
+        tree.write(world_bodies, encoding="utf-8", xml_declaration=True)
     compose_tool = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
     subprocess.run([
-        sys.executable, str(compose_tool), str(body_only),
+        sys.executable, str(compose_tool), str(world_bodies),
         str(Path(marker["city_world"]["mjcf"])), "--output", str(runtime_xml),
         "--no-validate",
     ], cwd=ROOT, check=True)
@@ -858,16 +954,13 @@ def materialize_eams_city_model(
         })
     runtime_type_path.write_text(json.dumps(type_config, indent=2) + "\n", encoding="utf-8")
 
-    fleet_path = Path(marker["fleet_config"])
-    fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
-    drones = fleet_config.get("drones")
-    if not isinstance(drones, list) or len(drones) != 1:
-        raise base.RecipeError("Urban Hexa checkpoint requires exactly one Drone")
-    drones[0]["mujoco"] = {
-        "modelName": "drone_base",
-        "propNames": [f"prop{index}" for index in range(1, 7)],
-    }
-    fleet_config["types"][drones[0]["type"]] = str(runtime_type_path)
+    for index, drone in enumerate(drones, 1):
+        prefix = _body_prefix(index) if len(drones) > 1 else ""
+        drone["mujoco"] = {
+            "modelName": f"{prefix}drone_base",
+            "propNames": [f"{prefix}prop{rotor}" for rotor in range(1, 7)],
+        }
+        fleet_config["types"][drone["type"]] = str(runtime_type_path)
     fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
 
     marker["runtime_model"] = {
@@ -890,8 +983,7 @@ def _normalize_degrees(value: float) -> float:
     return (value + 180.0) % 360.0 - 180.0
 
 
-def set_runtime_spawn(marker: dict, spawn_pose_enu: dict[str, float]) -> Path:
-    """Apply an ENU pose to the Drone Core Fleet config (which uses NED)."""
+def _runtime_spawn(spawn_pose_enu: dict[str, float]) -> dict[str, Any]:
     try:
         east_m = float(spawn_pose_enu["east_m"])
         north_m = float(spawn_pose_enu["north_m"])
@@ -903,17 +995,8 @@ def set_runtime_spawn(marker: dict, spawn_pose_enu: dict[str, float]) -> Path:
         east_m, north_m, up_m, yaw_enu_deg
     )):
         raise base.RecipeError("drone.spawn_pose_enu must contain finite values")
-
-    fleet_path = Path(marker["fleet_config"])
-    fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
-    drones = fleet_config.get("drones")
-    if not isinstance(drones, list) or len(drones) != 1:
-        raise base.RecipeError("one-Drone checkpoint Fleet config is invalid")
     yaw_ned_deg = _normalize_degrees(90.0 - yaw_enu_deg)
-    drones[0]["position_meter"] = [north_m, east_m, -up_m]
-    drones[0]["angle_degree"] = [0.0, 0.0, yaw_ned_deg]
-    fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
-    marker["flight_plan"]["runtime_spawn"] = {
+    return {
         "frame": "ENU",
         "east_m": east_m,
         "north_m": north_m,
@@ -923,6 +1006,35 @@ def set_runtime_spawn(marker: dict, spawn_pose_enu: dict[str, float]) -> Path:
         "fleet_position_meter": [north_m, east_m, -up_m],
         "fleet_yaw_degree": yaw_ned_deg,
     }
+
+
+def set_runtime_spawn(
+    marker: dict,
+    spawn_pose_enu: dict[str, float] | list[tuple[str, dict[str, float]]],
+) -> Path:
+    """Apply ENU poses to the Drone Core Fleet config (which uses NED).
+
+    spawn_pose_enu is one Drone's pose (Drone-1) or every Drone's (name, pose)
+    in fleet order. The marker keeps Drone-1's as runtime_spawn and every
+    Drone's under runtime_spawns (apps/drone/drone_schedule.py reads them).
+    """
+    spawns = [(FIRST_DRONE, spawn_pose_enu)] if isinstance(spawn_pose_enu, dict) else list(spawn_pose_enu)
+    fleet_path = Path(marker["fleet_config"])
+    fleet_config = json.loads(fleet_path.read_text(encoding="utf-8"))
+    drones = fleet_config.get("drones")
+    if not isinstance(drones, list) or len(drones) != len(spawns):
+        raise base.RecipeError(f"the Fleet config does not hold {len(spawns)} Drone(s)")
+    runtime_spawns = {}
+    for drone, (name, pose) in zip(drones, spawns):
+        if drone.get("name") != name:
+            raise base.RecipeError(f"the Fleet config names {drone.get('name')} where the recipe has {name}")
+        runtime = _runtime_spawn(pose)
+        drone["position_meter"] = runtime["fleet_position_meter"]
+        drone["angle_degree"] = [0.0, 0.0, runtime["fleet_yaw_degree"]]
+        runtime_spawns[name] = runtime
+    fleet_path.write_text(json.dumps(fleet_config, indent=2) + "\n", encoding="utf-8")
+    marker["flight_plan"]["runtime_spawn"] = runtime_spawns[spawns[0][0]]
+    marker["flight_plan"]["runtime_spawns"] = runtime_spawns
     return fleet_path
 
 
@@ -932,7 +1044,7 @@ def refresh_runtime_spawn(paths: object, recipe: UrbanDroneRecipe) -> Path:
     if not marker_path.is_file():
         raise base.RecipeError("Urban Drone is not configured; run configure first")
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    fleet_path = set_runtime_spawn(marker, recipe.spawn_pose_enu)
+    fleet_path = set_runtime_spawn(marker, recipe.spawns())
     marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
     return fleet_path
 
@@ -985,6 +1097,8 @@ def load_runtime_recipe(configured: UrbanDroneRecipe) -> UrbanDroneRecipe:
         for field in rebuild_fields
         if getattr(current, field) != getattr(configured, field)
     ]
+    if [name for name, _ in current.spawns()] != [name for name, _ in configured.spawns()]:
+        changed.append("drones")
     if changed:
         raise base.RecipeError(
             "recipe settings requiring regeneration changed "
@@ -994,6 +1108,7 @@ def load_runtime_recipe(configured: UrbanDroneRecipe) -> UrbanDroneRecipe:
         configured,
         source_sha256=current.source_sha256,
         spawn_pose_enu=current.spawn_pose_enu,
+        drone_spawns=current.drone_spawns,
         controller_params=current.controller_params,
     )
 
@@ -1016,6 +1131,7 @@ def configure(
     rc = base.configure(
         recipe.fleet_experiment,
         drone_root,
+        drone_count_override=recipe.drone_count,
         workspace=paths,
         write_guide=False,
     )
@@ -1026,13 +1142,13 @@ def configure(
     marker = city.configure_single_host_fleet(
         drone_root=drone_root,
         city_world_path=recipe.city_receipt,
-        drone_count=1,
+        drone_count=recipe.drone_count,
         process_count=1,
         recipe_config=paths.recipe_config,
         altitude_mode="route-clearance",
         launch_area=recipe.launch_area,
     )
-    set_runtime_spawn(marker, recipe.spawn_pose_enu)
+    set_runtime_spawn(marker, recipe.spawns())
     runtime_model = materialize_eams_city_model(
         marker,
         drone_root,
@@ -1145,6 +1261,7 @@ def main() -> int:
             recipe.fleet_experiment,
             drone_root,
             viewer_root,
+            drone_count_override=recipe.drone_count,
             workspace=paths,
             launcher_writer=urban_launcher_writer(
                 recipe, mujoco_viewer=args.mujoco_viewer
@@ -1158,7 +1275,8 @@ def main() -> int:
                 recipe_root=paths.recipe_root,
                 launcher=paths.recipe_config / "launcher.json",
                 session=paths.recipe_root / "runtime/launcher-session.json",
-                viewer_url=base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT),
+                viewer_url=base.viewer_url(recipe.drone_count, map_viewer=True, http_port=VIEWER_HTTP_PORT,
+                                           websocket_port=WEB_BRIDGE_PORT),
             )
         )
         fleet_path = refresh_runtime_spawn(paths, recipe)
@@ -1176,6 +1294,7 @@ def main() -> int:
             recipe.fleet_experiment,
             drone_root,
             viewer_root,
+            drone_count_override=recipe.drone_count,
             workspace=paths,
             launcher_writer=urban_launcher_writer(
                 recipe, mujoco_viewer=args.mujoco_viewer
@@ -1186,6 +1305,7 @@ def main() -> int:
             recipe.fleet_experiment,
             drone_root,
             "status",
+            drone_count_override=recipe.drone_count,
             workspace=paths,
         )
     if args.command == "stop":
@@ -1193,6 +1313,7 @@ def main() -> int:
             recipe.fleet_experiment,
             drone_root,
             "terminate",
+            drone_count_override=recipe.drone_count,
             workspace=paths,
         )
         if rc == 0:
@@ -1202,7 +1323,8 @@ def main() -> int:
                     recipe_root=paths.recipe_root,
                     launcher=paths.recipe_config / "launcher.json",
                     session=paths.recipe_root / "runtime/launcher-session.json",
-                    viewer_url=base.viewer_url(1, map_viewer=True, http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT),
+                    viewer_url=base.viewer_url(recipe.drone_count, map_viewer=True, http_port=VIEWER_HTTP_PORT,
+                                           websocket_port=WEB_BRIDGE_PORT),
                 )
             )
         return rc

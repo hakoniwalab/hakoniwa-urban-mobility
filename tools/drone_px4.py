@@ -13,6 +13,11 @@ three things change:
   replaces the drone service under the same asset name (drone-service-1), so
   readiness, the pacer, the Viewer and the controls keep working
 
+Several Drones: one PX4 SITL process per Drone (px4 -i <index>, Drone-<index+1>,
+its own working directory) and still one aircraft service, which talks to PX4
+instance i on TCP 4560 + i. PX4 instance i serves the MAVLink API on UDP
+14540 + i (apps/drone/drone_schedule.py picks it by the Drone's name).
+
 configure builds PX4 SITL when it is not built yet (ensure_built); the
 managed Recipe (recipes/usecases/urban-drone-px4.yaml) materializes
 PX4-Autopilot and pymavlink before.
@@ -41,8 +46,17 @@ SERVICE_ASSET = "drone-service-1"
 PX4_ASSET = "px4-sitl"
 # Seconds PX4 needs to open TCP 4560 before the aircraft service connects.
 PX4_START_DELAY_SEC = 3
-# MAVLink API port of the PX4 SITL instance 0 (apps/drone/mavlink).
+# MAVLink API port of the PX4 SITL instance 0 (apps/drone/mavlink); instance i uses 14540 + i.
 MAVLINK_URL = "udpin:127.0.0.1:14540"
+
+
+def px4_asset_name(instance: int) -> str:
+    """The Launcher asset of PX4 SITL instance i (instance 0 keeps the one-Drone name)."""
+    return PX4_ASSET if instance == 0 else f"{PX4_ASSET}-{instance}"
+
+
+def is_px4_asset(name: str | None) -> bool:
+    return name == PX4_ASSET or str(name).startswith(f"{PX4_ASSET}-")
 
 
 class Px4Error(RuntimeError):
@@ -137,6 +151,12 @@ def prepare_runtime(recipe_root: Path, drone_root: Path) -> dict:
     return {"px4_binary": px4_binary, "data_dir": data_dir, "work_dir": work_dir, "service": service}
 
 
+def _drone_count(marker: dict) -> int:
+    """How many Drones the configured Fleet holds (one PX4 SITL each)."""
+    fleet = json.loads(Path(marker["fleet_config"]).read_text(encoding="utf-8"))
+    return len(fleet.get("drones") or [None])
+
+
 def patch_launcher(path: Path, *, recipe_root: Path, drone_root: Path, marker: dict) -> Path:
     """Put PX4 SITL in front and swap the drone service for the aircraft service."""
     runtime = prepare_runtime(recipe_root, drone_root)
@@ -153,33 +173,39 @@ def patch_launcher(path: Path, *, recipe_root: Path, drone_root: Path, marker: d
     # takes the same config and PDU definition after the PX4 simulator address.
     service["command"] = str(runtime["service"])
     service["args"] = ["127.0.0.1", "4560", *args]
-    service["depends_on"] = [PX4_ASSET]
     # The service is a copy outside Drone Core: point it at Drone Core's native libraries (MuJoCo).
     key, folders = native_library_path(drone_root)
     prepend = service.setdefault("env", {}).setdefault("prepend", {})
     prepend[key] = folders + [path for path in prepend.get(key, []) if path not in folders]
+    service["depends_on"] = [px4_asset_name(instance) for instance in range(_drone_count(marker))]
     origin = marker["city_world"]["origin"]
     location = json.loads(Path(marker["type_config"]).read_text(encoding="utf-8"))["simulation"]["location"]
-    px4 = {
-        "name": PX4_ASSET,
-        "activation_timing": "before_start",
-        "command": str(runtime["px4_binary"]),
-        "args": ["-d", "-w", str(runtime["work_dir"]), str(runtime["data_dir"])],
-        "cwd": str(runtime["work_dir"]),
-        "stdout": str(recipe_root / "logs" / f"{PX4_ASSET}.out"),
-        "stderr": str(recipe_root / "logs" / f"{PX4_ASSET}.err"),
-        "env": {
-            "set": {
-                "PX4_SIM_MODEL": SIM_MODEL,
-                # PX4's home is the City origin, where the magnetic field was looked up.
-                "PX4_HOME_LAT": str(origin["latitude"]),
-                "PX4_HOME_LON": str(origin["longitude"]),
-                "PX4_HOME_ALT": str(location.get("altitude", 0.0)),
-            }
-        },
-        "delay_sec": PX4_START_DELAY_SEC,
-    }
+    px4_assets = []
+    for instance in range(_drone_count(marker)):
+        name = px4_asset_name(instance)
+        # Each instance keeps its own parameters and logs (the rootfs).
+        work_dir = runtime["work_dir"] if instance == 0 else runtime["work_dir"].with_name(f"px4-rootfs-{instance}")
+        work_dir.mkdir(parents=True, exist_ok=True)
+        px4_assets.append({
+            "name": name,
+            "activation_timing": "before_start",
+            "command": str(runtime["px4_binary"]),
+            "args": [*(["-i", str(instance)] if instance else []), "-d", "-w", str(work_dir), str(runtime["data_dir"])],
+            "cwd": str(work_dir),
+            "stdout": str(recipe_root / "logs" / f"{name}.out"),
+            "stderr": str(recipe_root / "logs" / f"{name}.err"),
+            "env": {
+                "set": {
+                    "PX4_SIM_MODEL": SIM_MODEL,
+                    # PX4's home is the City origin, where the magnetic field was looked up.
+                    "PX4_HOME_LAT": str(origin["latitude"]),
+                    "PX4_HOME_LON": str(origin["longitude"]),
+                    "PX4_HOME_ALT": str(location.get("altitude", 0.0)),
+                }
+            },
+            "delay_sec": PX4_START_DELAY_SEC,
+        })
     index = names.index(SERVICE_ASSET)
-    launcher["assets"] = [*assets[:index], px4, *assets[index:]]
+    launcher["assets"] = [*assets[:index], *px4_assets, *assets[index:]]
     path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
     return path

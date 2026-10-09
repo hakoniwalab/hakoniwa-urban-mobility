@@ -183,7 +183,7 @@ class DroneOneToolTest(unittest.TestCase):
 
     def test_configure_passes_the_urban_workspace_to_the_fleet_builder(self):
         paths = types.SimpleNamespace(recipe_root=Path("urban-drone-one"))
-        recipe = types.SimpleNamespace(fleet_experiment=Path("fleet.yaml"))
+        recipe = types.SimpleNamespace(fleet_experiment=Path("fleet.yaml"), drone_count=1)
         with (
             mock.patch.object(drone_one, "_paths", return_value=paths),
             mock.patch.object(drone_one.base, "configure", return_value=1) as configure,
@@ -195,6 +195,7 @@ class DroneOneToolTest(unittest.TestCase):
         configure.assert_called_once_with(
             Path("fleet.yaml"),
             Path("drone-core"),
+            drone_count_override=1,
             workspace=paths,
             write_guide=False,
         )

@@ -212,7 +212,7 @@ program the Launcher starts and its argument template:
 controls:
   api:
     program: ${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py
-    scope: composition           # vehicle | composition (section 4.3)
+    scope: composition           # vehicle | composition | shared (section 4.3)
     args: [ "${param.scenario}", "--pdu-def", "${runtime.pdu_def}" ]
     params:
       scenario: { type: path, required: true, kinds: [car-route-scenario] }
@@ -268,6 +268,12 @@ Python whose `._pth` file excludes both.
   selected this control with the same arguments; vehicles with different
   arguments get another instance (`control-<asset>-<control>-2`, ...). The Car
   route scenario executor is this type: one executor per route.
+- `shared`: one program instance drives every vehicle of the simulator that
+  selected this control, whatever its Asset (`control-<simulator>-<control>`).
+  `args` come once; each vehicle appends its `vehicle_args` (all placeholders,
+  `${vehicle.*}` included) in Composition order. The Drone `schedule` is this
+  type: one process flies every Drone (`--flight <drone>=<schedule>` each).
+  The vehicles' `args` must expand alike.
 
 A Car's route selection (`params.scenario`) is authoritative. A route's
 `vehicles` list only provides offsets: when a route is selected by a different

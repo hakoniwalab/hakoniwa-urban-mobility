@@ -39,11 +39,17 @@ left out, the Drone faces where it flies. Drone Core's RPC frame is ROS
     python apps/drone/drone_schedule.py --check --schedule <file> --drone Drone-1 \\
         --spawn 82,-5,247.28
 prints the flight without flying.
+
+One process flies every Drone of a Composition (the schedule control's scope
+is shared): --flight Drone-1=<file> --flight Drone-2=<file> ... Each Drone
+takes its spawn from the City marker's runtime_spawns and writes its own
+summary (<summary stem>-<drone>.json) and track.
 """
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -354,10 +360,19 @@ def leg_timeout(step: dict, previous: tuple[float, float, float] | None) -> floa
 
 # --- Spawn -------------------------------------------------------------------------
 
-def spawn_from_marker(marker_path: Path) -> tuple[tuple[float, float, float], float]:
-    """The Drone's spawn (ENU, yaw) as tools/drone_one.py wrote it into the City marker."""
+def spawn_from_marker(marker_path: Path, drone: str | None = None) -> tuple[tuple[float, float, float], float]:
+    """A Drone's spawn (ENU, yaw) as tools/drone_one.py wrote it into the City marker:
+    runtime_spawns[drone], or runtime_spawn (the first Drone's) when the marker has no
+    runtime_spawns (one Drone, configured before them) or no drone is named."""
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    spawn = marker.get("flight_plan", {}).get("runtime_spawn")
+    plan = marker.get("flight_plan", {})
+    spawns = plan.get("runtime_spawns")
+    if drone is not None and isinstance(spawns, dict):
+        if drone not in spawns:
+            raise ScheduleError(f"{marker_path} has no runtime spawn for {drone} (Drones: {sorted(spawns)})")
+        spawn = spawns[drone]
+    else:
+        spawn = plan.get("runtime_spawn")
     if not isinstance(spawn, dict) or spawn.get("frame") != "ENU":
         raise ScheduleError(f"{marker_path} has no ENU runtime_spawn (configure the Composition first)")
     return (float(spawn["east_m"]), float(spawn["north_m"]), float(spawn["up_m"])), float(spawn["yaw_deg"])
@@ -372,11 +387,26 @@ def spawn_from_marker(marker_path: Path) -> tuple[tuple[float, float, float], fl
 TRACK_PERIOD_SEC = 0.1
 
 
-class Runner:
-    """Steps through the flight on Hakoniwa time."""
+@dataclass(frozen=True)
+class Flight:
+    """One Drone's flight: its name, schedule, spawn and summary file."""
 
-    def __init__(self, args: argparse.Namespace, schedule: dict, spawn_enu, spawn_yaw: float, client, clock) -> None:
+    drone: str
+    schedule_path: Path
+    schedule: dict
+    spawn_enu: tuple[float, float, float]
+    spawn_yaw: float
+    summary_json: Path | None
+
+
+class Runner:
+    """Steps through one Drone's flight on Hakoniwa time."""
+
+    def __init__(self, args: argparse.Namespace, flight: Flight, client, clock) -> None:
+        schedule, spawn_enu, spawn_yaw = flight.schedule, flight.spawn_enu, flight.spawn_yaw
         self.args = args
+        self.drone = flight.drone
+        self.summary_json = flight.summary_json
         self.flight = steps(schedule, spawn_enu, spawn_yaw)
         self.events = flight_events.EventState(event_zones(schedule, spawn_enu, spawn_yaw))
         self.position_warned: str | bool = False
@@ -389,8 +419,8 @@ class Runner:
         # The flown track next to the summary (<summary>-track.csv): simulation s, east, north, up.
         self.track = None
         self.track_last: float | None = None
-        if args.summary_json:
-            path = args.summary_json.with_name(args.summary_json.stem + "-track.csv")
+        if self.summary_json:
+            path = self.summary_json.with_name(self.summary_json.stem + "-track.csv")
             path.parent.mkdir(parents=True, exist_ok=True)
             self.track = path.open("w", encoding="utf-8")
             self.track.write("simulation_sec,east_m,north_m,up_m,speed_m_s,collisions\n")
@@ -403,16 +433,16 @@ class Runner:
         self.land_until = 0.0
         self.previous = None
         self.done = False
-        self.summary: dict[str, Any] = {"status": "running", "drone": args.drone, "spawn_enu_m": list(spawn_enu),
+        self.summary: dict[str, Any] = {"status": "running", "drone": self.drone, "spawn_enu_m": list(spawn_enu),
                                         "steps": []}
 
     def write_summary(self, status: str, error: str | None = None) -> None:
         self.summary["status"] = status
         if error:
             self.summary["error"] = error
-        if self.args.summary_json:
-            self.args.summary_json.parent.mkdir(parents=True, exist_ok=True)
-            self.args.summary_json.write_text(json.dumps(self.summary, indent=2) + "\n", encoding="utf-8")
+        if self.summary_json:
+            self.summary_json.parent.mkdir(parents=True, exist_ok=True)
+            self.summary_json.write_text(json.dumps(self.summary, indent=2) + "\n", encoding="utf-8")
 
     def _submit(self, step: dict):
         op = step["op"]
@@ -451,7 +481,7 @@ class Runner:
             self.previous = (self.spawn_enu[0], self.spawn_enu[1], step["up_m"])
             self.airborne = True
         self.summary["steps"].append(record)
-        print(f"SCHEDULE: done {record}", flush=True)
+        print(f"SCHEDULE[{self.drone}]: done {record}", flush=True)
 
     def watch_events(self) -> None:
         """Record where the Drone flies (track_csv), stop the wall-side rotor when it
@@ -464,7 +494,7 @@ class Runner:
         except Exception as exc:  # not up yet: next time
             message = f"{type(exc).__name__}: {exc}"
             if message != self.position_warned:  # print each new reason once
-                print(f"SCHEDULE: no position for the wind / fault zones yet ({message})", flush=True)
+                print(f"SCHEDULE[{self.drone}]: no position for the wind / fault zones yet ({message})", flush=True)
                 self.position_warned = message
             return
         east, north, up = state["enu"]
@@ -485,12 +515,12 @@ class Runner:
 
     def send_events(self, change, at) -> None:
         wind, faults = change
-        send_disturbance(self.client, self.args.drone, wind, faults)
+        send_disturbance(self.client, self.drone, wind, faults)
         record = {"simulation_sec": round(self.clock(), 3), "at_enu_m": [round(value, 2) for value in at],
                   "wind": None if wind is None else {"towards_deg": wind.towards_deg, "speed_m_s": wind.speed_m_s},
                   "rotor_scales": flight_events.rotor_scales(faults)}
         self.summary.setdefault("events", []).append(record)
-        print(f"SCHEDULE: disturbance {record}", flush=True)
+        print(f"SCHEDULE[{self.drone}]: disturbance {record}", flush=True)
 
     def hit(self, state: dict) -> None:
         """Another contact after the fault (the wall again, the ground): recorded only; printed
@@ -501,7 +531,7 @@ class Runner:
         self.summary.setdefault("hits", []).append(record)
         if self.clock() - self.last_hit_print >= 0.5:
             self.last_hit_print = self.clock()
-            print(f"SCHEDULE: hit {record}", flush=True)
+            print(f"SCHEDULE[{self.drone}]: hit {record}", flush=True)
 
     def contact(self, state: dict) -> None:
         """The Drone touched something in flight for the first time: stop the rotor on the
@@ -515,7 +545,7 @@ class Runner:
                   "collisions": state["collisions"], "rotor": rotor, "towards_deg": round(towards, 1),
                   "speed_m_s": round(state["speed"], 2)}
         self.summary.setdefault("contacts", []).append(record)
-        print(f"SCHEDULE: contact {record}", flush=True)
+        print(f"SCHEDULE[{self.drone}]: contact {record}", flush=True)
         change = self.events.update(east, north, up, force=True)
         if change is not None:
             self.send_events(change, (east, north, up))
@@ -546,7 +576,6 @@ class Runner:
                 return
             self.wait_until = None
         if self.pending is not None:
-            self.client.poll_once()
             if not self.pending.done():
                 if self.current["op"] == "land" and self.clock() >= self.land_until:
                     step, self.pending = self.current, None  # left open: see _submit
@@ -562,15 +591,15 @@ class Runner:
         step = next(self.flight, None)
         if step is None:
             self.done = True
-            print("SCHEDULE: flight done", flush=True)
+            print(f"SCHEDULE[{self.drone}]: flight done", flush=True)
             self.write_summary("done")
             return
         self.current = step
         if step["op"] == "wait":
-            print(f"SCHEDULE: wait {step['sec']:.1f} s ({step['label']}) at {self.clock():.2f} s", flush=True)
+            print(f"SCHEDULE[{self.drone}]: wait {step['sec']:.1f} s ({step['label']}) at {self.clock():.2f} s", flush=True)
             self.wait_until = self.clock() + step["sec"]
             return
-        print(f"SCHEDULE: start {step} at {self.clock():.2f} s", flush=True)
+        print(f"SCHEDULE[{self.drone}]: start {step} at {self.clock():.2f} s", flush=True)
         self.pending = self._submit(step)
 
 
@@ -593,8 +622,9 @@ def foundation_offsets() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> int:
-    """Build the Drone's link (drone_link.py) and fly: Drone Core RPC, or MAVLink with --mavlink."""
+def fly(args: argparse.Namespace, flights: list[Flight]) -> int:
+    """Build every Drone's link (drone_link.py) and fly them all from this one process:
+    Drone Core RPC, or MAVLink with --mavlink."""
     import hakopy
     from drone_link import MavlinkDroneLink, PduAccess, RpcDroneLink
 
@@ -603,8 +633,13 @@ def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> in
         # registered in shared memory after the simulation started.
         if hakopy.init_for_external() is False:
             raise ScheduleError("hakopy.init_for_external() failed")
-        pdu = PduAccess(args.pdu_def, args.drone, hakopy) if args.pdu_def else None
-        return run_flight(args, schedule, spawn, spawn_yaw, MavlinkDroneLink(args.mavlink, spawn, pdu), hakopy)
+        links = []
+        for flight in flights:
+            pdu = PduAccess(args.pdu_def, flight.drone, hakopy) if args.pdu_def else None
+            connection = mavlink_connection(args.mavlink, flight.drone)
+            print(f"SCHEDULE[{flight.drone}]: MAVLink {connection}", flush=True)
+            links.append((flight, MavlinkDroneLink(connection, flight.spawn_enu, pdu)))
+        return run_flights(args, links, hakopy)
 
     sys.path.insert(0, str(args.drone_root.resolve() / "drone_api" / "external_rpc"))
     from hakosim_async_shared_rpc import AsyncSharedHakoniwaRpcDroneClient
@@ -613,23 +648,38 @@ def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> in
     offsets = args.offset_path or foundation_offsets()
     if offsets is not None:
         options["offset_path"] = offsets
-    client = AsyncSharedHakoniwaRpcDroneClient(
-        # No client-side request timeout (Drone Core's default): each call carries
-        # its own (the goto legs, the land), and a client timeout cancels a goto
-        # midway, which brings the Drone down where it is.
-        drone_name=args.drone, service_config_path=args.service_config.resolve(),
-        poll_interval_sec=0.0, **options)
+    links = []
+    for flight in flights:
+        # The clients share one RPC runtime (same asset, PDU definition and
+        # service config): one Hakoniwa client for every Drone.
+        client = AsyncSharedHakoniwaRpcDroneClient(
+            # No client-side request timeout (Drone Core's default): each call carries
+            # its own (the goto legs, the land), and a client timeout cancels a goto
+            # midway, which brings the Drone down where it is.
+            drone_name=flight.drone, service_config_path=args.service_config.resolve(),
+            poll_interval_sec=0.0, **options)
+        while True:  # the Drone service registers its RPC services once it runs
+            try:
+                client.prepare_services(["DroneSetReady", "DroneTakeOff", "DroneGoTo", "DroneLand"])
+                break
+            except Exception as exc:
+                print(f"SCHEDULE[{flight.drone}]: waiting for the Drone service ({exc})", flush=True)
+                time.sleep(1.0)
+        pdu_def = args.pdu_def or rpc_pdu_def(client)
+        links.append((flight, RpcDroneLink(client, PduAccess(pdu_def, flight.drone, hakopy))))
+    return run_flights(args, links, hakopy)
 
-    while True:  # the Drone service registers its RPC services once it runs
-        try:
-            client.prepare_services(["DroneSetReady", "DroneTakeOff", "DroneGoTo", "DroneLand"])
-            break
-        except Exception as exc:
-            print(f"SCHEDULE: waiting for the Drone service ({exc})", flush=True)
-            time.sleep(1.0)
-    pdu_def = args.pdu_def or rpc_pdu_def(client)
-    return run_flight(args, schedule, spawn, spawn_yaw, RpcDroneLink(client, PduAccess(pdu_def, args.drone, hakopy)),
-                      hakopy)
+
+def mavlink_connection(base: str, drone: str) -> str:
+    """The MAVLink connection of a Drone: PX4 SITL instance i (Drone-<i+1>) serves the
+    API on the base port + i (tools/drone_px4.py), e.g. udpin:127.0.0.1:14541 for Drone-2."""
+    prefix, _, port = base.rpartition(":")
+    number = drone.rpartition("-")[2]
+    if not prefix or not port.isdigit():
+        raise ScheduleError(f"--mavlink must end in a port: {base!r}")
+    if not number.isdigit() or int(number) < 1:
+        raise ScheduleError(f"a PX4 Drone is named Drone-<n> (its PX4 instance n-1): {drone!r}")
+    return f"{prefix}:{int(port) + int(number) - 1}"
 
 
 def rpc_pdu_def(client) -> Path:
@@ -638,34 +688,70 @@ def rpc_pdu_def(client) -> Path:
     return Path(service["pdu_config_path"])
 
 
-def run_flight(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float, client, hakopy) -> int:
+def run_flights(args: argparse.Namespace, links: list, hakopy) -> int:
+    """Step every Drone's flight in turn until all are done; a failed flight ends them all
+    (the Launcher stops the simulation when this control exits)."""
     def clock() -> float:
         return max(0, int(hakopy.simulation_time())) / 1_000_000.0
 
-    runner = Runner(args, schedule, spawn, spawn_yaw, client, clock)
-    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})"
-          + (f" over MAVLink {args.mavlink}" if args.mavlink else ""), flush=True)
+    runners = []
+    for flight, link in links:
+        runners.append(Runner(args, flight, link, clock))
+        print(f"SCHEDULE[{flight.drone}]: from {flight.schedule_path} (spawn ENU {flight.spawn_enu})"
+              , flush=True)
     try:
-        while not runner.done:
-            runner.step_once()
+        while not all(runner.done for runner in runners):
+            for runner in runners:
+                runner.client.poll_once()
+                runner.step_once()
             time.sleep(args.poll_sec)
     except Exception as exc:
         traceback.print_exc()
-        runner.write_summary("failed", str(exc))
+        for runner in runners:
+            if not runner.done:
+                runner.write_summary("failed", str(exc))
         return 1
     # Done: stay up (the Launcher stops everything when a control exits).
     while True:
         time.sleep(1.0)
 
 
+def summary_path(summary_json: Path | None, drone: str, several: bool) -> Path | None:
+    """The Drone's summary file: summary_json itself for one Drone, <stem>-<drone>.json for several."""
+    if summary_json is None or not several:
+        return summary_json
+    return summary_json.with_name(f"{summary_json.stem}-{drone}{summary_json.suffix}")
+
+
+def flight_requests(args: argparse.Namespace) -> list[tuple[str, Path]]:
+    """(drone, schedule file) of every --flight DRONE=SCHEDULE, or of --drone and --schedule."""
+    requests = []
+    for value in args.flight or []:
+        drone, separator, schedule = value.partition("=")
+        if not separator or not drone or not schedule:
+            raise ScheduleError(f"--flight takes DRONE=SCHEDULE: {value!r}")
+        requests.append((drone, Path(schedule)))
+    if args.schedule is not None:
+        requests.append((args.drone, args.schedule))
+    if not requests:
+        raise ScheduleError("give --flight DRONE=SCHEDULE (or --schedule)")
+    names = [drone for drone, _ in requests]
+    if len(set(names)) != len(names):
+        raise ScheduleError(f"a Drone has two flights: {names}")
+    return requests
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--schedule", type=Path, required=True, help="YAML with a drones: section")
-    parser.add_argument("--drone", default="Drone-1", help="the Drone's name (its drones: entry)")
+    parser.add_argument("--flight", action="append", metavar="DRONE=SCHEDULE",
+                        help="a Drone and its schedule (YAML with a drones: section); repeat for every Drone")
+    parser.add_argument("--schedule", type=Path, help="one Drone's schedule (with --drone)")
+    parser.add_argument("--drone", default="Drone-1", help="with --schedule: the Drone's name (its drones: entry)")
     parser.add_argument("--drone-root", type=Path, help="hakoniwa-drone-core (for its external_rpc client)")
     parser.add_argument("--service-config", type=Path, help="Drone Core RPC service config")
     parser.add_argument("--city-marker", type=Path, help="the City marker with the Drone's runtime spawn")
-    parser.add_argument("--summary-json", type=Path)
+    parser.add_argument("--summary-json", type=Path,
+                        help="the flight summary (for several Drones: <stem>-<drone>.json each)")
     parser.add_argument("--rotor-config", type=Path,
                         help="Drone config with the rotor positions (contact_fault; default: the EAMS Hexa's)")
     parser.add_argument("--offset-path", type=Path, help="PDU offset files (default: the Workspace foundation's)")
@@ -674,8 +760,8 @@ def parser() -> argparse.ArgumentParser:
                         help="simulation seconds after the land command after which the Drone is taken as down")
     parser.add_argument("--pdu-def", type=Path,
                         help="the simulator's PDU definition (the Drone's PDUs: state, contacts, wind and faults)")
-    parser.add_argument("--mavlink", help="fly a PX4 SITL Drone over MAVLink at this connection "
-                        "(e.g. udpin:127.0.0.1:14540) instead of Drone Core RPC")
+    parser.add_argument("--mavlink", help="fly PX4 SITL Drones over MAVLink instead of Drone Core RPC: "
+                        "Drone-1's connection (e.g. udpin:127.0.0.1:14540); Drone-n's port is n-1 higher")
     parser.add_argument("--check", action="store_true", help="print the flight and exit (no simulation)")
     parser.add_argument("--spawn", help="with --check: east,north,up of the spawn (default: from --city-marker)")
     parser.add_argument("--check-steps", type=int, default=40, help="with --check: how many steps to print")
@@ -685,25 +771,35 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        schedule = load_schedule(args.schedule, args.drone)
-        if args.spawn:
-            east, north, up = (float(value) for value in args.spawn.split(","))
-            spawn, spawn_yaw = (east, north, up), 0.0
-        elif args.city_marker:
-            spawn, spawn_yaw = spawn_from_marker(args.city_marker)
-        else:
-            raise ScheduleError("give --city-marker (or --spawn with --check)")
+        requests = flight_requests(args)
+        flights = []
+        for drone, schedule_path in requests:
+            schedule = load_schedule(schedule_path, drone)
+            if args.spawn:
+                east, north, up = (float(value) for value in args.spawn.split(","))
+                spawn, spawn_yaw = (east, north, up), 0.0
+            elif args.city_marker:
+                spawn, spawn_yaw = spawn_from_marker(args.city_marker, drone)
+            else:
+                raise ScheduleError("give --city-marker (or --spawn with --check)")
+            flights.append(Flight(drone, schedule_path, schedule, spawn, spawn_yaw,
+                                  summary_path(args.summary_json, drone, len(requests) > 1)))
     except ScheduleError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if args.check:
-        for index, step in zip(range(args.check_steps), steps(schedule, spawn, spawn_yaw)):
-            print(json.dumps(step, ensure_ascii=False))
+        for flight in flights:
+            for index, step in zip(range(args.check_steps), steps(flight.schedule, flight.spawn_enu, flight.spawn_yaw)):
+                print(json.dumps({"drone": flight.drone, **step}, ensure_ascii=False))
         return 0
     if not args.mavlink and (args.drone_root is None or args.service_config is None):
         print("ERROR: --drone-root and --service-config are needed to fly", file=sys.stderr)
         return 2
-    return fly(args, schedule, spawn, spawn_yaw)
+    try:
+        return fly(args, flights)
+    except ScheduleError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

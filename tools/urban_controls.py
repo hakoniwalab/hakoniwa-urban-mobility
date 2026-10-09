@@ -12,6 +12,10 @@ Implements asset-contract section 4: each vehicle's selected control (`rc` or
 
 A Composition may replace the program and args (section 5.2); replacements
 keep access to the same placeholders.
+
+A control of scope `shared` is one process for every vehicle of its
+simulator that selects it (the Drones' schedule): its args come once, and
+each vehicle appends its `vehicle_args` in Composition order.
 """
 
 from __future__ import annotations
@@ -147,6 +151,8 @@ def control_process(
     scope = control.get("scope", "vehicle")
     params = _param_values(composition, vehicle, control.get("params", {}))
     expand = _expander(vehicle, index, params, runtime, allow_vehicle=scope == "vehicle")
+    if scope == "shared" and vehicle.program is not None:
+        raise ControlError(f"vehicle {vehicle.name}: the shared {vehicle.control} control takes no program of its own")
 
     def expand_arg(text: str, base: Path) -> str:
         # Repository-relative arguments are paths; normalize them like the tools do.
@@ -165,12 +171,12 @@ def control_process(
     runner = control.get("runner", "python")
     if runner not in {"python", "executable"}:
         raise ControlError(f"Asset {vehicle.asset.id} control {vehicle.control} runner must be python or executable")
+    names = {
+        "vehicle": f"{CONTROL_PREFIX}{vehicle.name}-{vehicle.control}",
+        "shared": f"{CONTROL_PREFIX}{vehicle.asset.simulator}-{vehicle.control}",
+    }
     asset = {
-        "name": (
-            f"{CONTROL_PREFIX}{vehicle.name}-{vehicle.control}"
-            if scope == "vehicle"
-            else f"{CONTROL_PREFIX}{vehicle.asset.id}-{vehicle.control}"
-        ).lower(),
+        "name": names.get(scope, f"{CONTROL_PREFIX}{vehicle.asset.id}-{vehicle.control}").lower(),
         "activation_timing": "after_start",
         "command": runtime.python if runner == "python" else program,
         "args": (
@@ -185,6 +191,14 @@ def control_process(
     return asset
 
 
+def vehicle_args(composition: Composition, vehicle: Vehicle, index: int, runtime: Runtime) -> list[str]:
+    """A vehicle's part of its shared control's args (the control's vehicle_args)."""
+    control = vehicle.asset.controls()[vehicle.control]
+    params = _param_values(composition, vehicle, control.get("params", {}))
+    expand = _expander(vehicle, index, params, runtime, allow_vehicle=True)
+    return [expand(arg) for arg in control.get("vehicle_args", [])]
+
+
 def control_processes(
     composition: Composition,
     runtimes: dict[str, Runtime],
@@ -192,6 +206,9 @@ def control_processes(
     """Return one process per vehicle-scoped control and per distinct composition-scoped one."""
     processes: list[dict] = []
     seen_composition: dict[str, list[dict]] = {}
+    # One process per shared control: its name -> the process, which every
+    # further vehicle extends with its vehicle_args.
+    shared: dict[str, dict] = {}
     # Composition-scoped programs already started, across Assets: people of
     # different looks riding one scenario share one process.
     started: set[tuple] = set()
@@ -205,7 +222,23 @@ def control_processes(
         index = indexes.get(simulator, 0)
         indexes[simulator] = index + 1
         process = control_process(composition, vehicle, index, runtimes[simulator])
-        if vehicle.asset.controls()[vehicle.control].get("scope", "vehicle") == "composition":
+        scope = vehicle.asset.controls()[vehicle.control].get("scope", "vehicle")
+        if scope == "shared":
+            own = vehicle_args(composition, vehicle, index, runtimes[simulator])
+            first = shared.get(process["name"])
+            if first is None:
+                process["args"] = [*process["args"], *own]
+                shared[process["name"]] = process
+                processes.append(process)
+            elif (first["command"], first["args"][:len(process["args"])]) != (process["command"], process["args"]):
+                raise ControlError(
+                    f"vehicle {vehicle.name}: the shared {vehicle.control} control runs differently "
+                    f"from the other {simulator} vehicles'"
+                )
+            else:
+                first["args"].extend(own)
+            continue
+        if scope == "composition":
             signature = (process["command"], tuple(process["args"]))
             if signature in started:
                 continue

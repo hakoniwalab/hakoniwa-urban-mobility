@@ -34,15 +34,17 @@ controls:
     # The same flight as eams-hexa's schedule, flown by PX4 over MAVLink
     # (apps/drone/drone_link.py MavlinkDroneLink): Studio's Flight tab makes it.
     # The PDU definition carries the contact count and the wind / rotor faults.
+    # One process flies every Drone (scope shared): each adds its --flight.
     program: ${repo:hakoniwa-urban-mobility}/apps/drone/drone_schedule.py
-    scope: vehicle
+    scope: shared
     cwd: ${repo:hakoniwa-urban-mobility}
-    args: ["--schedule", "${param.schedule}", "--drone", "${vehicle.name}",
-           "--drone-root", "${runtime.drone_root}",
+    vehicle_args: ["--flight", "${vehicle.name}=${param.schedule}"]
+    args: ["--drone-root", "${runtime.drone_root}",
            "--service-config", "${runtime.service_config}",
            "--city-marker", "${runtime.city_marker}",
            "--summary-json", "${runtime.summary_json}",
            "--pdu-def", "${runtime.pdu_def}",
+           # Drone-1's PX4 (instance 0); Drone-n's is on port 14540 + n - 1.
            "--mavlink", "udpin:127.0.0.1:14540",
            # PX4 descends the last metres slowly and disarms after touchdown (about 20 s from 15 m).
            "--land-settle-sec", "60"]
