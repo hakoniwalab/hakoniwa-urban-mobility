@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import drone_car_rc  # noqa: E402
 import drone_one  # noqa: E402
+import drone_px4  # noqa: E402
 import multi_car  # noqa: E402
 import urban_fault_injection  # noqa: E402
 
@@ -267,7 +268,9 @@ def _add_drone_library_path(drone_service: dict) -> None:
     mujoco.dll).
     """
     command = drone_service.get("command")
-    if not command:
+    if not command or Path(command).parent.parent.name == "px4":
+        # No command, or the PX4 SITL aircraft service (a copy under runtime/px4/bin,
+        # whose library path tools/drone_px4.py sets).
         return
     drone_root = Path(command).resolve().parents[1]
     if platform.system() == "Windows":
@@ -305,16 +308,24 @@ def _merge_launchers(
     ]
     _add_drone_library_path(drone_service)
     unified_pdu = resolved["work"] / "config/car/urban-car-pdudef.json"
-    if len(drone_service["args"]) < 2:
+    # A PX4 SITL Drone (tools/drone_px4.py): PX4 starts first, and the aircraft
+    # service takes the PX4 simulator address before the fleet config and PDU definition.
+    names = {item.get("name") for item in drone_launcher.get("assets", [])}
+    px4_assets = [asset(drone_launcher, drone_px4.PX4_ASSET)] if drone_px4.PX4_ASSET in names else []
+    pdu_index = 3 if px4_assets else 1
+    if len(drone_service["args"]) <= pdu_index:
         raise UrbanComposeError("Drone service has no PDU definition argument")
-    drone_service["args"][1] = str(unified_pdu)
+    drone_service["args"][pdu_index] = str(unified_pdu)
 
     car_plant = asset(car_launcher, "urban-car-fleet-plant")
     if "--external-conductor" not in car_plant["args"]:
         car_plant["args"].append("--external-conductor")
+    if px4_assets:
+        # The Drone service owns the Conductor; behind PX4 it waits for PX4, so
+        # the Car plant must wait for the service, not start right after PX4.
+        car_plant["depends_on"] = ["drone-service-1"]
 
     # The Drone control is the PS4 RC client or, for a Fleet RPC Drone, the mission.
-    names = {item.get("name") for item in drone_launcher.get("assets", [])}
     if "urban-drone-ps4-controller" in names:
         controller = asset(drone_launcher, "urban-drone-ps4-controller")
         controller["args"][1] = str(unified_pdu)
@@ -351,6 +362,7 @@ def _merge_launchers(
         "version": "0.1",
         "defaults": defaults,
         "assets": [
+            *px4_assets,
             drone_service,
             car_plant,
             visual_publisher,

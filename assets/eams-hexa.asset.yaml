@@ -57,6 +57,7 @@ controls:
            "--drone-root", "${runtime.drone_root}",
            "--service-config", "${runtime.service_config}",
            "--city-marker", "${runtime.city_marker}",
-           "--summary-json", "${runtime.summary_json}"]
+           "--summary-json", "${runtime.summary_json}",
+           "--pdu-def", "${runtime.pdu_def}"]
     params:
       schedule: {type: path, required: true, kinds: [car-route-scenario, drone-schedule]}

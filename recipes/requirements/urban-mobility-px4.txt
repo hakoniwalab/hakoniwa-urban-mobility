@@ -1,0 +1,7 @@
+# The integrated route with a PX4 SITL Drone (asset eams-hexa-px4).
+# Urban composition and scenario YAML parsing.
+PyYAML>=6.0,<7
+# Spawn heights (tools/world_height.py); the same version as the Drone Core MuJoCo.
+mujoco==3.13.0
+# The Drone schedule control talks to PX4 over MAVLink (apps/drone/mavlink).
+pymavlink>=2.4.40,<3

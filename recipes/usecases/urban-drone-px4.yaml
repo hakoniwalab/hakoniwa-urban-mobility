@@ -216,7 +216,7 @@ recipe_local_requirements:
       kind: file
     - path: apps/drone/drone_schedule.py
       kind: file
-    - path: apps/drone/mavlink_schedule_client.py
+    - path: apps/drone/drone_link.py
       kind: file
     - path: apps/drone/mavlink/mavlink_drone_client.py
       kind: file

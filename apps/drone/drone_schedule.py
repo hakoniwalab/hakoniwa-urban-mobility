@@ -379,7 +379,7 @@ class Runner:
         self.args = args
         self.flight = steps(schedule, spawn_enu, spawn_yaw)
         self.events = flight_events.EventState(event_zones(schedule, spawn_enu, spawn_yaw))
-        self.position_warned = False
+        self.position_warned: str | bool = False
         self.contact_fault = schedule.get("contact_fault")
         self.contact_rotor: int | None = None  # the rotor the first contact stopped
         self.last_hit_print = -math.inf
@@ -462,9 +462,10 @@ class Runner:
         try:
             state = drone_state(self.client)
         except Exception as exc:  # not up yet: next time
-            if not self.position_warned:
-                print(f"SCHEDULE: no position for the wind / fault zones yet ({exc})", flush=True)
-                self.position_warned = True
+            message = f"{type(exc).__name__}: {exc}"
+            if message != self.position_warned:  # print each new reason once
+                print(f"SCHEDULE: no position for the wind / fault zones yet ({message})", flush=True)
+                self.position_warned = message
             return
         east, north, up = state["enu"]
         self.record_track(east, north, up, state["speed"], state["collisions"])
@@ -573,38 +574,15 @@ class Runner:
         self.pending = self._submit(step)
 
 
-def drone_state(client) -> dict:
+def drone_state(link) -> dict:
     """Position (Urban ENU), yaw (ROS, rad), speed, heading of travel (Urban yaw, deg) and the
-    status PDU's contact count (None without one) of the Drone."""
-    from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_conv_Twist import pdu_to_py_Twist
-
-    pose = pdu_to_py_Twist(client.get_raw_pdu("pos"))
-    east, north, up = -float(pose.linear.y), float(pose.linear.x), float(pose.linear.z)
-    speed, heading = 0.0, 0.0
-    try:
-        velocity = pdu_to_py_Twist(client.get_raw_pdu("velocity")).linear
-        speed = math.sqrt(float(velocity.x) ** 2 + float(velocity.y) ** 2 + float(velocity.z) ** 2)
-        heading = math.degrees(math.atan2(float(velocity.x), -float(velocity.y)))
-    except Exception:  # noqa: BLE001 - optional
-        pass
-    collisions = None
-    try:
-        from hakoniwa_pdu.pdu_msgs.hako_msgs.pdu_conv_DroneStatus import pdu_to_py_DroneStatus
-
-        collisions = int(pdu_to_py_DroneStatus(client.get_raw_pdu("status")).collided_counts)
-    except Exception:  # noqa: BLE001 - optional
-        pass
-    return {"enu": (east, north, up), "yaw_rad": float(pose.angular.z), "speed": speed,
-            "heading_deg": heading, "collisions": collisions}
+    contact count (None when unknown) of the Drone (drone_link.DroneLink.state)."""
+    return link.state()
 
 
-def send_disturbance(client, drone: str, wind, faults: dict[int, float]) -> None:
-    """Write the Drone's disturb PDU (the Viewer's fault panel writes the same one).
-    The RPC client's PDU manager is Drone Core's shared runtime; it has no
-    public write call, so its manager writes the PDU."""
-    raw = flight_events.disturbance_pdu(wind, faults)
-    if not client._runtime.manager.flush_pdu_raw_data_nowait(drone, flight_events.DISTURB_PDU, bytearray(raw)):
-        raise ScheduleError(f"cannot write {drone}'s {flight_events.DISTURB_PDU} PDU")
+def send_disturbance(link, drone: str, wind, faults: dict[int, float]) -> None:
+    """Wind and rotor faults into the simulator (the Viewer's fault panel writes the same disturb PDU)."""
+    link.send_disturbance(wind, faults)
 
 
 def foundation_offsets() -> Path | None:
@@ -616,8 +594,19 @@ def foundation_offsets() -> Path | None:
 
 
 def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> int:
-    sys.path.insert(0, str(args.drone_root.resolve() / "drone_api" / "external_rpc"))
+    """Build the Drone's link (drone_link.py) and fly: Drone Core RPC, or MAVLink with --mavlink."""
     import hakopy
+    from drone_link import MavlinkDroneLink, PduAccess, RpcDroneLink
+
+    if args.mavlink:
+        # PX4 SITL: commands and state over MAVLink; no RPC client, so nothing is
+        # registered in shared memory after the simulation started.
+        if hakopy.init_for_external() is False:
+            raise ScheduleError("hakopy.init_for_external() failed")
+        pdu = PduAccess(args.pdu_def, args.drone, hakopy) if args.pdu_def else None
+        return run_flight(args, schedule, spawn, spawn_yaw, MavlinkDroneLink(args.mavlink, spawn, pdu), hakopy)
+
+    sys.path.insert(0, str(args.drone_root.resolve() / "drone_api" / "external_rpc"))
     from hakosim_async_shared_rpc import AsyncSharedHakoniwaRpcDroneClient
 
     options = {}
@@ -631,24 +620,31 @@ def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> in
         drone_name=args.drone, service_config_path=args.service_config.resolve(),
         poll_interval_sec=0.0, **options)
 
-    def clock() -> float:
-        return max(0, int(hakopy.simulation_time())) / 1_000_000.0
-
-    if args.mavlink:
-        # PX4 SITL (tools/drone_px4.py): commands over MAVLink, PDUs as before.
-        from mavlink_schedule_client import MavlinkScheduleClient
-
-        client = MavlinkScheduleClient(args.mavlink, spawn, client)
-    runner = Runner(args, schedule, spawn, spawn_yaw, client, clock)
-    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})"
-          + (f" over MAVLink {args.mavlink}" if args.mavlink else ""), flush=True)
-    while not args.mavlink:  # the Drone service registers its RPC services once it runs
+    while True:  # the Drone service registers its RPC services once it runs
         try:
             client.prepare_services(["DroneSetReady", "DroneTakeOff", "DroneGoTo", "DroneLand"])
             break
         except Exception as exc:
             print(f"SCHEDULE: waiting for the Drone service ({exc})", flush=True)
             time.sleep(1.0)
+    pdu_def = args.pdu_def or rpc_pdu_def(client)
+    return run_flight(args, schedule, spawn, spawn_yaw, RpcDroneLink(client, PduAccess(pdu_def, args.drone, hakopy)),
+                      hakopy)
+
+
+def rpc_pdu_def(client) -> Path:
+    """The PDU definition of the RPC client's runtime service config (without --pdu-def)."""
+    service = json.loads(Path(client.runtime_service_config_path).read_text(encoding="utf-8"))
+    return Path(service["pdu_config_path"])
+
+
+def run_flight(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float, client, hakopy) -> int:
+    def clock() -> float:
+        return max(0, int(hakopy.simulation_time())) / 1_000_000.0
+
+    runner = Runner(args, schedule, spawn, spawn_yaw, client, clock)
+    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})"
+          + (f" over MAVLink {args.mavlink}" if args.mavlink else ""), flush=True)
     try:
         while not runner.done:
             runner.step_once()
@@ -676,6 +672,8 @@ def parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-sec", type=float, default=0.01, help="wall-clock pause between steps")
     parser.add_argument("--land-settle-sec", type=float, default=20.0,
                         help="simulation seconds after the land command after which the Drone is taken as down")
+    parser.add_argument("--pdu-def", type=Path,
+                        help="the simulator's PDU definition (the Drone's PDUs: state, contacts, wind and faults)")
     parser.add_argument("--mavlink", help="fly a PX4 SITL Drone over MAVLink at this connection "
                         "(e.g. udpin:127.0.0.1:14540) instead of Drone Core RPC")
     parser.add_argument("--check", action="store_true", help="print the flight and exit (no simulation)")
@@ -702,7 +700,7 @@ def main(argv: list[str] | None = None) -> int:
         for index, step in zip(range(args.check_steps), steps(schedule, spawn, spawn_yaw)):
             print(json.dumps(step, ensure_ascii=False))
         return 0
-    if args.drone_root is None or args.service_config is None:
+    if not args.mavlink and (args.drone_root is None or args.service_config is None):
         print("ERROR: --drone-root and --service-config are needed to fly", file=sys.stderr)
         return 2
     return fly(args, schedule, spawn, spawn_yaw)

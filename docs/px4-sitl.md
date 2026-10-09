@@ -10,7 +10,7 @@ Drone RPC API.
 | Vehicle and tuned PX4 parameters | `config/drone/hexa-px4` |
 | Build, prepare and start | `tools/px4_sitl.py` (build: `tools/px4_sitl_build.bash`) |
 | MAVLink client and commands | `apps/drone/mavlink` |
-| In Urban Studio (a City World, a Flight) | asset `eams-hexa-px4`, `tools/drone_px4.py`, `apps/drone/mavlink_schedule_client.py` (section 6) |
+| In Urban Studio (a City World, a Flight) | asset `eams-hexa-px4`, `tools/drone_px4.py`, `apps/drone/drone_link.py` (section 6) |
 
 ```text
 PX4 SITL  <-- TCP 4560 (HIL sensors / actuators) -->  Drone Core aircraft service (MuJoCo, 3 ms)
@@ -40,14 +40,14 @@ python ../hakoniwa-business-pack/tools/recipe.py doctor --recipe recipes/usecase
 python ../hakoniwa-business-pack/tools/recipe.py configure --recipe recipes/usecases/urban-drone-px4.yaml
 ```
 
-PX4-Autopilot is expected at `../PX4-Autopilot` (or `$PX4_AUTOPILOT_ROOT`).
-To get it by hand instead:
+Nothing has to be set up by hand. Like the other repositories, PX4-Autopilot
+lives next to this one (`../PX4-Autopilot`); configure clones it there with its
+submodules when it is missing (the first time takes a while: PX4 is large), and
+`tools/drone_px4.py` and `tools/px4_sitl.py` find it there.
 
-```bash
-git clone https://github.com/PX4/PX4-Autopilot.git ../PX4-Autopilot
-git -C ../PX4-Autopilot checkout a1726d316a941af9524f6279eb293a713d8fdcac
-git -C ../PX4-Autopilot submodule update --init --recursive
-```
+To reuse a PX4-Autopilot checkout that is somewhere else (at the same revision),
+point the Recipe's override variable `PX4_AUTOPILOT_ROOT` at it; this is only a
+shortcut for a machine that already has one.
 
 The PX4 build needs `cmake`, `ninja`, a C++ compiler and `python3`
 (macOS: Xcode and `brew install cmake ninja`). PX4's `Tools/setup/macos.sh` is not
@@ -106,9 +106,10 @@ when it fails. See `apps/drone/mavlink/README.md`.
 ## 6. In Urban Studio: a City World and a Flight
 
 The asset `eams-hexa-px4` is the EAMS hexa flown by PX4. In Compose, pick it for
-the Drone of a City World Composition, give it the `schedule` control and a
-Flight made in the Flight tab, then run configure and start as for `eams-hexa`.
-PX4 must be built first (step 2).
+the Drone of a City World Composition (alone, or with Cars), give it the
+`schedule` control and a Flight made in the Flight tab, then run configure and
+start as for `eams-hexa`. Configure gets PX4-Autopilot and builds PX4 the first
+time.
 
 What changes from `eams-hexa` (`tools/drone_one.py` with profile
 `eams-nominal-9kg-px4`, `tools/drone_px4.py`):
@@ -120,17 +121,44 @@ What changes from `eams-hexa` (`tools/drone_one.py` with profile
 | Magnetic field | as in the config | looked up in PX4's World Magnetic Model at the City origin (`tools/px4_magnetic.py`): the PX4 EKF checks the field against it |
 | PX4 home | – | the City origin |
 | Landing contact | skids and a landing box | skids only: on the City mesh the box made the IMU chatter about 4 m/s² at rest, and PX4 refused to arm ("High Accelerometer Bias") |
-| `schedule` control | Drone Core RPC | MAVLink (`drone_schedule.py --mavlink`); positions and the takeoff height are sent relative to the spawn, PX4's local origin. Wind and rotor faults keep using the `disturb` PDU |
+| `schedule` control | `RpcDroneLink`: commands over Drone Core RPC, state from the Drone's PDUs | `MavlinkDroneLink` (`drone_schedule.py --mavlink`): commands and state over MAVLink, sent relative to the spawn (PX4's local origin); no RPC client |
+| Wind and rotor faults (Flight zones) | the `disturb` PDU | the same `disturb` PDU |
 | Controls offered | `rc`, `api`, `schedule` | `schedule` |
 
 The PX4 runtime (startup data with the EAMS airframe, rootfs, aircraft service)
 is under `<recipe workspace>/runtime/px4`; PX4's output goes to
 `<recipe workspace>/logs/px4-sitl.out`.
 
-`tools/urban_simulation.py` picks the managed Recipe `urban-drone-px4.yaml`
-(instead of the drone route's `urban-drone-rc.yaml`) for a Composition whose
-Drone is `eams-hexa-px4`, so configure materializes PX4-Autopilot and installs
-`pymavlink` first. `tools/drone_one.py configure` then builds PX4 SITL into
+`tools/urban_simulation.py` picks the managed Recipe variant that declares
+PX4-Autopilot and `pymavlink` for a Composition whose Drone is `eams-hexa-px4`:
+`recipes/usecases/urban-drone-px4.yaml` for the Drone alone (instead of
+`urban-drone-rc.yaml`), `recipes/experiments/urban-mobility-px4.yaml` with Cars
+(instead of `urban-mobility-rc.yaml`; urban.manifest.yaml `drone-px4`,
+`integrated-px4`). Configure materializes PX4-Autopilot and installs `pymavlink`
+first.
+
+With Cars, `tools/urban_composer.py` keeps PX4 SITL in the merged Launcher, gives
+the aircraft service the unified PDU definition, and starts the Car plant after
+it (the Drone side owns the Conductor; the Car plant joins with
+`--external-conductor`), then `hako-cmd start`.
+
+### One interface for the flight (`apps/drone/drone_link.py`)
+
+The `schedule` control flies either Drone through one interface: commands
+(set_ready, takeoff, goto, land), state (position, yaw, speed, contact count) and
+disturbance (wind, rotor faults). `RpcDroneLink` is Drone Core's; `MavlinkDroneLink`
+is PX4's. Both read and write the Drone's PDUs through hakopy with the channel ids
+of the simulator's PDU definition (`--pdu-def`, the control's `${runtime.pdu_def}`)
+and register nothing in shared memory.
+
+The MAVLink link must not create a Drone Core RPC client: the PX4 aircraft service
+offers no RPC services, so the client would register the service channels itself,
+after the simulation started. The PDU data is sized at the start from what the
+assets registered, and every asset that loads it later (the Car scenario executor)
+then fails with `shared memory data_size mismatch`.
+
+The PX4 aircraft service does not write the `status` PDU, so the contact count is
+unknown (None) with PX4. `tools/drone_one.py configure` then builds PX4 SITL into
 `build/px4-sitl` when it is not built yet (the first build takes a few minutes).
 
 ## Troubleshooting
@@ -149,4 +177,5 @@ Drone is `eams-hexa-px4`, so configure materializes PX4-Autopilot and installs
 | Date | Platform | Result |
 |---|---|---|
 | 2026-10-09 | macOS arm64, PX4 `a1726d3`, Drone Core v4.1.1 aircraft service | build, prepare, start; takeoff 5 m, three gotos (yaw 0°, 90°, 180°), land: all ok |
+| 2026-10-09 | same, Hokkaido City World with two Cars (`schedule` with a wind zone) | the Drone flew its Flight with Cars driving; the wind zone was applied through the `disturb` PDU and PX4 held its route; no shared memory mismatch |
 | 2026-10-09 | same, Shizuoka City World, Composition with `eams-hexa-px4` and a Flight (`tools/urban_simulation.py` configure/start as Studio runs them) | from a roof: takeoff 15 m, three waypoints, back, land on the roof; the flown track within 0.1 m of the waypoints; the Viewer shows the Drone |

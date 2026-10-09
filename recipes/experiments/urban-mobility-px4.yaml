@@ -1,0 +1,492 @@
+# The integrated Urban route (urban-mobility-rc.yaml) when its Drone is the PX4
+# SITL EAMS Hexa (asset eams-hexa-px4, tools/drone_px4.py): the same
+# repositories, Foundation and Python packages plus PX4-Autopilot at the
+# revision verified with the Hakoniwa SITL lockstep and pymavlink.
+# tools/urban_simulation.py selects it (urban.manifest.yaml integrated-px4).
+id: urban-mobility-px4
+title: City-independent Urban Mobility with a PX4 SITL Drone
+recipe_version: 0.1
+goal:
+  user_request: Recipeで選択した都市上で、PX4 SITLのDrone 1台（eams-hexa-px4）とシナリオ走行する複数Golf Cartを1画面で動かしたい
+  description: 'The integrated Urban route (one Drone, Cars, one Conductor, one Viewer) with the Drone flown by
+    the PX4 autopilot in SITL (asset eams-hexa-px4, tools/drone_px4.py): PX4 SITL and the Drone Core aircraft service
+    replace the drone service. Same as urban-mobility-rc.yaml plus PX4-Autopilot at the verified revision and pymavlink.'
+feasibility:
+  status: feasible
+  confidence: high
+  rationale:
+  - The one-Drone and one-Car Shizuoka regression Recipes already run independently from isolated managed workspaces.
+  - Drone Fleet generation now accepts an explicit workspace and Launcher composition hook.
+  - The Urban Car plant owns multiple Ackermann bodies in one MuJoCo world and supports an external Conductor owner.
+  - The target topology needs fewer than 16 Hakoniwa assets and fits the installed standard Foundation profile.
+validation:
+  status: not_started
+  summary: The drone route with eams-hexa-px4 is verified; the integrated route with Cars is being verified.
+  steps: []
+constraints:
+- native-cross-platform
+- public-drone-core-v4.1.1
+- one-launcher
+- exactly-one-conductor-owner
+- one-drone
+- multiple-cars-in-one-car-plant
+- shared-foundation-runtime-is-exclusive
+- generated-artifacts-stay-under-recipe-workspace
+- px4-autopilot-pinned
+target_environment:
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  os_version: current-supported-host
+  architecture: host-native
+  execution_mode: native
+  runtimes:
+  - name: Foundation Python
+    required: true
+    version: '3.12'
+    path: work/foundation/install/python
+  - name: MuJoCo
+    required: true
+    version: 3.13.0
+    path: hakoniwa-drone-core/MUJOCO_VERSION.txt
+  hakoniwa:
+    install_prefix: work/foundation/install
+    components_built:
+    - hakoniwa-core-pro
+    - hakoniwa-pdu-python
+    - hakoniwa-pdu-endpoint
+    - hakoniwa-pdu-bridge-core
+urban_mobility:
+  use_case: drone-car-distributed
+  composition:
+    path: recipes/experiments/urban-mobility-shizuoka.yaml
+execution_environment:
+  workspace:
+    mode: managed
+  required_for: executable-demo
+  status: specified
+  os: host-native
+  architecture: host-native
+  execution_mode: native
+  gui:
+    required: true
+    status: browser-viewer-and-ps4-controller
+  shared_memory:
+    required: true
+    access: local-host
+  python:
+    environment: foundation-venv
+    path: work/foundation/install/python
+    version: '3.12'
+    hakopy_available: required
+    hakoniwa_pdu_available: required
+  hakoniwa:
+    install_prefix: work/foundation/install
+    hako_cmd_access: required
+  notes:
+  - The Recipe exclusively owns the shared Foundation mmap runtime while running.
+  - HTTP 28100 and WebSocket 28865 (urban.manifest.yaml viewer-http, web-bridge) must be available before start.
+  - A human operator connects and operates the PS4 controller after Demo Ready.
+runtime_dependencies:
+  python:
+    interpreter: work/foundation/install/python
+    requirements: recipes/requirements/urban-mobility-px4.txt
+    packages:
+    - name: PyYAML
+      version: '>=6.0,<7'
+      purpose: Parse Urban composition, scenario, and vehicle YAML in Foundation Python.
+    - name: pymavlink
+      version: '>=2.4.40,<3'
+      purpose: The Drone schedule control flies PX4 over MAVLink (apps/drone/mavlink).
+native_runtime_requirements:
+  schema_version: 1
+  components:
+    hakoniwa-drone-core:
+      profile: public-v4.1.1
+      required_roles:
+      - visual_state_publisher
+      optional_roles: []
+foundation_contract:
+  mode: required
+  reason: 'The integrated Launcher, Core time, Python controllers, PDU endpoint, and WebBridge are all consumed
+    from installed and receipt-validated Foundation components.
+
+    '
+foundation_requirements:
+  hakoniwa-core-pro:
+    capabilities:
+      shared_memory: true
+      hako_cmd: true
+      python_binding: true
+      callback_assets_shared: true
+      core_shared: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-python:
+    version:
+      min: 1.6.5
+    capabilities:
+      hako_launcher: true
+      launcher_background_lifecycle: true
+      shm_backend: true
+      external_rpc: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-endpoint:
+    capabilities:
+      hakoniwa_core: true
+      core_callback: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+  hakoniwa-pdu-bridge-core:
+    capabilities:
+      hakoniwa_app: true
+      web_bridge: true
+      web_bridge_fleets_config_format: true
+    build_limits:
+      asset_num:
+        min: 16
+      pdu_channel_max:
+        min: 4096
+      recv_event_max:
+        min: 2048
+      service_client_max:
+        min: 128
+      service_max:
+        min: 512
+      client_name_len_max:
+        min: 64
+      service_name_len_max:
+        min: 128
+recipe_local_requirements_schema_version: 1
+recipe_local_requirements:
+  hakoniwa-urban-mobility:
+    root:
+      default_path: .
+      override_env: HAKONIWA_URBAN_MOBILITY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: local
+    required_artifacts:
+    - path: tools/drone_one.py
+      kind: file
+    - path: tools/multi_car.py
+      kind: file
+    - path: CMakeLists.txt
+      kind: file
+    - path: apps/car/urban-car-hakoniwa-asset.cpp
+      kind: file
+    - path: recipes/experiments/urban-drone-one.yaml
+      kind: file
+    - path: recipes/experiments/urban-mobility-shizuoka.yaml
+      kind: file
+    - path: config/drone/hexa/drone.xml
+      kind: file
+    - path: config/drone/hexa/drone_config_0.json
+      kind: file
+    - path: config/drone/hexa/controller-params.txt
+      kind: file
+    - path: config/drone/hexa/controller-tuning.txt
+      kind: file
+    - path: config/drone/hexa/README.md
+      kind: file
+    - path: tools/drone_px4.py
+      kind: file
+    - path: tools/px4_magnetic.py
+      kind: file
+    - path: tools/px4_sitl_build.bash
+      kind: file
+    - path: config/drone/hexa-px4/drone.xml
+      kind: file
+    - path: config/drone/hexa-px4/drone_config_0.json
+      kind: file
+    - path: config/drone/hexa-px4/px4/900002_hakoniwa_eams
+      kind: file
+    - path: apps/drone/drone_link.py
+      kind: file
+    - path: apps/drone/mavlink/mavlink_drone_client.py
+      kind: file
+  hakoniwa-drone-core:
+    root:
+      default_path: ../hakoniwa-drone-core
+      override_env: HAKONIWA_DRONE_CORE_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/toppers/hakoniwa-drone-core.git
+    required_artifacts:
+    - path: NATIVE_RUNTIME_REQUIREMENTS.yaml
+      kind: file
+    - path: MUJOCO_VERSION.txt
+      kind: file
+    - path: config/pdudef/drone-pdutypes.json
+      kind: file
+    - path: config/drone/fleets/types/api-mujoco.json
+      kind: file
+    - path: config/controller/param-api-mixer-mujoco.txt
+      kind: file
+    - path: drone_api/rc/rc-custom.py
+      kind: file
+    - path: drone_api/rc/rc_config/ps4-control.json
+      kind: file
+    - path: tools/gen_mujoco_multidrone_xml.py
+      kind: file
+    - path: config/drone/fleets/types/mujoco-scene.xml.template
+      kind: file
+    - path: config/drone/fleets/types/mujoco-drone.xml.template
+      kind: file
+    - path: config/pdudef/drone-pdudef-1.json
+      kind: file
+  PX4-Autopilot:
+    root:
+      default_path: ../PX4-Autopilot
+      override_env: PX4_AUTOPILOT_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/PX4/PX4-Autopilot.git
+      revision: a1726d316a941af9524f6279eb293a713d8fdcac
+    required_artifacts:
+    - path: CMakeLists.txt
+      kind: file
+    - path: Tools/setup/requirements.txt
+      kind: file
+    - path: src/lib/world_magnetic_model/geo_magnetic_tables.hpp
+      kind: file
+  hakoniwa-pdu-registry:
+    root:
+      default_path: ../hakoniwa-pdu-registry
+      override_env: HAKONIWA_PDU_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-pdu-registry.git
+    required_artifacts:
+    - path: pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp
+      kind: file
+  hakoniwa-robot-runtime:
+    root:
+      default_path: ../hakoniwa-robot-runtime
+      override_env: HAKONIWA_ROBOT_RUNTIME_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-robot-runtime.git
+    required_artifacts:
+    - path: include
+      kind: directory
+    - path: src
+      kind: directory
+  hakoniwa-mujoco-robots:
+    root:
+      default_path: ../hakoniwa-mujoco-robots
+      override_env: HAKONIWA_MUJOCO_ROBOTS_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mujoco-robots.git
+    required_artifacts:
+    - path: MUJOCO_VERSION.txt
+      kind: file
+    - path: src
+      kind: directory
+  hakoniwa-mbody-registry:
+    root:
+      default_path: ../hakoniwa-mbody-registry
+      override_env: HAKONIWA_MBODY_REGISTRY_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-mbody-registry.git
+    required_artifacts:
+    - path: tools/compose_mujoco_world.py
+      kind: file
+    - path: bodies/generic_ackermann_golf_cart/generated/model.minimal_world.xml
+      kind: file
+    - path: bodies/generic_ackermann_golf_cart/generated/view-model.json
+      kind: file
+  hakoniwa-threejs-drone:
+    root:
+      default_path: ../hakoniwa-threejs-drone
+      override_env: HAKONIWA_THREEJS_DRONE_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-threejs-drone.git
+    required_artifacts:
+    - path: index.html
+      kind: file
+    - path: config
+      kind: directory
+  hakoniwa-map-viewer:
+    root:
+      default_path: ../hakoniwa-map-viewer
+      override_env: HAKONIWA_MAP_VIEWER_ROOT
+      relative_to: recipe_repository
+    source:
+      type: git
+      url: https://github.com/hakoniwalab/hakoniwa-map-viewer.git
+    required_artifacts:
+    - path: src/client/index.html
+      kind: file
+capacity_contract:
+  measured_target:
+    drone_services: 1
+    car_plants: 1
+    command_producers: 2
+    state_publishers: 1
+    bridges: 1
+    launcher_managed_processes_including_http: 7
+  selected_profile:
+    asset_num: 16
+    rationale: 'The target uses seven Launcher-managed processes and leaves capacity for one additional diagnostic
+      or adapter process without changing Foundation.
+
+      '
+    pdu_channel_max: 4096
+    rationale_pdu: 'One Drone Fleet plus ten Ackermann command namespaces and two aggregate UrbanFleet state channels
+      remain well below the selected profile.
+
+      '
+agency_boundary:
+  agent_actions:
+  - id: inspect_and_materialize
+    description: Validate declared local sources and materialize Recipe-local configuration.
+    autonomous: true
+    preconditions:
+    - user_requested_execution
+    - foundation_satisfied
+  - id: operate_simulation
+    description: Start, inspect, smoke-test, and stop the local simulation.
+    autonomous: true
+    preconditions:
+    - user_requested_execution
+    - foundation_satisfied
+  human_decisions:
+  - id: select_city_and_route
+    description: Select a City World Receipt and approve its matching safe road route, vehicle count, and spawn
+      positions.
+    status: required
+    required_before:
+    - integrated_configure
+  human_actions:
+  - id: operate_ps4_controller
+    description: Connect the controller and fly the Drone after Demo Ready.
+    status: required
+  required_permissions:
+  - id: drone_core_license
+    description: Use must comply with the public Hakoniwa Drone Core non-commercial license or a separate commercial
+      license.
+    status: required
+    required_before:
+    - integrated_configure
+    - simulation_execution
+  - id: plateau_data_terms
+    description: The operator is responsible for applicable PLATEAU source-data terms and attribution.
+    status: required
+    required_before:
+    - city_world_generation
+    - public_demonstration
+components:
+- id: hakoniwa-urban-mobility
+  roles:
+  - recipe_composer
+  - car_physics
+  - scenario_controller
+- id: hakoniwa-drone-core
+  roles:
+  - drone_physics
+  - conductor_owner
+  - rc_controller
+- id: hakoniwa-robot-runtime
+  roles:
+  - robot_runtime
+- id: hakoniwa-mujoco-robots
+  roles:
+  - physics_backend
+- id: hakoniwa-mbody-registry
+  roles:
+  - model_registry
+  - world_composer
+- id: hakoniwa-threejs-drone
+  roles:
+  - threejs_renderer
+- id: hakoniwa-map-viewer
+  roles:
+  - browser_shell
+  - map_panel
+source_catalogs:
+- component_id: hakoniwa-drone-core
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-drone-core.yaml
+- component_id: hakoniwa-robot-runtime
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-robot-runtime.yaml
+- component_id: hakoniwa-mujoco-robots
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-mujoco-robots.yaml
+- component_id: hakoniwa-mbody-registry
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-mbody-registry.yaml
+- component_id: hakoniwa-threejs-drone
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-threejs-drone.yaml
+- component_id: hakoniwa-map-viewer
+  catalog_path: ../../../hakoniwa-business-pack/catalog/components/hakoniwa-map-viewer.yaml
+source_artifacts:
+- repository: hakoniwalab/hakoniwa-urban-mobility
+  path: recipes/experiments/urban-mobility-rc.yaml
+  revision: local-step-5
+  description: Urban-owned managed Recipe and dependency contract.
+- repository: toppers/hakoniwa-drone-core
+  path: NATIVE_RUNTIME_REQUIREMENTS.yaml
+  revision: v4.1.1
+  description: Public native binary and MuJoCo runtime contract.
+missing_pieces:
+- Add the tracked city-independent composition and a Shizuoka example scenario in Step 8.
+- Verify the combined topology and browser state in Step 9.
+expected_result: 'One PS4-controlled Urban EAMS Hexa observes multiple scenario-driven Golf Carts moving in a Recipe-selected
+  City World in one synchronized browser demo.
+
+  '
+tags:
+- hakoniwa
+- urban-mobility
+- plateau
+- drone
+- ackermann
+- ps4
