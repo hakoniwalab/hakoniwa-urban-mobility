@@ -37,6 +37,8 @@ PEOPLE_SIMULATOR = "hakoniwa-people"
 # agent, apps/people/festival_director.py); nothing is started for it.
 CAR_CONTROL_MODES = {"rc": "ps5", "api": "external_python", "external": "external_python"}
 DRONE_CONTROL_MODES = {"rc": "ps4-rc", "api": "fleet-rpc", "schedule": "fleet-rpc"}
+# Drone profiles tools/drone_one.py runs: Drone Core control, and PX4 SITL (tools/drone_px4.py).
+DRONE_PROFILES = {"eams-nominal-9kg", "eams-nominal-9kg-px4"}
 # drone_one.py inputs the contract does not expose. The RC mode still
 # requires a mission file, and the launch area only shapes the mission plan;
 # the runtime spawn is always the Composition spawn.
@@ -677,9 +679,9 @@ def _drone_recipe(
 ) -> dict:
     receipt = city_receipt(composition)
     profile = drone.asset.data.get("source", {}).get("profile")
-    if profile != "eams-nominal-9kg":
+    if profile not in DRONE_PROFILES:
         raise CompositionError(
-            f"vehicle {drone.name}: tools/drone_one.py runs the eams-nominal-9kg profile only"
+            f"vehicle {drone.name}: tools/drone_one.py runs the {' and '.join(sorted(DRONE_PROFILES))} profiles only"
         )
     mission = DRONE_DEFAULT_MISSION
     if drone.control == "api":

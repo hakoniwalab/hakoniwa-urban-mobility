@@ -472,3 +472,14 @@ These files are generated and are not committed.
 
 The broader Drone integration stages are defined in
 [`urban-mobility.yaml`](urban-mobility.yaml).
+
+## EAMS Hexa in PX4 SITL
+
+`recipes/usecases/urban-drone-px4.yaml` is the managed Recipe of the drone
+route when its Drone is the PX4 SITL EAMS hexa (asset `eams-hexa-px4`,
+urban.manifest.yaml `drone-px4`): the drone route's dependencies plus
+PX4-Autopilot pinned to `a1726d3` and `pymavlink`. `tools/urban_simulation.py`
+selects it for such a Composition, so plan, doctor and configure check and
+install them; `tools/drone_one.py configure` builds PX4 SITL. The MAVLink client
+in `apps/drone/mavlink` gives the same takeoff, goto, land and get_state
+operations as the Drone RPC API. See [`docs/px4-sitl.md`](../docs/px4-sitl.md).

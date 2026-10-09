@@ -634,9 +634,15 @@ def fly(args: argparse.Namespace, schedule: dict, spawn, spawn_yaw: float) -> in
     def clock() -> float:
         return max(0, int(hakopy.simulation_time())) / 1_000_000.0
 
+    if args.mavlink:
+        # PX4 SITL (tools/drone_px4.py): commands over MAVLink, PDUs as before.
+        from mavlink_schedule_client import MavlinkScheduleClient
+
+        client = MavlinkScheduleClient(args.mavlink, spawn, client)
     runner = Runner(args, schedule, spawn, spawn_yaw, client, clock)
-    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})", flush=True)
-    while True:  # the Drone service registers its RPC services once it runs
+    print(f"SCHEDULE: {args.drone} from {args.schedule} (spawn ENU {spawn})"
+          + (f" over MAVLink {args.mavlink}" if args.mavlink else ""), flush=True)
+    while not args.mavlink:  # the Drone service registers its RPC services once it runs
         try:
             client.prepare_services(["DroneSetReady", "DroneTakeOff", "DroneGoTo", "DroneLand"])
             break
@@ -670,6 +676,8 @@ def parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-sec", type=float, default=0.01, help="wall-clock pause between steps")
     parser.add_argument("--land-settle-sec", type=float, default=20.0,
                         help="simulation seconds after the land command after which the Drone is taken as down")
+    parser.add_argument("--mavlink", help="fly a PX4 SITL Drone over MAVLink at this connection "
+                        "(e.g. udpin:127.0.0.1:14540) instead of Drone Core RPC")
     parser.add_argument("--check", action="store_true", help="print the flight and exit (no simulation)")
     parser.add_argument("--spawn", help="with --check: east,north,up of the spawn (default: from --city-marker)")
     parser.add_argument("--check-steps", type=int, default=40, help="with --check: how many steps to print")
