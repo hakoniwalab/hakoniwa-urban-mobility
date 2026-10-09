@@ -88,6 +88,15 @@ def ensure_built() -> Path:
     return binary
 
 
+def native_library_path(drone_root: Path) -> tuple[str, list[str]]:
+    """The library search variable and Drone Core's native library folders."""
+    system = platform.system()
+    if system == "Windows":
+        return "PATH", [str(drone_root / folder) for folder in ("win", "lib", "vendor/mujoco/bin")]
+    key = "DYLD_LIBRARY_PATH" if system == "Darwin" else "LD_LIBRARY_PATH"
+    return key, [str(drone_root / folder) for folder in ("lib", "vendor/mujoco/lib")]
+
+
 def _aircraft_service_source(drone_root: Path) -> Path:
     system = platform.system()
     if system == "Darwin":
@@ -145,6 +154,10 @@ def patch_launcher(path: Path, *, recipe_root: Path, drone_root: Path, marker: d
     service["command"] = str(runtime["service"])
     service["args"] = ["127.0.0.1", "4560", *args]
     service["depends_on"] = [PX4_ASSET]
+    # The service is a copy outside Drone Core: point it at Drone Core's native libraries (MuJoCo).
+    key, folders = native_library_path(drone_root)
+    prepend = service.setdefault("env", {}).setdefault("prepend", {})
+    prepend[key] = folders + [path for path in prepend.get(key, []) if path not in folders]
     origin = marker["city_world"]["origin"]
     location = json.loads(Path(marker["type_config"]).read_text(encoding="utf-8"))["simulation"]["location"]
     px4 = {

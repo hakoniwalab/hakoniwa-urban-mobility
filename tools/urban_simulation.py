@@ -67,6 +67,8 @@ MANAGED_RECIPES = {
     for route, entry in urban_manifest.value("recipes").items()
 }
 COMMANDS = ("plan", "configure", "start", "status", "stop", "open-viewer")
+# The Drone profile flown by PX4 SITL (asset eams-hexa-px4, tools/drone_px4.py).
+PX4_DRONE_PROFILE = "eams-nominal-9kg-px4"
 
 
 class SimulationError(RuntimeError):
@@ -172,16 +174,17 @@ def plan(composition_path: Path) -> Plan:
         return Plan(composition, "fpv", route_recipe("fpv"), FPV_OUTPUT_ROOT / composition.id)
     # Other vehicles run on a plain World through its City World job
     # (tools/plain_world.py) on the same routes as on a City.
+    # A PX4 SITL Drone (tools/drone_px4.py) needs PX4-Autopilot and pymavlink too:
+    # its route takes the Recipe variant that declares them.
+    px4 = any(vehicle.asset.data.get("source", {}).get("profile") == PX4_DRONE_PROFILE
+              for vehicle in composition.vehicles)
     if simulators == DRONE:
-        # A PX4 SITL Drone (tools/drone_px4.py) needs PX4-Autopilot and pymavlink too.
-        px4 = any(vehicle.asset.data.get("source", {}).get("profile") == "eams-nominal-9kg-px4"
-                  for vehicle in composition.vehicles)
         recipe = route_recipe("drone-px4" if px4 else "drone")
         return Plan(composition, "drone", recipe, _recipe_root(DRONE_WORKSPACE_ID))
     route = {CAR: "car", CAR_AND_DRONE: "integrated"}.get(simulators)
     if route is None:
         raise SimulationError(f"no route runs a Composition with simulators {sorted(simulators)}")
-    recipe, recipe_id, _ = MANAGED_RECIPES[route]
+    recipe, recipe_id, _ = MANAGED_RECIPES[f"{route}-px4" if px4 and route == "integrated" else route]
     return Plan(composition, route, ROOT / recipe, _recipe_root(recipe_id))
 
 

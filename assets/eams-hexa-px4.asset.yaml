@@ -23,10 +23,17 @@ preview:
 spawn:
   # The skid bottoms are 0.475 m below the base frame (no landing box with PX4).
   ground_clearance_m: 0.5
+interactions:
+  # Mirror body of this Drone inside the Car world (asset-contract 5.3), as eams-hexa.
+  drone-mirror:
+    pdu_types: ${repo:hakoniwa-drone-core}/config/pdudef/drone-pdutypes.json
+    mjcf_model: ${repo:hakoniwa-urban-mobility}/config/drone/hexa-px4/drone.xml
+    mjcf_body: drone_base
 controls:
   schedule:
     # The same flight as eams-hexa's schedule, flown by PX4 over MAVLink
-    # (apps/drone/mavlink_schedule_client.py): Studio's Flight tab makes it.
+    # (apps/drone/drone_link.py MavlinkDroneLink): Studio's Flight tab makes it.
+    # The PDU definition carries the contact count and the wind / rotor faults.
     program: ${repo:hakoniwa-urban-mobility}/apps/drone/drone_schedule.py
     scope: vehicle
     cwd: ${repo:hakoniwa-urban-mobility}
@@ -35,6 +42,7 @@ controls:
            "--service-config", "${runtime.service_config}",
            "--city-marker", "${runtime.city_marker}",
            "--summary-json", "${runtime.summary_json}",
+           "--pdu-def", "${runtime.pdu_def}",
            "--mavlink", "udpin:127.0.0.1:14540",
            # PX4 descends the last metres slowly and disarms after touchdown (about 20 s from 15 m).
            "--land-settle-sec", "60"]

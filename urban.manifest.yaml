@@ -66,6 +66,12 @@ recipes:
     path: recipes/experiments/urban-mobility-rc.yaml
     recipe_id: urban-mobility-rc
     use_case: drone-car-distributed
+  # The integrated route when its Drone is the PX4 SITL EAMS Hexa (asset
+  # eams-hexa-px4): the integrated Recipe plus PX4-Autopilot and pymavlink.
+  integrated-px4:
+    path: recipes/experiments/urban-mobility-px4.yaml
+    recipe_id: urban-mobility-px4
+    use_case: drone-car-distributed
   # The routes whose own tool configures (drone_one.py, drone_fleet.py,
   # hakoniwa-fpv-drone tools/fpv.py): their Recipe only materializes the
   # repositories, Foundation, and Python packages first.
