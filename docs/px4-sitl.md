@@ -186,11 +186,22 @@ flight stay one process each:
 | Symptom | Cause, action |
 |---|---|
 | The launcher waits for asset `drone` and times out | Seen once with the same runtime; starting again worked. Make sure no PX4 or aircraft service from an earlier run is left (`pgrep -fl 'bin/px4\|aircraft_service'`) |
-| A command stops with `no heartbeat on udpin:127.0.0.1:14540` (or 14541, ...) although PX4 printed `Ready for takeoff!` | PX4's startup script stopped before it opened the API link (its output ends without `mode: Onboard ... remote port 1454x`). Seen with one Drone and, with two, in 2 of 12 starts (either instance); starting again worked. The flight waits 120 s for the heartbeat. Check with `lsof -nP -iUDP:14540` that no other process holds the port |
+| The flight stops with `PX4 SITL (px4-sitl...) did not open its MAVLink API ... known PX4 SITL startup bug` | A PX4 SITL bug: a command of PX4's startup script never returns, so PX4 never opens its API link (its output ends without `mode: Onboard ... remote port 1454x`). The command's client waits for a reply that PX4's command server (`px4_daemon`) never finishes; seen with one and with two Drones, in about 1 of 10 starts, with PX4 `a1726d3` and with PX4 main. `tools/px4-patches/` works around it (see below). To recover: stop the simulation and start it again |
 | PX4 stays at `Preflight Fail: ekf2 missing data` | The aircraft service is not sending sensors yet: wait, or check its output |
 | `arm: rejected` | PX4 refuses to arm in some modes; the client switches to Hold first. A preflight failure (see PX4's output) also rejects arming |
 | `takeoff failed: arm: rejected` | PX4's preflight checks have not passed: right after start the heading estimate takes a few seconds (the client retries arming until the takeoff timeout). Look at PX4's `Preflight Fail` lines |
 | Yaw drifts or the heading is wrong | The magnetic field and the position in `drone_config_0.json` must match (`config/drone/hexa-px4/README.md`) |
+
+### PX4 patches
+
+`tools/px4_sitl_build.bash` applies `tools/px4-patches/*.patch` to the PX4 checkout for the build and
+reverts them afterwards, so the checkout stays as fetched. The patches are made for the Recipe's pinned
+PX4 revision; a checkout they do not apply to stops the build. `tools/drone_px4.py` rebuilds when the
+patches change (`build/px4-sitl/px4-patches.sha256`).
+
+| Patch | What it changes |
+|---|---|
+| `0001-px4_daemon-cloexec-and-client-reply-timeout.patch` | PX4's command sockets are close-on-exec, so the startup script's commands do not inherit them; a command client that has the reply but no end of stream continues after 2 s (warning `px4_daemon: reply complete but the connection did not close`), and gives up after 60 s without a reply |
 
 ## Verification
 
@@ -199,4 +210,5 @@ flight stay one process each:
 | 2026-10-09 | macOS arm64, PX4 `a1726d3`, Drone Core v4.1.1 aircraft service | build, prepare, start; takeoff 5 m, three gotos (yaw 0°, 90°, 180°), land: all ok |
 | 2026-10-09 | same, Hokkaido City World with two Cars (`schedule` with a wind zone) | the Drone flew its Flight with Cars driving; the wind zone was applied through the `disturb` PDU and PX4 held its route; no shared memory mismatch |
 | 2026-10-09 | same, Hokkaido City World, two Cars and two `eams-hexa-px4` Drones with mirrors (one aircraft service, two PX4 SITL, one schedule process) | both Drones: takeoff, waypoints (Drone-1 through a 6 m/s wind zone), back, land: all ok; no shared memory mismatch. In 2 of 12 starts one PX4 instance did not open its API link (Troubleshooting) |
+| 2026-10-09 | same, two `eams-hexa-px4` Drones, PX4 built with `tools/px4-patches/0001` | 30 of 30 starts: both PX4 instances opened their API link (unpatched: a startup stall in about 1 of 10 starts); the patch's `px4_daemon` warning never appeared |
 | 2026-10-09 | same, Shizuoka City World, Composition with `eams-hexa-px4` and a Flight (`tools/urban_simulation.py` configure/start as Studio runs them) | from a roof: takeoff 15 m, three waypoints, back, land on the roof; the flown track within 0.1 m of the waypoints; the Viewer shows the Drone |

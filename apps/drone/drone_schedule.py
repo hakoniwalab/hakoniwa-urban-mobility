@@ -638,7 +638,8 @@ def fly(args: argparse.Namespace, flights: list[Flight]) -> int:
             pdu = PduAccess(args.pdu_def, flight.drone, hakopy) if args.pdu_def else None
             connection = mavlink_connection(args.mavlink, flight.drone)
             print(f"SCHEDULE[{flight.drone}]: MAVLink {connection}", flush=True)
-            links.append((flight, MavlinkDroneLink(connection, flight.spawn_enu, pdu)))
+            links.append((flight, MavlinkDroneLink(connection, flight.spawn_enu, pdu,
+                                                   autopilot=f"{flight.drone}: PX4 SITL ({px4_asset(flight.drone)})")))
         return run_flights(args, links, hakopy)
 
     sys.path.insert(0, str(args.drone_root.resolve() / "drone_api" / "external_rpc"))
@@ -668,6 +669,13 @@ def fly(args: argparse.Namespace, flights: list[Flight]) -> int:
         pdu_def = args.pdu_def or rpc_pdu_def(client)
         links.append((flight, RpcDroneLink(client, PduAccess(pdu_def, flight.drone, hakopy))))
     return run_flights(args, links, hakopy)
+
+
+def px4_asset(drone: str) -> str:
+    """The Launcher asset of a Drone's PX4 SITL (tools/drone_px4.py px4_asset_name)."""
+    number = drone.rpartition("-")[2]
+    instance = int(number) - 1 if number.isdigit() else 0
+    return "px4-sitl" if instance <= 0 else f"px4-sitl-{instance}"
 
 
 def mavlink_connection(base: str, drone: str) -> str:

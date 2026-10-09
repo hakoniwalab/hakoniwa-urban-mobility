@@ -1,0 +1,71 @@
+diff --git a/platforms/posix/src/px4/common/px4_daemon/client.cpp b/platforms/posix/src/px4/common/px4_daemon/client.cpp
+index f23021b7bd..e6c903a034 100644
+--- a/platforms/posix/src/px4/common/px4_daemon/client.cpp
++++ b/platforms/posix/src/px4/common/px4_daemon/client.cpp
+@@ -41,6 +41,7 @@
+ #include <errno.h>
+ #include <stdio.h>
+ #include <fcntl.h>
++#include <poll.h>
+ #include <string.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
+@@ -73,6 +74,9 @@ Client::process_args(const int argc, const char **argv)
+ 		return -1;
+ 	}
+ 
++	// Hakoniwa: keep the connection out of processes this client starts.
++	fcntl(_fd, F_SETFD, FD_CLOEXEC);
++
+ 	sockaddr_un addr = {};
+ 	addr.sun_family = AF_UNIX;
+ 	strncpy(addr.sun_path, sock_path.c_str(), sizeof(addr.sun_path) - 1);
+@@ -138,6 +142,24 @@ Client::_listen()
+ 	// by another byte, we don't output it yet, until we know whether it was
+ 	// the end of the stream or not.
+ 	while (true) {
++		// Hakoniwa: a reply whose end of stream never arrives must not hang the
++		// startup script (seen on macOS with several SITL instances). Once the
++		// {0, retval} trailer is in, wait at most 2 s for the end of stream;
++		// without any reply, give up after 60 s.
++		pollfd fds{_fd, POLLIN, 0};
++		const int timeout_ms = n_buffer_used == 2 ? 2000 : 60000;
++		const int ready = poll(&fds, 1, timeout_ms);
++
++		if (ready == 0) {
++			if (n_buffer_used == 2) {
++				PX4_WARN("px4_daemon: reply complete but the connection did not close; continuing");
++				return buffer[1];
++			}
++
++			PX4_ERR("px4_daemon: no reply within %d ms", timeout_ms);
++			return -1;
++		}
++
+ 		int n_read = read(_fd, buffer + n_buffer_used, sizeof buffer - n_buffer_used);
+ 
+ 		if (n_read < 0) {
+diff --git a/platforms/posix/src/px4/common/px4_daemon/server.cpp b/platforms/posix/src/px4/common/px4_daemon/server.cpp
+index 95b8116be4..46ca05c75f 100644
+--- a/platforms/posix/src/px4/common/px4_daemon/server.cpp
++++ b/platforms/posix/src/px4/common/px4_daemon/server.cpp
+@@ -89,6 +89,10 @@ Server::start()
+ 		return -1;
+ 	}
+ 
++	// Hakoniwa: the startup script's commands are child processes; they must
++	// not inherit the server sockets.
++	fcntl(_fd, F_SETFD, FD_CLOEXEC);
++
+ 	sockaddr_un addr = {};
+ 	addr.sun_family = AF_UNIX;
+ 	strncpy(addr.sun_path, sock_path.c_str(), sizeof(addr.sun_path) - 1);
+@@ -170,6 +174,8 @@ Server::_server_main()
+ 				return;
+ 			}
+ 
++			fcntl(client, F_SETFD, FD_CLOEXEC);
++
+ 			FILE *thread_stdout = fdopen(client, "w");
+ 
+ 			if (thread_stdout == nullptr) {

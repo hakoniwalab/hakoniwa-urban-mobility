@@ -8,7 +8,9 @@ Usage: tools/px4_sitl_build.bash [--px4-dir DIR] [--out DIR]
 Build PX4 SITL (px4_sitl_default) out of tree. The PX4-Autopilot checkout
 (a git submodule) is only read: the Python environment, the build and the
 compiler cache all go under the output directory. PX4's CMake always writes
-two VS Code files into .vscode/; the script puts them back as they were. It
+two VS Code files into .vscode/; the script puts them back as they were. The
+Hakoniwa patches in tools/px4-patches/ are applied for the build and reverted
+after it (they are made for the Recipe's pinned PX4 revision). It
 then compares the checkout's git status, including ignored files, before and
 after the build and fails if anything changed.
 
@@ -109,9 +111,52 @@ restore_generated_files() {
 echo "[build-px4-sitl] px4_dir=${PX4_DIR}"
 echo "[build-px4-sitl] px4_commit=$(git -C "${PX4_DIR}" rev-parse --short HEAD)"
 echo "[build-px4-sitl] out_dir=${OUT_DIR}"
+# Hakoniwa patches to the pinned PX4 revision (tools/px4-patches/*.patch): applied
+# for the build and reverted after it, so the checkout stays as fetched.
+PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/px4-patches"
+PATCHES=()
+if [[ -d "${PATCH_DIR}" ]]; then
+  while IFS= read -r patch; do PATCHES+=("${patch}"); done < <(ls "${PATCH_DIR}"/*.patch 2>/dev/null | sort)
+fi
+APPLIED_PATCHES=()
+
+# One hash over the patch files (empty without patches).
+patches_hash() {
+  if [[ ${#PATCHES[@]} -eq 0 ]]; then echo ""; return; fi
+  cat "${PATCHES[@]}" | shasum -a 256 | cut -d' ' -f1
+}
+
+apply_patches() {
+  local patch
+  for patch in "${PATCHES[@]}"; do
+    if ! git -C "${PX4_DIR}" apply --check "${patch}" 2>/dev/null; then
+      echo "ERROR: ${patch##*/} does not apply to PX4 $(git -C "${PX4_DIR}" rev-parse --short HEAD)" >&2
+      echo "       (the patches are for the pinned revision in the Recipe)" >&2
+      exit 1
+    fi
+    git -C "${PX4_DIR}" apply "${patch}"
+    APPLIED_PATCHES+=("${patch}")
+    echo "[build-px4-sitl] applied ${patch##*/}"
+  done
+}
+
+revert_patches() {
+  local index
+  for (( index=${#APPLIED_PATCHES[@]}-1; index>=0; index-- )); do
+    git -C "${PX4_DIR}" apply -R "${APPLIED_PATCHES[index]}"
+  done
+  APPLIED_PATCHES=()
+}
+
+restore_checkout() {
+  revert_patches
+  restore_generated_files
+}
+
 STATE_BEFORE="$(checkout_state)"
 save_generated_files
-trap restore_generated_files EXIT
+trap restore_checkout EXIT
+apply_patches
 
 requirements_hash="$(shasum -a 256 "${REQUIREMENTS}" | cut -d' ' -f1)"
 if [[ ! -x "${VENV_PYTHON}" || "$(cat "${REQUIREMENTS_STAMP}" 2>/dev/null)" != "${requirements_hash}" ]]; then
@@ -141,7 +186,7 @@ fi
 echo "[build-px4-sitl] building"
 cmake --build "${BUILD_DIR}"
 
-restore_generated_files
+restore_checkout
 STATE_AFTER="$(checkout_state)"
 if [[ "${STATE_BEFORE}" != "${STATE_AFTER}" ]]; then
   echo "ERROR: the build changed the PX4 checkout:" >&2
@@ -149,5 +194,7 @@ if [[ "${STATE_BEFORE}" != "${STATE_AFTER}" ]]; then
   exit 1
 fi
 
+# tools/drone_px4.py rebuilds when the patches change.
+patches_hash > "${OUT_DIR}/px4-patches.sha256"
 echo "OK: ${BUILD_DIR}/bin/px4"
 echo "OK: the PX4 checkout is unchanged"
