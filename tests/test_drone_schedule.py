@@ -1,4 +1,5 @@
 import itertools
+import json
 import math
 from pathlib import Path
 import subprocess
@@ -275,11 +276,38 @@ class DroneScheduleTest(unittest.TestCase):
             with self.subTest(item), self.assertRaisesRegex(schedule_module.ScheduleError, message):
                 schedule_module.load_schedule(self.write(text), "Drone-1")
 
+    def test_each_drone_spawns_where_the_marker_puts_it(self):
+        marker = self.directory / "marker.json"
+        spawn = lambda east: {"frame": "ENU", "east_m": east, "north_m": 2.0, "up_m": 3.0, "yaw_deg": 90.0}
+        marker.write_text(json.dumps({"flight_plan": {"runtime_spawn": spawn(1.0),
+                                                      "runtime_spawns": {"Drone-1": spawn(1.0), "Drone-2": spawn(5.0)}}}),
+                          encoding="utf-8")
+        self.assertEqual(schedule_module.spawn_from_marker(marker, "Drone-2"), ((5.0, 2.0, 3.0), 90.0))
+        with self.assertRaisesRegex(schedule_module.ScheduleError, "no runtime spawn for Drone-3"):
+            schedule_module.spawn_from_marker(marker, "Drone-3")
+
+    def test_each_px4_drone_talks_to_its_own_instance(self):
+        self.assertEqual(schedule_module.mavlink_connection("udpin:127.0.0.1:14540", "Drone-1"), "udpin:127.0.0.1:14540")
+        self.assertEqual(schedule_module.mavlink_connection("udpin:127.0.0.1:14540", "Drone-3"), "udpin:127.0.0.1:14542")
+        with self.assertRaisesRegex(schedule_module.ScheduleError, "Drone-<n>"):
+            schedule_module.mavlink_connection("udpin:127.0.0.1:14540", "Scout")
+
+    def test_several_flights_get_a_summary_each(self):
+        args = schedule_module.parser().parse_args(
+            ["--flight", "Drone-1=a.yaml", "--flight", "Drone-2=b.yaml", "--summary-json", "out/s.json"])
+        self.assertEqual(schedule_module.flight_requests(args), [("Drone-1", Path("a.yaml")), ("Drone-2", Path("b.yaml"))])
+        self.assertEqual(schedule_module.summary_path(Path("out/s.json"), "Drone-2", True), Path("out/s-Drone-2.json"))
+        self.assertEqual(schedule_module.summary_path(Path("out/s.json"), "Drone-1", False), Path("out/s.json"))
+
+    def flight(self, schedule, summary_json=None):
+        return schedule_module.Flight("Drone-1", self.directory / "schedule.yaml", schedule, (0.0, 0.0, 240.0), 0.0,
+                                      summary_json)
+
     def test_the_runner_sends_the_disturbance_when_it_changes(self):
         sent, positions = [], iter([(100.0, 60.0, 260.0), (100.0, 20.0, 260.0), (100.0, 20.0, 260.0)])
 
-        args = type("Args", (), {"drone": "Drone-1", "summary_json": None})()
-        runner = schedule_module.Runner(args, self.zoned(), (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: 1.0)
+        args = type("Args", (), {})()
+        runner = schedule_module.Runner(args, self.flight(self.zoned()), client=None, clock=lambda: 1.0)
         with unittest.mock.patch.object(schedule_module, "drone_state", lambda client: {"enu": next(positions), "yaw_rad": 0.0, "speed": 1.5, "heading_deg": 0.0, "collisions": None}), \
                 unittest.mock.patch.object(schedule_module, "send_disturbance",
                                            lambda client, drone, wind, faults: sent.append((drone, wind, faults))):
@@ -291,9 +319,10 @@ class DroneScheduleTest(unittest.TestCase):
     def test_the_runner_records_the_flown_track_next_to_its_summary(self):
         times = iter([1.0, 1.05, 1.2, 1.2])
         positions = iter([(1.0, 2.0, 3.0), (1.1, 2.0, 3.0), (1.2, 2.0, 3.0)])
-        args = type("Args", (), {"drone": "Drone-1", "summary_json": self.directory / "summary.json"})()
-        runner = schedule_module.Runner(args, schedule_module.load_schedule(self.write(SCHEDULE), "Drone-1"),
-                                        (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: next(times))
+        args = type("Args", (), {})()
+        runner = schedule_module.Runner(args, self.flight(schedule_module.load_schedule(self.write(SCHEDULE), "Drone-1"),
+                                                          self.directory / "summary.json"),
+                                        client=None, clock=lambda: next(times))
         with unittest.mock.patch.object(schedule_module, "drone_state", lambda client: {"enu": next(positions), "yaw_rad": 0.0, "speed": 1.5, "heading_deg": 0.0, "collisions": None}):
             for _ in range(3):
                 runner.watch_events()
@@ -310,8 +339,8 @@ class DroneScheduleTest(unittest.TestCase):
         self.assertEqual(schedule["contact_fault"], {"scale": 0.0})
         sent = []
         counts = iter([3, 3, 4, 4, 6, 7])  # 3 at the spawn; +1 in flight (the wall); +2 (the wall again); +1 on landing
-        args = type("Args", (), {"drone": "Drone-1", "summary_json": None})()
-        runner = schedule_module.Runner(args, schedule, (0.0, 0.0, 240.0), 0.0, client=None, clock=lambda: 1.0)
+        args = type("Args", (), {})()
+        runner = schedule_module.Runner(args, self.flight(schedule), client=None, clock=lambda: 1.0)
         state = lambda client: {"enu": (500.0, 500.0, 300.0), "yaw_rad": 0.0, "speed": 2.0, "heading_deg": 0.0,
                                 "collisions": next(counts)}
         with unittest.mock.patch.object(schedule_module, "drone_state", state), \

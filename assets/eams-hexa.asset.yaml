@@ -50,11 +50,12 @@ controls:
     # A flight on Hakoniwa time from a schedule (apps/drone/drone_schedule.py):
     # the drones: section of a route scenario (Cars, people and the Drone in
     # one file) or of a file of its own.
+    # One process flies every Drone (scope shared): each adds its --flight.
     program: ${repo:hakoniwa-urban-mobility}/apps/drone/drone_schedule.py
-    scope: vehicle
+    scope: shared
     cwd: ${repo:hakoniwa-urban-mobility}
-    args: ["--schedule", "${param.schedule}", "--drone", "${vehicle.name}",
-           "--drone-root", "${runtime.drone_root}",
+    vehicle_args: ["--flight", "${vehicle.name}=${param.schedule}"]
+    args: ["--drone-root", "${runtime.drone_root}",
            "--service-config", "${runtime.service_config}",
            "--city-marker", "${runtime.city_marker}",
            "--summary-json", "${runtime.summary_json}",

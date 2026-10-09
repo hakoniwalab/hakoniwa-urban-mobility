@@ -244,7 +244,7 @@ def viewer_url(selected: Plan) -> str | None:
     import drone_one
 
     # As tools/drone_one.py open-viewer with its default bottom-left map layout.
-    return drone_one.base.viewer_url(1, map_viewer=True) + drone_one.map_origin_query() + "&layout=three-main"
+    return drone_one.base.viewer_url(drone_one.configured_drone_count(), map_viewer=True) + drone_one.map_origin_query() + "&layout=three-main"
 
 
 def pacer_log(selected: Plan) -> Path:
@@ -566,7 +566,7 @@ def write_viewer_planned_paths(viewer_configs: list[Path], composition_path: Pat
         try:
             schedule_path = urban_assets.resolve_reference(vehicle.params["schedule"], composition_path.parent)
             schedule = drone_schedule.load_schedule(schedule_path, vehicle.name)
-            spawn, yaw = drone_schedule.spawn_from_marker(city_marker)
+            spawn, yaw = drone_schedule.spawn_from_marker(city_marker, vehicle.name)
         except (urban_assets.AssetError, drone_schedule.ScheduleError, OSError) as exc:
             raise SimulationError(f"{vehicle.name}: no flight path for the Viewer: {exc}") from exc
         path = {"drone": vehicle.name, "points": drone_schedule.flight_path(schedule, spawn, yaw)}

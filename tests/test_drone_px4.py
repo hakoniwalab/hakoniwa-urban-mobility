@@ -75,11 +75,14 @@ class Px4MagneticTest(unittest.TestCase):
 
 
 class PatchLauncherTest(unittest.TestCase):
-    def test_px4_starts_first_and_the_aircraft_service_keeps_the_service_name(self):
+    def patched(self, drone_count: int) -> tuple[list[dict], dict]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             type_config = root / "drone_config_0.json"
             type_config.write_text(json.dumps({"simulation": {"location": {"altitude": 5.5}}}), encoding="utf-8")
+            fleet = root / "api-current.json"
+            fleet.write_text(json.dumps({"drones": [{"name": f"Drone-{index}"} for index in range(1, drone_count + 1)]}),
+                             encoding="utf-8")
             launcher = root / "launcher.json"
             launcher.write_text(json.dumps({"assets": [
                 {"name": "drone-service-1", "command": "mac-main_hako_drone_service",
@@ -88,22 +91,38 @@ class PatchLauncherTest(unittest.TestCase):
                 {"name": "visual-state-publisher", "depends_on": ["drone-service-1"]},
             ]}), encoding="utf-8")
             marker = {"city_world": {"origin": {"latitude": 35.1, "longitude": 138.9}},
-                      "type_config": str(type_config)}
+                      "type_config": str(type_config), "fleet_config": str(fleet)}
             runtime = {"px4_binary": root / "px4", "data_dir": root / "etc", "work_dir": root / "rootfs",
                        "service": root / "mac-main_hako_aircraft_service_px4"}
             with mock.patch.object(drone_px4, "prepare_runtime", return_value=runtime):
                 drone_px4.patch_launcher(launcher, recipe_root=root, drone_root=root, marker=marker)
-            assets = json.loads(launcher.read_text(encoding="utf-8"))["assets"]
+            return json.loads(launcher.read_text(encoding="utf-8"))["assets"], runtime
+
+    def test_px4_starts_first_and_the_aircraft_service_keeps_the_service_name(self):
+        assets, runtime = self.patched(1)
         self.assertEqual([asset["name"] for asset in assets],
                          ["px4-sitl", "drone-service-1", "visual-state-publisher"])
         px4, service = assets[0], assets[1]
         self.assertEqual(px4["env"]["set"]["PX4_HOME_LAT"], "35.1")
         self.assertEqual(px4["env"]["set"]["PX4_HOME_ALT"], "5.5")
         self.assertEqual(px4["env"]["set"]["PX4_SIM_MODEL"], "hakoniwa_eams")
+        self.assertNotIn("-i", px4["args"])
         self.assertEqual(service["command"], str(runtime["service"]))
         self.assertEqual(service["args"][:4], ["127.0.0.1", "4560", "config/drone/fleets/api-current.json",
                                                "config/pdudef/drone-pdudef-current.json"])
         self.assertEqual(service["depends_on"], ["px4-sitl"])
+
+    def test_every_drone_gets_its_own_px4_instance_and_one_aircraft_service(self):
+        assets, runtime = self.patched(3)
+        self.assertEqual([asset["name"] for asset in assets],
+                         ["px4-sitl", "px4-sitl-1", "px4-sitl-2", "drone-service-1", "visual-state-publisher"])
+        second = assets[1]
+        self.assertEqual(second["args"][:2], ["-i", "1"])
+        self.assertEqual(second["cwd"], str(runtime["work_dir"].with_name("px4-rootfs-1")))
+        self.assertNotEqual(second["cwd"], assets[0]["cwd"])
+        self.assertEqual(assets[3]["depends_on"], ["px4-sitl", "px4-sitl-1", "px4-sitl-2"])
+        self.assertTrue(all(drone_px4.is_px4_asset(asset["name"]) for asset in assets[:3]))
+        self.assertFalse(drone_px4.is_px4_asset("drone-service-1"))
 
     def test_the_type_config_gets_the_sitl_timing_and_the_px4_field(self):
         type_config = {"simulation": {"timeStep": 0.001, "location": {"latitude": 35.1, "longitude": 138.9}}}

@@ -36,11 +36,21 @@ def _write(path: Path, data) -> None:
 
 
 def disturbance_target(pdudef_path: Path) -> tuple[str, dict]:
-    """The Drone robot name and its disturbance PDU type from the Drone PDU definition."""
+    """The Drone robot name and its disturbance PDU type from a one-Drone PDU definition."""
+    names, disturb = disturbance_targets(pdudef_path)
+    if len(names) != 1:
+        raise FaultInjectionError("the Drone PDU definition must contain one Drone")
+    return names[0], disturb
+
+
+def disturbance_targets(pdudef_path: Path) -> tuple[list[str], dict]:
+    """The Drone robot names and their (shared) disturbance PDU type from the Drone PDU definition."""
     pdudef = _load(pdudef_path, "Drone PDU definition")
     robots = pdudef.get("robots") or []
-    if len(robots) != 1:
-        raise FaultInjectionError("the Drone PDU definition must contain one Drone")
+    if not robots:
+        raise FaultInjectionError("the Drone PDU definition contains no Drone")
+    if len({robot.get("pdutypes_id") for robot in robots}) != 1:
+        raise FaultInjectionError("the Drones of the PDU definition must share their PDU types")
     robot = robots[0]
     types_path = next(
         (item["path"] for item in pdudef.get("paths", []) if item.get("id") == robot.get("pdutypes_id")),
@@ -52,7 +62,7 @@ def disturbance_target(pdudef_path: Path) -> tuple[str, dict]:
     disturb = next((item for item in types if item.get("name") == DISTURB_PDU), None)
     if disturb is None:
         raise FaultInjectionError("the Drone PDU types have no disturbance PDU")
-    return robot["name"], disturb
+    return [item["name"] for item in robots], disturb
 
 
 def rotor_count(drone_config_path: Path) -> int:
@@ -74,12 +84,13 @@ def add_to_pdudef(pdudef_path: Path, robot_name: str, disturb_type: dict) -> Non
     _write(pdudef_path, pdudef)
 
 
-def add_to_bridge(config_root: Path, robot_name: str, disturb_type: dict) -> None:
-    """Add a WebSocket -> shared memory route for robot_name's disturbance PDU.
+def add_to_bridge(config_root: Path, robot_names: str | list[str], disturb_type: dict) -> None:
+    """Add a WebSocket -> shared memory route for the robots' disturbance PDUs.
 
     config_root is a WebBridge config root (bridge/bridge.json and the
     endpoint, comm and PDU files it references).
     """
+    names = [robot_names] if isinstance(robot_names, str) else list(robot_names)
     bridge_path = config_root / "bridge/bridge.json"
     bridge = _load(bridge_path, "WebBridge config")
     container_path = (bridge_path.parent / bridge["endpoints_config_path"]).resolve()
@@ -96,8 +107,8 @@ def add_to_bridge(config_root: Path, robot_name: str, disturb_type: dict) -> Non
         comm = _load(comm_path, "WebBridge communication")
         endpoint_ids[comm["protocol"]] = endpoint["id"]
         if comm["protocol"] == "shm":
-            robots = [item for item in comm["io"]["robots"] if item.get("name") != robot_name]
-            robots.append({"name": robot_name, "pdu": [{"name": DISTURB_PDU, "notify_on_recv": False}]})
+            robots = [item for item in comm["io"]["robots"] if item.get("name") not in names]
+            robots.extend({"name": name, "pdu": [{"name": DISTURB_PDU, "notify_on_recv": False}]} for name in names)
             comm["io"]["robots"] = robots
             _write(comm_path, comm)
         # PDUs now flow both ways between shared memory and the browser.
@@ -106,14 +117,13 @@ def add_to_bridge(config_root: Path, robot_name: str, disturb_type: dict) -> Non
         raise FaultInjectionError(f"the WebBridge needs one shm and one websocket endpoint: {container_path}")
     _write(container_path, container)
     for pdudef in sorted(pdudefs):
-        add_to_pdudef(pdudef, robot_name, disturb_type)
+        for name in names:
+            add_to_pdudef(pdudef, name, disturb_type)
 
     bridge["transferPolicies"]["immediate"] = {"type": "immediate"}
-    bridge["pduKeyGroups"]["drone_disturb"] = [{
-        "id": f"{robot_name}.{DISTURB_PDU}",
-        "robot_name": robot_name,
-        "pdu_name": DISTURB_PDU,
-    }]
+    bridge["pduKeyGroups"]["drone_disturb"] = [
+        {"id": f"{name}.{DISTURB_PDU}", "robot_name": name, "pdu_name": DISTURB_PDU} for name in names
+    ]
     connections = [item for item in bridge["connections"] if item.get("id") != INBOUND_CONNECTION]
     connections.append({
         "id": INBOUND_CONNECTION,
