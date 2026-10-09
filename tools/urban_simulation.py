@@ -173,7 +173,11 @@ def plan(composition_path: Path) -> Plan:
     # Other vehicles run on a plain World through its City World job
     # (tools/plain_world.py) on the same routes as on a City.
     if simulators == DRONE:
-        return Plan(composition, "drone", route_recipe("drone"), _recipe_root(DRONE_WORKSPACE_ID))
+        # A PX4 SITL Drone (tools/drone_px4.py) needs PX4-Autopilot and pymavlink too.
+        px4 = any(vehicle.asset.data.get("source", {}).get("profile") == "eams-nominal-9kg-px4"
+                  for vehicle in composition.vehicles)
+        recipe = route_recipe("drone-px4" if px4 else "drone")
+        return Plan(composition, "drone", recipe, _recipe_root(DRONE_WORKSPACE_ID))
     route = {CAR: "car", CAR_AND_DRONE: "integrated"}.get(simulators)
     if route is None:
         raise SimulationError(f"no route runs a Composition with simulators {sorted(simulators)}")

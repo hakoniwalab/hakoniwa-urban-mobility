@@ -1,0 +1,7 @@
+# Urban Drone route with PX4 SITL (asset eams-hexa-px4) managed Recipe runtime dependencies.
+# Composition and scenario YAML parsing.
+PyYAML>=6.0,<7
+# Spawn heights and composed-model checks; the same version as the Drone Core MuJoCo.
+mujoco==3.13.0
+# The schedule control talks to PX4 over MAVLink (apps/drone/mavlink).
+pymavlink>=2.4.40,<3

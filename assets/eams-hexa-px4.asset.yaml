@@ -1,0 +1,42 @@
+# Asset manifest (docs/asset-contract.md) for the Urban EAMS Hexa flown by the
+# PX4 autopilot in SITL (tools/drone_px4.py, docs/px4-sitl.md). The City
+# model, the Viewer and the schedule are those of eams-hexa; PX4 SITL and the
+# Drone Core aircraft service take the place of the drone service.
+schema: hakoniwa.asset/v1
+id: eams-hexa-px4
+kind: vehicle
+category: drone
+version: 0.1.0
+title: Urban EAMS Hexa with PX4 (SITL)
+source:
+  repository: hakoniwa-urban-mobility
+  # Drone profile understood by tools/drone_one.py (tools/drone_px4.py).
+  profile: eams-nominal-9kg-px4
+simulator: drone-core
+model:
+  physics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa-px4/drone.xml
+  dynamics: ${repo:hakoniwa-urban-mobility}/config/drone/hexa-px4/drone_config_0.json
+preview:
+  format: drone-type
+  path: ${repo:hakoniwa-threejs-drone}/config/drone_types-hexa-eams.json
+  type: hexa_eams
+spawn:
+  # The skid bottoms are 0.475 m below the base frame (no landing box with PX4).
+  ground_clearance_m: 0.5
+controls:
+  schedule:
+    # The same flight as eams-hexa's schedule, flown by PX4 over MAVLink
+    # (apps/drone/mavlink_schedule_client.py): Studio's Flight tab makes it.
+    program: ${repo:hakoniwa-urban-mobility}/apps/drone/drone_schedule.py
+    scope: vehicle
+    cwd: ${repo:hakoniwa-urban-mobility}
+    args: ["--schedule", "${param.schedule}", "--drone", "${vehicle.name}",
+           "--drone-root", "${runtime.drone_root}",
+           "--service-config", "${runtime.service_config}",
+           "--city-marker", "${runtime.city_marker}",
+           "--summary-json", "${runtime.summary_json}",
+           "--mavlink", "udpin:127.0.0.1:14540",
+           # PX4 descends the last metres slowly and disarms after touchdown (about 20 s from 15 m).
+           "--land-settle-sec", "60"]
+    params:
+      schedule: {type: path, required: true, kinds: [car-route-scenario, drone-schedule]}

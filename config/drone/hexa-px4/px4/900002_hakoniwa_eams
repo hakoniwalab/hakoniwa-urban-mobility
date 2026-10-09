@@ -1,0 +1,136 @@
+#!/bin/sh
+#
+# @name Hakoniwa EAMS 9kg SITL
+#
+# @type Hexarotor x
+#
+
+. ${R}etc/init.d/rc.mc_defaults
+
+param set-default CA_AIRFRAME 0
+
+# Generated Hakoniwa EAMS geometry, EKF, and optional tuned gains.
+# Exported by the Hakoniwa Drone PRO PX4 tooling (3 ms PX4-EKF tuning, policy v3 + position phase)
+# for the EAMS nominal 9 kg hexa; see config/drone/hexa-px4/README.md
+# km_source: physical-ratio
+# control_gains: adapter-direct
+# rotor_ct_source: max-thrust
+# include_rotor_axis: True
+# THR_MDL_FAC: fitted to the Hakoniwa rotor model (PX4 SITL); set from the real motor on hardware
+#
+param set-default CA_ROTOR0_AX 0
+param set-default CA_ROTOR0_AY 0
+param set-default CA_ROTOR0_AZ -1
+param set-default CA_ROTOR0_CT 47.40514
+param set-default CA_ROTOR0_KM -0.0400046598322
+param set-default CA_ROTOR0_PX 0.458993
+param set-default CA_ROTOR0_PY -0.265
+param set-default CA_ROTOR0_PZ 0
+param set-default CA_ROTOR1_AX 0
+param set-default CA_ROTOR1_AY 0
+param set-default CA_ROTOR1_AZ -1
+param set-default CA_ROTOR1_CT 47.40514
+param set-default CA_ROTOR1_KM 0.0400046598322
+param set-default CA_ROTOR1_PX 0
+param set-default CA_ROTOR1_PY -0.53
+param set-default CA_ROTOR1_PZ 0
+param set-default CA_ROTOR2_AX 0
+param set-default CA_ROTOR2_AY 0
+param set-default CA_ROTOR2_AZ -1
+param set-default CA_ROTOR2_CT 47.40514
+param set-default CA_ROTOR2_KM -0.0400046598322
+param set-default CA_ROTOR2_PX -0.458993
+param set-default CA_ROTOR2_PY -0.265
+param set-default CA_ROTOR2_PZ 0
+param set-default CA_ROTOR3_AX 0
+param set-default CA_ROTOR3_AY 0
+param set-default CA_ROTOR3_AZ -1
+param set-default CA_ROTOR3_CT 47.40514
+param set-default CA_ROTOR3_KM 0.0400046598322
+param set-default CA_ROTOR3_PX -0.458993
+param set-default CA_ROTOR3_PY 0.265
+param set-default CA_ROTOR3_PZ 0
+param set-default CA_ROTOR4_AX 0
+param set-default CA_ROTOR4_AY 0
+param set-default CA_ROTOR4_AZ -1
+param set-default CA_ROTOR4_CT 47.40514
+param set-default CA_ROTOR4_KM -0.0400046598322
+param set-default CA_ROTOR4_PX 0
+param set-default CA_ROTOR4_PY 0.53
+param set-default CA_ROTOR4_PZ 0
+param set-default CA_ROTOR5_AX 0
+param set-default CA_ROTOR5_AY 0
+param set-default CA_ROTOR5_AZ -1
+param set-default CA_ROTOR5_CT 47.40514
+param set-default CA_ROTOR5_KM 0.0400046598322
+param set-default CA_ROTOR5_PX 0.458993
+param set-default CA_ROTOR5_PY 0.265
+param set-default CA_ROTOR5_PZ 0
+param set-default CA_ROTOR_COUNT 6
+param set-default EKF2_BARO_CTRL 1
+param set-default EKF2_BARO_GATE 5
+param set-default EKF2_BARO_NOISE 2
+param set-default EKF2_DECL_TYPE 3
+param set-default EKF2_GPS_CHECK 1045
+param set-default EKF2_GPS_CTRL 7
+param set-default EKF2_GPS_P_GATE 5
+param set-default EKF2_GPS_P_NOISE 0.5
+param set-default EKF2_GPS_V_GATE 5
+param set-default EKF2_GPS_V_NOISE 0.5
+param set-default EKF2_HDG_GATE 2.6
+param set-default EKF2_HEAD_NOISE 0.3
+param set-default EKF2_HGT_REF 1
+param set-default EKF2_MAG_GATE 3
+param set-default EKF2_MAG_NOISE 0.05
+param set-default EKF2_MAG_TYPE 6
+param set-default EKF2_REQ_EPH 3
+param set-default EKF2_REQ_EPV 5
+param set-default EKF2_REQ_FIX 3
+param set-default EKF2_REQ_NSATS 6
+param set-default EKF2_REQ_PDOP 2
+param set-default EKF2_REQ_SACC 0.5
+param set-default MC_PITCHRATE_D 0.025
+param set-default MC_PITCHRATE_FF 0.1
+param set-default MC_PITCHRATE_I 0.25
+param set-default MC_PITCHRATE_MAX 120
+param set-default MC_PITCHRATE_P 1
+param set-default MC_PITCH_P 8
+param set-default MC_PR_INT_LIM 0.3
+param set-default MC_ROLLRATE_D 0.025
+param set-default MC_ROLLRATE_FF 0.1
+param set-default MC_ROLLRATE_I 0.25
+param set-default MC_ROLLRATE_MAX 120
+param set-default MC_ROLLRATE_P 1
+param set-default MC_ROLL_P 8
+param set-default MC_RR_INT_LIM 0.3
+param set-default MC_YAWRATE_D 0
+param set-default MC_YAWRATE_FF 0.1
+param set-default MC_YAWRATE_I 0
+param set-default MC_YAWRATE_MAX 60
+param set-default MC_YAWRATE_P 0.6
+param set-default MC_YAW_P 5
+param set-default MC_YAW_WEIGHT 0.4
+param set-default MC_YR_INT_LIM 0.2
+param set-default MPC_THR_HOVER 0.310409377549
+param set-default MPC_THR_MAX 0.9
+param set-default MPC_THR_MIN 0.1
+param set-default MPC_TILTMAX_AIR 25
+param set-default MPC_XY_P 1.2
+param set-default MPC_XY_VEL_D_ACC 0.4
+param set-default MPC_XY_VEL_I_ACC 0
+param set-default MPC_XY_VEL_MAX 10
+param set-default MPC_XY_VEL_P_ACC 8.5
+param set-default MPC_Z_P 1.75
+param set-default MPC_Z_VEL_D_ACC 0.5
+param set-default MPC_Z_VEL_I_ACC 5.5
+param set-default MPC_Z_VEL_MAX_DN 1.5
+param set-default MPC_Z_VEL_MAX_UP 3
+param set-default MPC_Z_VEL_P_ACC 10
+param set-default THR_MDL_FAC 0.663349850227
+
+param set-default PWM_MAIN_FUNC1 101
+param set-default PWM_MAIN_FUNC2 102
+param set-default PWM_MAIN_FUNC3 103
+param set-default PWM_MAIN_FUNC4 104
+param set-default PWM_MAIN_FUNC5 105
+param set-default PWM_MAIN_FUNC6 106

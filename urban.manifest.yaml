@@ -73,6 +73,12 @@ recipes:
     path: recipes/usecases/urban-drone-rc.yaml
     recipe_id: urban-drone-rc
     use_case: drone-rc
+  # The drone route when its Drone is the PX4 SITL EAMS Hexa (asset
+  # eams-hexa-px4): the drone Recipe plus PX4-Autopilot and pymavlink.
+  drone-px4:
+    path: recipes/usecases/urban-drone-px4.yaml
+    recipe_id: urban-drone-px4
+    use_case: drone-px4
   fleet:
     path: recipes/usecases/urban-drone-fleet.yaml
     recipe_id: urban-drone-fleet

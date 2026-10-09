@@ -49,6 +49,7 @@ for path in (
     sys.path.insert(0, str(path))
 
 import drone_fleet_single_host as base
+import drone_px4
 import drone_fleet_city as city
 import urban_fault_injection
 import urban_lifecycle
@@ -129,8 +130,10 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
         else None
     )
     drone_profile = drone.get("profile")
-    if drone_profile != "eams-nominal-9kg":
-        raise base.RecipeError("drone.profile must be eams-nominal-9kg")
+    if drone_profile not in {"eams-nominal-9kg", drone_px4.PROFILE}:
+        raise base.RecipeError(f"drone.profile must be eams-nominal-9kg or {drone_px4.PROFILE}")
+    if drone_px4.is_px4(drone_profile) and control_mode != "fleet-rpc":
+        raise base.RecipeError(f"{drone_px4.PROFILE} is flown by a schedule or mission (control.mode fleet-rpc)")
     try:
         spawn_pose_enu = {
             key: float(spawn_pose[key])
@@ -557,6 +560,11 @@ def urban_launcher_writer(
                 mission_path=recipe.mission,
                 mujoco_viewer=mujoco_viewer,
             )
+        if drone_px4.is_px4(getattr(recipe, "drone_profile", None)):
+            marker = json.loads((paths.recipe_config / "mujoco-city-fleet.json").read_text(encoding="utf-8"))
+            path = drone_px4.patch_launcher(
+                path, recipe_root=paths.recipe_root, drone_root=drone_root, marker=marker
+            )
         path = apply_composition_controls(path, paths)
         return apply_fault_injection(path, paths)
 
@@ -724,7 +732,7 @@ def materialize_eams_controller_params(
     return output
 
 
-def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict[str, Any]:
+def apply_eams_city_contact_policy(hexa_body: ET.Element, *, landing_box: bool = True) -> dict[str, Any]:
     contact_friction = {
         "frame_chassis_contact": EAMS_CHASSIS_FRICTION,
         "landing_gear_left_skid_contact": EAMS_SKID_FRICTION,
@@ -746,6 +754,13 @@ def apply_eams_city_contact_policy(hexa_body: ET.Element) -> dict[str, Any]:
         geom.set("condim", "1")
         geom.set("friction", EAMS_PROPELLER_FRICTION)
         geom.set("priority", EAMS_CONTACT_PRIORITY)
+    if not landing_box:
+        # PX4 SITL (tools/drone_px4.py): the box made the IMU chatter at rest.
+        return {
+            "propeller_collision_geoms": 6,
+            "contact_priority": int(EAMS_CONTACT_PRIORITY),
+            "landing_collider": None,
+        }
     ET.SubElement(hexa_body, "geom", {
         "name": EAMS_LANDING_COLLIDER_NAME,
         "type": "box",
@@ -775,11 +790,15 @@ def materialize_eams_city_model(
     paths=None,
     rc_mode: bool = False,
     runtime_config_dir: Path | None = None,
+    px4: bool = False,
 ) -> Path:
     """Compose the Urban-owned six-rotor model with the configured City."""
     paths = paths or _paths()
     model_source = URBAN_HEXA_ROOT / "drone.xml"
     config_source = URBAN_HEXA_ROOT / "drone_config_0.json"
+    if px4:
+        drone_px4.ensure_built()
+        model_source, config_source = drone_px4.hexa_sources()
     if not model_source.is_file() or not config_source.is_file():
         raise base.RecipeError(f"Urban Hexa package is incomplete: {URBAN_HEXA_ROOT}")
     process_dir = paths.recipe_config / "drone/mujoco-city-fleet/process-01"
@@ -795,7 +814,7 @@ def materialize_eams_city_model(
         if item is not hexa_body:
             worldbody.remove(item)
     hexa_body.set("pos", "0 0 0")
-    contact_policy = apply_eams_city_contact_policy(hexa_body)
+    contact_policy = apply_eams_city_contact_policy(hexa_body, landing_box=not px4)
     ET.indent(tree, space="  ")
     tree.write(body_only, encoding="utf-8", xml_declaration=True)
     compose_tool = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
@@ -815,6 +834,8 @@ def materialize_eams_city_model(
         type_config["components"][name] = copy.deepcopy(hexa_config["components"][name])
     select_compiled_mujoco_model(type_config, runtime_mjb)
     type_config["simulation"]["timeStep"] = hexa_config["simulation"]["timeStep"]
+    if px4:
+        drone_px4.apply_type_config(type_config, hexa_config)
     target_dir = runtime_config_dir or process_dir
     target_dir.mkdir(parents=True, exist_ok=True)
     runtime_type_path = target_dir / "drone_config_0.json"
@@ -1018,6 +1039,7 @@ def configure(
         paths=paths,
         rc_mode=recipe.control_mode == "ps4-rc",
         runtime_config_dir=runtime_config_dir,
+        px4=drone_px4.is_px4(recipe.drone_profile),
     )
     write_control_mode(paths, recipe.control_mode)
     write_selected_recipe(paths, recipe)
