@@ -167,8 +167,10 @@ def _import_mavlink_client():
 class MavlinkDroneLink:
     """Commands and state over MAVLink; the contact count and disturbance through the PDUs."""
 
-    def __init__(self, connection: str, spawn_enu: tuple[float, float, float], pdu: PduAccess | None) -> None:
+    def __init__(self, connection: str, spawn_enu: tuple[float, float, float], pdu: PduAccess | None,
+                 autopilot: str = "PX4 SITL") -> None:
         self.spawn_enu = spawn_enu
+        self.autopilot = autopilot  # names the PX4 process in a connection error
         self.pdu = pdu
         self._connection = connection
         self._client = None
@@ -178,8 +180,19 @@ class MavlinkDroneLink:
 
     def _mavlink(self):
         if self._client is None:
-            self._client = _import_mavlink_client()(connection=self._connection,
-                                                    heartbeat_timeout_sec=MAVLINK_HEARTBEAT_TIMEOUT_SEC)
+            try:
+                self._client = _import_mavlink_client()(connection=self._connection,
+                                                        heartbeat_timeout_sec=MAVLINK_HEARTBEAT_TIMEOUT_SEC)
+            except TimeoutError as exc:
+                # PX4's startup script now and then stops before it opens the API
+                # link: a PX4 SITL bug in its command server (px4_daemon), which
+                # tools/px4-patches works around; a new start recovers.
+                raise DroneLinkError(
+                    f"{self.autopilot} did not open its MAVLink API on {self._connection} within "
+                    f"{MAVLINK_HEARTBEAT_TIMEOUT_SEC:.0f} s. This is a known PX4 SITL startup bug "
+                    "(a startup command of PX4 never returns). To recover, stop the simulation and "
+                    "start it again (docs/px4-sitl.md Troubleshooting)"
+                ) from exc
         return self._client
 
     def _relative(self, x_world: float, y_world: float, z_world: float) -> tuple[float, float, float]:

@@ -292,6 +292,10 @@ class DroneScheduleTest(unittest.TestCase):
         with self.assertRaisesRegex(schedule_module.ScheduleError, "Drone-<n>"):
             schedule_module.mavlink_connection("udpin:127.0.0.1:14540", "Scout")
 
+    def test_each_drone_names_its_px4_asset(self):
+        self.assertEqual([schedule_module.px4_asset(name) for name in ("Drone-1", "Drone-2", "Drone-10")],
+                         ["px4-sitl", "px4-sitl-1", "px4-sitl-9"])
+
     def test_several_flights_get_a_summary_each(self):
         args = schedule_module.parser().parse_args(
             ["--flight", "Drone-1=a.yaml", "--flight", "Drone-2=b.yaml", "--summary-json", "out/s.json"])

@@ -26,6 +26,7 @@ PX4-Autopilot and pymavlink before.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -87,10 +88,24 @@ def apply_type_config(type_config: dict, hexa_config: dict) -> None:
     )
 
 
+PX4_PATCHES = ROOT / "tools" / "px4-patches"
+
+
+def patches_hash() -> str:
+    """The hash tools/px4_sitl_build.bash records for the PX4 patches it applied."""
+    patches = sorted(PX4_PATCHES.glob("*.patch"))
+    if not patches:
+        return ""
+    return hashlib.sha256(b"".join(path.read_bytes() for path in patches)).hexdigest()
+
+
 def ensure_built() -> Path:
-    """Build PX4 SITL out of tree (tools/px4_sitl_build.bash) unless it is built."""
+    """Build PX4 SITL out of tree (tools/px4_sitl_build.bash) unless it is built with
+    the current patches (tools/px4-patches)."""
     binary = PX4_OUT / "build" / "px4_sitl_default" / "bin" / "px4"
-    if binary.is_file():
+    stamp = PX4_OUT / "px4-patches.sha256"
+    built_hash = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else None
+    if binary.is_file() and built_hash == patches_hash():
         return binary
     print(f"PX4 SITL: building {px4_root()} into {PX4_OUT} (the first build takes a few minutes)", flush=True)
     result = subprocess.run(

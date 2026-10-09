@@ -270,6 +270,16 @@ class MavlinkDroneLinkTest(unittest.TestCase):
         with self.assertRaises(drone_link.DroneLinkError):
             link.state()
 
+    def test_a_px4_that_never_answers_says_how_to_recover(self):
+        def silent(**kwargs):
+            raise TimeoutError("no heartbeat")
+        link = drone_link.MavlinkDroneLink("udpin:127.0.0.1:14541", (0.0, 0.0, 0.0), None,
+                                           autopilot="Drone-2: PX4 SITL (px4-sitl-1)")
+        with mock.patch.object(drone_link, "_import_mavlink_client", return_value=silent):
+            with self.assertRaisesRegex(drone_link.DroneLinkError,
+                                        r"Drone-2: PX4 SITL \(px4-sitl-1\) did not open .*14541.*known PX4 SITL startup bug.*start it again"):
+                link.set_ready_async().result(timeout=5)
+
     def test_the_disturbance_is_written_to_the_disturb_pdu(self):
         pdu = mock.Mock()
         link, _ = self.make(pdu)
