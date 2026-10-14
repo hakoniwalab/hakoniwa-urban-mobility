@@ -14,6 +14,12 @@ model: {physics: "${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car2/generated
 preview: {format: view-model, path: "${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_car2/generated/view-model-red.json"}
 dimensions: {width_m: 1.78, length_m: 4.38}
 spawn: {ground_clearance_m: 0.31}
+# Where a 箱庭人間 sits (vehicle frame, x forward, y left, z up from the body
+# origin; the hip on the seat): the driver on the right (right-hand drive),
+# under the driver's eye (viewer.front_camera).
+seats:
+  driver: [-0.40, -0.38, -0.12]
+  passenger: [-0.40, 0.38, -0.12]
 viewer: {front_camera: {position: [-0.05, -0.38, 0.84], rpy: [0, 0, 0], fov: 72, near: 0.1, far: 1000, borderColor: "#ffffff", borderWidthPx: 3, window: {x: 0.70, y: 0.70, width: 0.28, height: 0.28}}}
 controls:
   external: {external: true}
