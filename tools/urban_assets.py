@@ -186,9 +186,14 @@ def catalog(directories: list[Path] | None = None) -> dict[str, Asset]:
             path for directory in directories if directory.is_dir()
             for path in sorted(directory.rglob(f"*{MANIFEST_SUFFIX}"))
         ]
+    import urban_manifest
+
+    portable = urban_manifest.portable()
     assets: dict[str, Asset] = {}
     for path in paths:
         asset = load_manifest(path)
+        if portable and asset.data.get("portable") is False:
+            continue  # not carried by the Windows portable package (its body is not packaged)
         if asset.id in assets:
             raise AssetError(
                 f"duplicate Asset id {asset.id}: {assets[asset.id].path} and {path}"

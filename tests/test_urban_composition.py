@@ -1693,3 +1693,46 @@ class DroneLibraryPathTest(unittest.TestCase):
         service = {"args": []}
         urban_composer._add_drone_library_path(service)
         self.assertEqual(service, {"args": []})
+
+
+class CompositionExtensionTest(Fixture):
+    """asset-contract section 5.8: programs a Composition adds to its run."""
+
+    def test_extensions_are_read_and_checked(self):
+        path = self.composition(extensions=[{"program": "./join.py", "args": ["--work", "${runtime.work}", 3]}])
+        self.assertEqual(self.load(path).extensions,
+                         ({"program": "./join.py", "args": ["--work", "${runtime.work}", "3"]},))
+        self.assertEqual(self.load(self.composition()).extensions, ())
+        for bad in ({"args": []}, {"program": "x.py", "args": "nope"}, {"program": "x.py", "when": "start"}):
+            with self.assertRaisesRegex(urban_composition.CompositionError, "extensions\\[0\\]"):
+                self.load(self.composition(extensions=[bad]))
+
+    def test_run_extensions_expands_placeholders_and_runs_in_order(self):
+        program = self.work / "join.py"
+        program.write_text("", encoding="utf-8")
+        path = self.composition(extensions=[
+            {"program": "./join.py", "args": ["--work", "${runtime.work}", "${composition.dir}"]},
+            {"program": "${repo:hakoniwa-urban-mobility}/tools/urban_assets.py", "args": ["list"]},
+        ])
+        work = self.work / "recipe-work"
+        calls = []
+        with self.catalog(), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path("/fp/python")), \
+                mock.patch.object(urban_simulation.subprocess, "run",
+                                  side_effect=lambda command, **kw: calls.append((command, kw)) or mock.Mock(returncode=0)):
+            urban_simulation.run_extensions(work, path)
+        self.assertEqual(calls[0][0], ["/fp/python", str(program), "--work", str(work.resolve()), str(self.work)])
+        self.assertEqual(calls[0][1]["cwd"], self.work)
+        self.assertEqual(calls[1][0][1], str(urban_simulation.WORKSPACE / "hakoniwa-urban-mobility/tools/urban_assets.py"))
+
+    def test_a_failing_extension_stops_the_command(self):
+        (self.work / "join.py").write_text("", encoding="utf-8")
+        path = self.composition(extensions=[{"program": "./join.py"}])
+        with self.catalog(), \
+                mock.patch.object(multi_car, "foundation_python", return_value=Path("/fp/python")), \
+                mock.patch.object(urban_simulation.subprocess, "run", return_value=mock.Mock(returncode=2)):
+            with self.assertRaisesRegex(urban_simulation.SimulationError, "join.py failed"):
+                urban_simulation.run_extensions(self.work, path)
+        with self.catalog(), self.assertRaisesRegex(urban_simulation.SimulationError, "no workspace repository"):
+            urban_simulation.run_extensions(self.work, self.composition(
+                extensions=[{"program": "${repo:no-such-repo}/x.py"}]))

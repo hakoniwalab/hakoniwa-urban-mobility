@@ -260,6 +260,21 @@ class StudioServerTest(StudioTestBase):
         self.assertNotIn("my-loop", [item["id"] for item in listed])
         self.assertEqual(self.call("DELETE", "/api/scenarios/my-loop")[0], 404)
 
+    def test_route_clearance_skips_cars_that_opt_out(self):
+        import urban_assets
+
+        def car(asset_id, width, opt_out):
+            data = {"dimensions": {"width_m": width}, "title": asset_id}
+            if opt_out:
+                data["route_clearance"] = False
+            return mock.Mock(id=asset_id, kind="vehicle", category="car", data=data)
+
+        cars = {"cart": car("cart", 1.24, False), "truck": car("truck", 2.3, True)}
+        with mock.patch.object(urban_assets, "catalog", return_value=cars):
+            self.assertEqual(urban_studio.route_clearance()["vehicle"]["asset"], "cart")
+            # A route that names the opted-out Car is still checked with its width.
+            self.assertEqual(urban_studio.route_clearance(["truck"])["vehicle"]["asset"], "truck")
+
     def test_unsaved_route_points_are_checked_against_the_walls(self):
         building = {"id": "bldg_a", "vertices": [[-5, -5], [5, -5], [5, 5], [-5, 5]], "holes": []}
         points = self.route()["route"]["points"]

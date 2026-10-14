@@ -27,6 +27,7 @@ import argparse
 from dataclasses import dataclass
 import json
 import math
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -489,6 +490,49 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     write_viewer_planned_paths(
         sorted((target.work / "config/threejs").glob("viewer-config*.json")), composition_path, city_marker,
     )
+    run_extensions(target.work, composition_path)
+
+
+EXTENSION_PLACEHOLDER = re.compile(r"\$\{(?:runtime\.(work)|composition\.(dir)|repo:([A-Za-z0-9_.-]+))\}")
+
+
+def run_extensions(work: Path, composition_path: Path) -> None:
+    """Run the Composition's extensions (asset-contract section 5.8), in order.
+
+    Each runs after Urban has written the run's files (at configure and at
+    start), with the Foundation Python, and may add to them: assets in the
+    Launcher, PDUs in the web bridge, objects in the Viewer. It must be
+    idempotent. A failure stops the command.
+    """
+    import multi_car
+
+    composition = load_composition(composition_path)
+    if not composition.extensions:
+        return
+
+    def expand(text: str) -> str:
+        def value(match: re.Match) -> str:
+            if match.group(1):
+                return str(Path(work).resolve())
+            if match.group(2):
+                return str(composition.path.parent)
+            repo = WORKSPACE / match.group(3)
+            if not repo.is_dir():
+                raise SimulationError(f"Composition extension: no workspace repository {match.group(3)}")
+            return str(repo)
+        return EXTENSION_PLACEHOLDER.sub(value, text)
+
+    for index, extension in enumerate(composition.extensions):
+        program = Path(expand(extension["program"]))
+        if not program.is_absolute():
+            program = composition.path.parent / program
+        if not program.is_file():
+            raise SimulationError(f"Composition extension {index}: no program {program}")
+        command = [str(multi_car.foundation_python()), str(program), *map(expand, extension["args"])]
+        print(f"Composition extension: {program.name}", flush=True)
+        result = subprocess.run(command, cwd=composition.path.parent, check=False)
+        if result.returncode != 0:
+            raise SimulationError(f"Composition extension {program.name} failed (exit {result.returncode})")
 
 
 def route_paths(composition_path: Path, ground=None) -> list[dict]:

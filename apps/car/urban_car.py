@@ -203,6 +203,9 @@ class AckermannFleetClient:
         ):
             raise ValueError("publish_timeout_sec must be finite and non-negative")
         self._transport: HakoniwaPollingTransport | None = None
+        self._commanded: dict[str, tuple[float, float]] = {
+            robot: (0.0, 0.0) for robot in self.robots
+        }
 
     @property
     def connected(self) -> bool:
@@ -252,6 +255,45 @@ class AckermannFleetClient:
                     "the runtime may be paused, stopped, or not consuming commands"
                 )
             time.sleep(min(0.002, 0.25 / self.rate_hz))
+        self._commanded[robot] = (speed, steering)
+
+    def send_acceleration(
+        self,
+        robot: str,
+        acceleration_m_s2: float,
+        steering_rad: float,
+        dt_sec: float,
+        *,
+        max_speed_m_s: float,
+        steering_rate_rad_s: float,
+        allow_reverse: bool = False,
+    ) -> tuple[float, float]:
+        """Integrate acceleration into the existing speed command interface.
+
+        This is the acceleration-mode switch: callers use this method instead
+        of ``send``.  The runtime PDU/controller remains backward compatible
+        and receives a normal speed/steering AckermannDrive command.
+        """
+        values = tuple(float(value) for value in (
+            acceleration_m_s2, steering_rad, dt_sec,
+            max_speed_m_s, steering_rate_rad_s,
+        ))
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("acceleration command values must be finite")
+        acceleration, steering, dt, max_speed, steering_rate = values
+        if dt <= 0.0 or max_speed <= 0.0 or steering_rate <= 0.0:
+            raise ValueError("dt, max speed, and steering rate must be positive")
+        if not isinstance(allow_reverse, bool):
+            raise ValueError("allow_reverse must be a bool")
+        speed_before, steering_before = self._commanded[robot]
+        minimum_speed = -max_speed if allow_reverse else 0.0
+        speed = max(minimum_speed, min(max_speed, speed_before + acceleration * dt))
+        steering_step = steering_rate * dt
+        steering = steering_before + max(
+            -steering_step, min(steering_step, steering - steering_before)
+        )
+        self.send(robot, speed, steering)
+        return speed, steering
 
     def send_float64(self, robot: str, pdu: str, value: float) -> bool:
         """Write one std_msgs/Float64 PDU of a managed robot (e.g. tire_friction);
@@ -388,6 +430,23 @@ class AckermannClient:
 
     def send(self, speed_m_s: float, steering_rad: float = 0.0) -> None:
         self._fleet.send(self.robot, speed_m_s, steering_rad)
+
+    def send_acceleration(
+        self,
+        acceleration_m_s2: float,
+        steering_rad: float,
+        dt_sec: float,
+        *,
+        max_speed_m_s: float,
+        steering_rate_rad_s: float = 0.5,
+        allow_reverse: bool = False,
+    ) -> tuple[float, float]:
+        return self._fleet.send_acceleration(
+            self.robot, acceleration_m_s2, steering_rad, dt_sec,
+            max_speed_m_s=max_speed_m_s,
+            steering_rate_rad_s=steering_rate_rad_s,
+            allow_reverse=allow_reverse,
+        )
 
     def drive(
         self,

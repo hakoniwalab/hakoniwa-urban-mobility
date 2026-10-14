@@ -88,8 +88,10 @@ class ProfileTest(unittest.TestCase):
         carried = {path for path in mbody["include_paths"] if path.startswith("bodies/")}
         used = set()
         for manifest in (ROOT / "assets").glob("*.asset.yaml"):
-            used.update("bodies/" + name for name in re.findall(r"bodies/([A-Za-z0-9_]+)",
-                                                                 manifest.read_text(encoding="utf-8")))
+            text = manifest.read_text(encoding="utf-8")
+            if re.search(r"^portable:\s*false\s*$", text, flags=re.MULTILINE):
+                continue  # hidden in the portable package (urban_assets.catalog)
+            used.update("bodies/" + name for name in re.findall(r"bodies/([A-Za-z0-9_]+)", text))
         self.assertTrue(used, "no Asset names an mbody body")
         self.assertLessEqual(used, carried)
 
@@ -739,3 +741,26 @@ class ChildOutputEncodingTest(unittest.TestCase):
         with mock.patch.object(world_height.subprocess, "run", return_value=failed):
             with self.assertRaises(world_height.WorldHeightError):
                 world_height._compile_in_process(0, Path("a.xml"), Path("a.mjb"))
+
+
+class PortableHiddenAssetTest(unittest.TestCase):
+    """An Asset with portable: false is left out of the catalog in the portable package only."""
+
+    def test_portable_false_is_hidden_only_when_portable(self):
+        import urban_assets
+        import urban_manifest
+
+        base = (ROOT / "assets" / "hakoniwa-car.asset.yaml").read_text(encoding="utf-8")
+
+        def manifest(asset_id: str, extra: str) -> str:
+            text = re.sub(r"^id: .*$", f"id: {asset_id}", base, count=1, flags=re.MULTILINE)
+            return text + extra
+
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "kept.asset.yaml").write_text(manifest("kept", ""), encoding="utf-8")
+            (directory / "hidden.asset.yaml").write_text(manifest("hidden", "portable: false\n"), encoding="utf-8")
+            with mock.patch.object(urban_manifest, "portable", return_value=False):
+                self.assertEqual(sorted(urban_assets.catalog([directory])), ["hidden", "kept"])
+            with mock.patch.object(urban_manifest, "portable", return_value=True):
+                self.assertEqual(sorted(urban_assets.catalog([directory])), ["kept"])
