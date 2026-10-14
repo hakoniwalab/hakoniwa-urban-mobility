@@ -471,3 +471,31 @@ class DirectorTest(unittest.TestCase):
         director.scene = self.scene
         self.assertEqual(director.queue_spec("stall-n3")["along"], [1.0, 0.0])
         self.assertIsNone(director.queue_spec("aisle-west"))
+
+
+class RiderPostureTest(unittest.TestCase):
+    """A rider's seated postures: a tilt of the whole body about the hip."""
+
+    def test_tilt_keeps_the_hip_in_place(self):
+        hip = 0.66
+        for pitch, roll, yaw in ((math.radians(20), 0.0, 0.0), (0.1, 0.08, 1.2)):
+            quat = (math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))
+            x, y, z, new = plant.tilted(1.0, 2.0, 0.3, quat, pitch, roll, hip)
+            # The hip of the tilted body is where the upright body's hip was.
+            w, qx, qy, qz = new
+            # rotate (0, 0, hip) by the new quaternion
+            hx = 2 * (qx * qz + w * qy) * hip
+            hy = 2 * (qy * qz - w * qx) * hip
+            hz = (1 - 2 * (qx * qx + qy * qy)) * hip
+            self.assertAlmostEqual(x + hx, 1.0, places=9)
+            self.assertAlmostEqual(y + hy, 2.0, places=9)
+            self.assertAlmostEqual(z + hz, 0.3 + hip, places=9)
+
+    def test_drowsy_leans_forward_and_startled_leans_back(self):
+        gait = plant.Gait()
+        self.assertGreater(plant.posture(gait, "sit_drowsy")[0], math.radians(10))
+        self.assertLess(plant.posture(gait, "sit_startled")[0], 0.0)
+        self.assertEqual(plant.posture(gait, "sit"), (0.0, 0.0))
+        for mode in plant.RIDING:
+            self.assertIn(mode, plant.ANIMATIONS)
+            self.assertIn(mode, plant.SITTING)

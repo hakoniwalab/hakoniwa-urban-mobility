@@ -10,7 +10,11 @@ hakoniwa-mbody-registry). Per person it reads, every step:
 - ``<name>/animation`` (std_msgs/String): ``auto`` (or empty: walk while
   moving, idle otherwise), ``walk``, ``idle``, ``wave``, ``sit`` (on a seat
   SEAT_M high under it: the person is lowered onto it and stops colliding),
-  ``talk`` or ``sit_talk`` (gesturing while talking).
+  ``talk`` or ``sit_talk`` (gesturing while talking). A rider takes
+  ``sit`` or one of the seated postures of a driver: ``sit_drive`` (hands on
+  the wheel), ``sit_drowsy`` (arms down, leaning forward, swaying),
+  ``sit_alert`` (upright, hands on the wheel) and ``sit_startled`` (arms
+  braced, leaning back); the lean and sway tilt the whole body about the hip.
 - ``<name>/ride`` (std_msgs/String): ``<vehicle>/<seat>`` (for example
   ``Car-1/driver``) to sit on a car's seat and go with it; empty to get off
   (beside the seat). Riders follow the car's pose (the Car fleet's
@@ -47,8 +51,9 @@ from pathlib import Path
 
 LIMB_JOINTS = ("shoulder_left_joint", "shoulder_right_joint", "hip_left_joint", "hip_right_joint",
                "knee_left_joint", "knee_right_joint")
-ANIMATIONS = ("auto", "walk", "idle", "wave", "sit", "talk", "sit_talk")
-SITTING = ("sit", "sit_talk")
+RIDING = ("sit_drive", "sit_drowsy", "sit_alert", "sit_startled")   # a rider's postures
+ANIMATIONS = ("auto", "walk", "idle", "wave", "sit", "talk", "sit_talk") + RIDING
+SITTING = ("sit", "sit_talk") + RIDING
 SEAT_M = 0.44           # a stool's or bench's seat above what the person stands on
 STRIDE_M = 1.0          # distance walked per full swing cycle (an adult)
 MAX_SWING_RAD = math.radians(30)
@@ -79,6 +84,19 @@ def _approach(current: float, target: float, rate: float, dt: float) -> float:
     return target if abs(target - current) <= step else current + math.copysign(step, target - current)
 
 
+def posture(gait: Gait, mode: str) -> tuple[float, float]:
+    """A seated posture's tilt of the whole body about the hip: (pitch forward, roll) in rad."""
+    if mode == "sit_drowsy":
+        # Leaning forward, nodding and swaying slowly (drowsiness).
+        return (math.radians(22) + math.radians(6) * math.sin(gait.clock * 0.9),
+                math.radians(5) * math.sin(gait.clock * 0.6))
+    if mode == "sit_startled":
+        return math.radians(-8), 0.0
+    if mode == "sit_drive":
+        return math.radians(4), 0.0
+    return 0.0, 0.0
+
+
 def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) -> dict[str, float]:
     """Limb angles (rad) for one step. Positive turns a limb backwards about
     the person's left (y) axis; the arms swing opposite to the legs."""
@@ -105,6 +123,16 @@ def animate(gait: Gait, mode: str, speed: float, dt: float, scale: float = 1.0) 
         targets.update(hip_left_joint=math.radians(-90), hip_right_joint=math.radians(-90),
                        knee_left_joint=math.radians(90), knee_right_joint=math.radians(90),
                        shoulder_left_joint=math.radians(-25), shoulder_right_joint=math.radians(-25))
+    if mode in ("sit_drive", "sit_alert"):
+        # Hands forward on the wheel.
+        targets.update(shoulder_left_joint=math.radians(-65), shoulder_right_joint=math.radians(-65))
+    elif mode == "sit_drowsy":
+        # Arms hanging, drifting slowly.
+        drift = math.radians(4) * math.sin(gait.clock * 0.7)
+        targets.update(shoulder_left_joint=math.radians(-15) + drift, shoulder_right_joint=math.radians(-15) - drift)
+    elif mode == "sit_startled":
+        # Arms braced straight at the wheel.
+        targets.update(shoulder_left_joint=math.radians(-85), shoulder_right_joint=math.radians(-85))
     if mode in ("talk", "sit_talk"):
         # Talking: the hands move as one speaks, in a slow uneven rhythm.
         t = gait.clock
@@ -352,6 +380,9 @@ class PeoplePlant:
             transform = Transform()
             x, y, z = self.data.xpos[person["body"]]
             w, qx, qy, qz = self.data.xquat[person["body"]]
+            pitch, roll = person.get("tilt", (0.0, 0.0))
+            if pitch or roll:
+                x, y, z, (w, qx, qy, qz) = tilted(x, y, z, (w, qx, qy, qz), pitch, roll, HIP_M * person["scale"])
             transform.translation.x, transform.translation.y, transform.translation.z = float(x), float(y), float(z)
             transform.rotation.x, transform.rotation.y = float(qx), float(qy)
             transform.rotation.z, transform.rotation.w = float(qz), float(w)
@@ -412,8 +443,13 @@ class PeoplePlant:
             self.mujoco.mj_forward(self.model, self.data)
         for person in self.people:
             speed = math.hypot(self.data.qvel[person["slide_x"]], self.data.qvel[person["slide_y"]])
-            mode = "sit" if person["riding"] else person["animation"]
+            mode = person["animation"] if person["animation"] in SITTING else "sit"
+            mode = mode if person["riding"] else person["animation"]
             person["angles"] = animate(person["gait"], mode, speed, dt, person["scale"])
+            # The tilt eases in, so a change of posture is a movement, not a jump.
+            target = posture(person["gait"], mode) if person["riding"] else (0.0, 0.0)
+            tilt = person.get("tilt", (0.0, 0.0))
+            person["tilt"] = tuple(_approach(t, g, math.radians(90), dt) for t, g in zip(tilt, target))
 
     # --- Contacts --------------------------------------------------------------------
 
@@ -521,6 +557,28 @@ class PeoplePlant:
         self.data.ctrl[person["lift"]] = self.data.qpos[person["slide_z_qpos"]]
         self.model.geom_contype[person["collision"]] = 1
         self.model.geom_conaffinity[person["collision"]] = 1
+
+
+def tilted(x, y, z, quat, pitch, roll, hip_m):
+    """The body tilted by pitch (forward, about its left axis) and roll (about
+    its forward axis) about the hip, hip_m above its origin (the feet)."""
+    def mul(a, b):
+        aw, ax, ay, az = a
+        bw, bx, by, bz = b
+        return (aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+                aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw)
+
+    def rotate(q, v):
+        w, qx, qy, qz = mul(mul(q, (0.0, *v)), (q[0], -q[1], -q[2], -q[3]))
+        return qx, qy, qz
+
+    # In the body frame (x forward, y left, z up): pitch forward is about +y.
+    local = mul((math.cos(pitch / 2), 0.0, math.sin(pitch / 2), 0.0), (math.cos(roll / 2), math.sin(roll / 2), 0.0, 0.0))
+    new = mul(quat, local)
+    hip = (0.0, 0.0, hip_m)
+    before = rotate(quat, hip)
+    after = rotate(new, hip)
+    return x + before[0] - after[0], y + before[1] - after[1], z + before[2] - after[2], new
 
 
 def run(config: dict) -> int:
