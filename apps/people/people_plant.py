@@ -245,6 +245,7 @@ class PeoplePlant:
             })
         self.vehicle_poses = {}
         self.previous_vehicle_poses = {}
+        self.vehicle_tracks = {}   # per car: last stamp, pose and velocity (vehicle_pose_now)
         self.proxies = {}  # car -> (mocap id, geom id)
         for name in config.get("vehicles", {}):
             try:
@@ -349,10 +350,39 @@ class PeoplePlant:
             return
         self.previous_vehicle_poses = self.vehicle_poses
         self.vehicle_poses = {}
+        stamp = state.header.stamp.sec + state.header.stamp.nanosec * 1e-9
         for name, transform in zip(state.joint_names, state.transforms):
             q, p = transform.rotation, transform.translation
             yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y ** 2 + q.z ** 2))
-            self.vehicle_poses[name] = (float(p.x), float(p.y), float(p.z), yaw)
+            pose = (float(p.x), float(p.y), float(p.z), yaw)
+            self.vehicle_poses[name] = pose
+            self.track_vehicle(name, pose, stamp)
+
+    def track_vehicle(self, name: str, pose, stamp: float) -> None:
+        """The car's velocity between its last two published poses (by their stamps)."""
+        track = self.vehicle_tracks.get(name)
+        if track is None or stamp <= 0 or (track["stamp"] is not None and stamp < track["stamp"] - 1e-6):
+            self.vehicle_tracks[name] = {"stamp": stamp, "pose": pose, "velocity": (0.0, 0.0, 0.0, 0.0)}
+            return
+        if track["stamp"] is not None and stamp - track["stamp"] > 1e-6:
+            dt = stamp - track["stamp"]
+            before = track["pose"]
+            dyaw = math.atan2(math.sin(pose[3] - before[3]), math.cos(pose[3] - before[3]))
+            track["velocity"] = tuple((a - b) / dt for a, b in zip(pose[:3], before[:3])) + (dyaw / dt,)
+            track["stamp"], track["pose"] = stamp, pose
+
+    def vehicle_pose_now(self, name: str):
+        """The car's pose at this plant's time: its published pose carried on by its
+        velocity for the time since it was published. The cars publish less
+        often than this plant steps; a rider placed on the last published pose
+        would jump with the car every other step (seen from a camera in the car)."""
+        pose = self.vehicle_poses.get(name)
+        track = self.vehicle_tracks.get(name)
+        if pose is None or track is None or not track["stamp"]:
+            return pose
+        age = min(max(float(self.data.time) - track["stamp"], 0.0), 0.1)
+        vx, vy, vz, wz = track["velocity"]
+        return (pose[0] + vx * age, pose[1] + vy * age, pose[2] + vz * age, pose[3] + wz * age)
 
     def write_states(self, pdu) -> None:
         from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_JointState import py_to_pdu_JointState
@@ -537,7 +567,7 @@ class PeoplePlant:
         if not person["riding"]:
             return
         vehicle, (sx, sy, sz) = person["riding"]
-        pose = self.vehicle_poses.get(vehicle)
+        pose = self.vehicle_pose_now(vehicle)
         if pose is None:
             return
         x, y, z, yaw = pose
