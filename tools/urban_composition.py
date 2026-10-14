@@ -113,6 +113,8 @@ class Composition:
     interactions: tuple[dict, ...]
     viewer: dict
     fleets: tuple[Fleet, ...] = ()
+    # Programs a workspace repository adds to the run (section 5.8).
+    extensions: tuple[dict, ...] = ()
 
     def simulators(self) -> set[str]:
         return {vehicle.asset.simulator for vehicle in (*self.vehicles, *self.fleets)}
@@ -298,11 +300,28 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     viewer = data.get("viewer", {})
     if not isinstance(viewer, dict):
         raise CompositionError("Composition viewer must be a mapping")
+    extension_entries = data.get("extensions", [])
+    if not isinstance(extension_entries, list):
+        raise CompositionError("Composition extensions must be a list")
+    extensions = tuple(_extension(entry, index) for index, entry in enumerate(extension_entries))
     vehicles = _assign_route_cars(path, vehicles)
     return Composition(
         id=composition_id, path=path, world=world, vehicles=vehicles,
-        interactions=interactions, viewer=viewer, fleets=fleets,
+        interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
     )
+
+
+def _extension(entry: object, index: int) -> dict:
+    """An extension: {program, args}, run after Urban writes the run's files (section 5.8)."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("program"), str) or not entry["program"].strip():
+        raise CompositionError(f"extensions[{index}] must be a mapping with a program")
+    args = entry.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(arg, (str, int, float)) for arg in args):
+        raise CompositionError(f"extensions[{index}].args must be a list of strings")
+    unknown = set(entry) - {"program", "args"}
+    if unknown:
+        raise CompositionError(f"extensions[{index}] has unknown fields: {sorted(unknown)}")
+    return {"program": entry["program"].strip(), "args": [str(arg) for arg in args]}
 
 
 ROUTE_CACHE = urban_manifest.work_dir() / "urban/cache/routes"

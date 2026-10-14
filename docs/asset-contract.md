@@ -402,6 +402,9 @@ vehicles:
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port }    # optional
+extensions:                               # optional, section 5.8
+  - program: <path>
+    args: [ <arg>, ... ]
 ```
 
 The user places every vehicle explicitly; in the browser this is drag and
@@ -617,6 +620,27 @@ service (20 ms) in the `drone`, `integrated`, and `fpv` routes. It is
 applied with the controls, after `configure` and at every `start`; in the
 `fpv` route it replaces tools/fpv.py's own pacer, so one implementation paces
 every route.
+
+### 5.8 Extensions
+
+A Composition may add programs to its run, so that a workspace repository
+(a scenario engine, a recorder) joins the simulation without changing Urban:
+
+```yaml
+extensions:
+  - program: ${repo:hakoniwa-scenario}/tools/urban_scenario_link.py
+    args: ["${repo:hakoniwa-scenario}/scenarios/cut-in-highway/link.yaml", "--work", "${runtime.work}"]
+```
+
+Urban runs each extension, in order, with the Foundation Python, after it
+has written the run's files (the Launcher, the web bridge, the Viewer
+configs): at `configure` and again at `start` (managed Car and integrated
+routes). The program may add to those files (an asset in the Launcher, PDUs
+in the web bridge, objects in the Viewer) and must be idempotent. Its
+non-zero exit stops the command. Placeholders: `${runtime.work}` (the Recipe
+workspace), `${composition.dir}` (the Composition file's folder) and
+`${repo:<name>}` (a workspace repository). A relative `program` resolves
+against the Composition file; the program runs in that folder.
 
 ## 6. World Asset
 
