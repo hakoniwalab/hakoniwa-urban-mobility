@@ -145,6 +145,8 @@ source:
   repository: <repository name>
   generator: <command that materializes the model, optional>
 simulator: ackermann-mujoco | drone-core
+portable: false                 # optional: not shown in the Windows portable package (its body is not packaged)
+route_clearance: false          # optional, Cars: does not set the default route wall clearance (the widest Car)
 model:
   physics: <MJCF path or generated-model reference>
   visual: <Three.js view model / GLB manifest>

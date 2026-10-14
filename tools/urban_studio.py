@@ -405,6 +405,9 @@ def route_clearance(asset_ids: list[str] | None = None) -> dict:
         asset for asset in urban_assets.catalog().values()
         if asset.kind == "vehicle" and asset.category == "car" and asset.data.get("dimensions")
         and (asset_ids is None or asset.id in asset_ids)
+        # A Car that declares route_clearance: false (the highway vehicles) does not
+        # widen the default clearance; it still counts when a route names it.
+        and (asset_ids is not None or asset.data.get("route_clearance") is not False)
     ]
     if not cars:
         return {"clearance_m": route_check.DEFAULT_CLEARANCE_M, "vehicle": None}

@@ -1,0 +1,30 @@
+schema: hakoniwa.asset/v1
+id: hakoniwa-truck-green
+kind: vehicle
+category: car
+version: 0.1.0
+title: Hakoniwa Truck（緑）
+source: {repository: hakoniwa-mbody-registry}
+simulator: ackermann-mujoco
+# The highway vehicles (hakoniwa-scenario): not in the Windows portable package,
+# and they do not widen the route wall clearance of the existing city routes.
+portable: false
+route_clearance: false
+model:
+  physics: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_truck/generated/model-green.minimal_world.xml
+  contract: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_truck/config/ackermann-forge.yaml
+  visual: ${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_truck/generated/view-model-green.json
+preview: {format: view-model, path: "${repo:hakoniwa-mbody-registry}/bodies/hakoniwa_truck/generated/view-model-green.json"}
+dimensions: {width_m: 2.30, length_m: 8.00}
+spawn: {ground_clearance_m: 0.45}
+viewer:
+  front_camera: {position: [3.15, -0.42, 1.75], rpy: [0, 0, 0], fov: 72, near: 0.1, far: 1000,
+                 borderColor: "#ffffff", borderWidthPx: 3, window: {x: 0.70, y: 0.70, width: 0.28, height: 0.28}}
+controls:
+  external: {external: true}
+  rc: {program: "${repo:hakoniwa-urban-mobility}/apps/car/ps5_ackermann_sender.py", scope: vehicle,
+       args: ["--pdu-def", "${runtime.pdu_def}", "--rc-config", "${runtime.rc_config}", "--robot", "${vehicle.name}", "--pdu", "ackermann_cmd", "--max-speed", "${param.max_speed}", "--max-steering-angle", "${param.max_steering_angle}", "--deadzone", "${param.deadzone}"],
+       params: {max_speed: {type: number, default: 30.0}, max_steering_angle: {type: number, default: 0.50}, deadzone: {type: number, default: 0.06}}}
+  api: {program: "${repo:hakoniwa-urban-mobility}/apps/car/scenario_executor.py", scope: composition,
+        args: ["${param.scenario}", "--pdu-def", "${runtime.pdu_def}", "--tires", "${runtime.tires}", "--track", "${runtime.track}"],
+        params: {scenario: {type: path, required: true, kinds: [car-route-scenario]}}}

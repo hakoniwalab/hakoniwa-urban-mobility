@@ -506,6 +506,48 @@ class ControlModeTest(unittest.TestCase):
 
 
 class AckermannClientTest(unittest.TestCase):
+    def test_acceleration_mode_integrates_speed_and_limits_steering_slew(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdu_def = Path(directory) / "pdudef.json"
+            pdu_def.write_text("{}\n", encoding="utf-8")
+            transport = FakeTransport()
+            encoded = []
+
+            def encode(command):
+                encoded.append((command.speed, command.steering_angle))
+                return bytearray(48)
+
+            with (
+                patch.object(urban_car, "HakoniwaPollingTransport", return_value=transport),
+                patch.object(urban_car, "py_to_pdu_AckermannDrive", side_effect=encode),
+            ):
+                client = urban_car.AckermannClient(pdu_def, "Car-1").connect()
+                self.assertEqual(
+                    client.send_acceleration(2.5, 0.6, 0.1, max_speed_m_s=45.0),
+                    (0.25, 0.05),
+                )
+                self.assertEqual(
+                    client.send_acceleration(2.5, -0.6, 0.1, max_speed_m_s=45.0),
+                    (0.5, 0.0),
+                )
+                for _ in range(30):
+                    stopped = client.send_acceleration(
+                        -5.0, 0.0, 0.1, max_speed_m_s=45.0
+                    )
+                self.assertEqual(stopped[0], 0.0)
+                self.assertEqual(
+                    client.send_acceleration(
+                        -5.0, 0.0, 0.1, max_speed_m_s=45.0,
+                        allow_reverse=True,
+                    )[0],
+                    -0.5,
+                )
+                client.close(stop=False)
+
+            self.assertEqual(encoded[:2], [(0.25, 0.05), (0.5, 0.0)])
+            self.assertTrue(all(speed >= 0.0 for speed, _ in encoded[2:-1]))
+            self.assertEqual(encoded[-1][0], -0.5)
+
     def test_client_publishes_to_the_selected_robot_and_stops_cleanly(self):
         with tempfile.TemporaryDirectory() as directory:
             pdu_def = Path(directory) / "pdudef.json"
