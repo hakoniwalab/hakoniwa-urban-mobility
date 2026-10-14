@@ -380,9 +380,13 @@ class PeoplePlant:
         track = self.vehicle_tracks.get(name)
         if pose is None or track is None or not track["stamp"]:
             return pose
-        age = min(max(float(self.data.time) - track["stamp"], 0.0), 0.1)
-        vx, vy, vz, wz = track["velocity"]
-        return (pose[0] + vx * age, pose[1] + vy * age, pose[2] + vz * age, pose[3] + wz * age)
+        # Negative too: the car plant may run a little ahead of this one (its
+        # pose stamped a few ms after this plant's time) and is carried back.
+        age = min(max(float(self.data.time) - track["stamp"], -0.1), 0.1)
+        vx, vy, _vz, wz = track["velocity"]
+        # Not the height: a car's height jitters by millimetres on its tyres,
+        # and its rate over one publish period would bounce the rider.
+        return (pose[0] + vx * age, pose[1] + vy * age, pose[2], pose[3] + wz * age)
 
     def write_states(self, pdu) -> None:
         from hakoniwa_pdu.pdu_msgs.sensor_msgs.pdu_conv_JointState import py_to_pdu_JointState
