@@ -348,7 +348,7 @@ model's own value, which already won over the World's 1.0), and so does an
 `rc` Car (no route). The value is
 written in one Hakoniwa step and applies from the next physics step.
 
-A Car driven by another program (an `api` Car whose scenario runs as an
+A Car driven by another program (an `external` or `api` Car whose scenario runs as an
 extension, section 5.8) sets `tire_friction_input: true` in the Composition
 (section 5.1): it gets the same `geom_friction` component and tire priority,
 and that program writes the Car's `tire_friction` PDU itself (for example dry
