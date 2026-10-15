@@ -348,6 +348,12 @@ model's own value, which already won over the World's 1.0), and so does an
 `rc` Car (no route). The value is
 written in one Hakoniwa step and applies from the next physics step.
 
+A Car driven by another program (an `api` Car whose scenario runs as an
+extension, section 5.8) sets `tire_friction_input: true` in the Composition
+(section 5.1): it gets the same `geom_friction` component and tire priority,
+and that program writes the Car's `tire_friction` PDU itself (for example dry
+0.9, wet 0.5). Until it writes one the tires keep the model's friction.
+
 ### 4.5 Wind and rotor faults (Drone schedules)
 
 A waypoint of a Drone schedule (`apps/drone/drone_schedule.py`, the
@@ -400,6 +406,7 @@ vehicles:
     params: { <param>: <value> }          # optional, section 4.1
     spawn: { east_m, north_m, yaw_deg }   # section 5.4
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
+    tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port }    # optional
 extensions:                               # optional, section 5.8

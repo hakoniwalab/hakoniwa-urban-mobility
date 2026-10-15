@@ -435,7 +435,9 @@ class ControlModeTest(unittest.TestCase):
             self.assertEqual(priorities[first["prefix"] + geom], "1")
             self.assertEqual(priorities[first["prefix"] + geom + "_visual"], None)
             for other in others:
-                self.assertIsNone(priorities[other["prefix"] + geom])
+                # The other Cars keep their model's own tire priority (the
+                # registry vehicles carry priority 1 since hakoniwa-scenario M4-3).
+                self.assertIn(priorities[other["prefix"] + geom], (None, "1"))
 
     def test_the_executor_restores_the_models_tire_friction(self):
         # A leg without road_friction gets the tire friction of the vehicle's model.
@@ -458,6 +460,24 @@ class ControlModeTest(unittest.TestCase):
             config["inputs"]["ackermann_vehicles"]["vehicles"][0]["tire_grip"] = -1
             path.write_text(yaml.safe_dump(config), encoding="utf-8")
             with self.assertRaisesRegex(multi_car.RecipeError, "tire_grip must be positive"):
+                multi_car.resolve_config(path)
+
+    def test_a_vehicle_with_tire_friction_input_gets_the_friction_component(self):
+        import yaml
+
+        recipe = ROOT / "recipes/experiments/urban-car-one.yaml"
+        config = yaml.safe_load(recipe.read_text(encoding="utf-8"))
+        self.assertFalse(any(vehicle.get("tire_friction") for vehicle in multi_car.resolve_config(recipe)["vehicles"]))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "wet.yaml"
+            config["inputs"]["ackermann_vehicles"]["vehicles"][0]["tire_friction"] = True
+            path.write_text(yaml.safe_dump(config), encoding="utf-8")
+            resolved = multi_car.resolve_config(path)
+            self.assertIs(resolved["vehicles"][0]["tire_friction"], True)
+            self.assertTrue(multi_car.needs_plant_directive(resolved))
+            config["inputs"]["ackermann_vehicles"]["vehicles"][0]["tire_friction"] = "yes"
+            path.write_text(yaml.safe_dump(config), encoding="utf-8")
+            with self.assertRaisesRegex(multi_car.RecipeError, "invalid vehicle entry"):
                 multi_car.resolve_config(path)
 
     def test_a_vehicle_takes_its_types_front_camera(self):

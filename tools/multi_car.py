@@ -599,6 +599,10 @@ def resolve_config(config_path: Path) -> dict:
             height_value = float(spawn[height_key])
             yaw_deg = float(spawn["yaw_deg"])
             tire_grip = float(vehicle_input.get("tire_grip", 1.0))
+            # A program sets the tires' friction (tire_friction PDU), not a route.
+            tire_friction_input = vehicle_input.get("tire_friction", False)
+            if not isinstance(tire_friction_input, bool):
+                raise TypeError("tire_friction must be a boolean")
         except (KeyError, TypeError, ValueError) as error:
             raise RecipeError(f"invalid vehicle entry at index {index - 1}") from error
         if not name or name in names:
@@ -625,6 +629,7 @@ def resolve_config(config_path: Path) -> dict:
             "control_mode": control_mode,
             # Multiplies a route's road_friction (apps/car/scenario_executor.py).
             "tire_grip": tire_grip,
+            **({"tire_friction": True} if tire_friction_input else {}),
             "spawn_enu": {
                 "frame": "city_origin_local_enu",
                 "east_m": east,
