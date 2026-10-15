@@ -33,9 +33,10 @@ Recipe workspace without editing the Core checkout.
 MuJoCo version ownership is aligned as follows:
 
 - `hakoniwa-drone-core/MUJOCO_VERSION.txt` is the native Drone runtime authority.
-- `hakoniwa-mujoco-robots` builds its Viewer/backend against 3.13.0.
-- `hakoniwa-mbody-registry` pins 3.13.0 for the Ackermann tooling that imports
-  the Python MuJoCo package.
+- `hakoniwa-mujoco-robots` builds its Viewer/backend against 3.16.0 (since
+  2026-10-15; the car and road side moved, the Drone native runtime did not).
+- The Ackermann tooling of `hakoniwa-mbody-registry` imports the Foundation
+  Python MuJoCo package (3.16.0).
 - `hakoniwa-envsim` only emits MJCF/XML and does not pin or link a MuJoCo
   runtime, so it requires no version change.
 

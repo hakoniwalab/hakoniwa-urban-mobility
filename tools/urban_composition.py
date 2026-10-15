@@ -83,6 +83,9 @@ class Vehicle:
     args: tuple[str, ...] | None = None
     # Cars only: multiplies a route's road_friction (section 5.1); None is 1.0.
     tire_grip: float | None = None
+    # Cars only: a program (e.g. a scenario extension) sets the tires' friction
+    # through the tire_friction PDU (section 4.4).
+    tire_friction_input: bool = False
 
 
 @dataclass(frozen=True)
@@ -186,9 +189,14 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
         tire_grip = _finite(tire_grip, f"vehicle {name} tire_grip")
         if tire_grip <= 0.0:
             raise CompositionError(f"vehicle {name} tire_grip must be positive")
+    tire_friction_input = entry.get("tire_friction_input", False)
+    if not isinstance(tire_friction_input, bool):
+        raise CompositionError(f"vehicle {name} tire_friction_input must be true or false")
+    if tire_friction_input and asset.category != "car":
+        raise CompositionError(f"vehicle {name}: tire_friction_input is only for Cars")
     return Vehicle(
         name=name, asset=asset, control=control, params=params, spawn=spawn,
-        program=program, args=args, tire_grip=tire_grip,
+        program=program, args=args, tire_grip=tire_grip, tire_friction_input=tire_friction_input,
     )
 
 
@@ -631,6 +639,7 @@ def _car_inputs(
                     "up_m": _spawn_up(car, ground),
                 },
                 **({"tire_grip": car.tire_grip} if car.tire_grip is not None else {}),
+                **({"tire_friction": True} if car.tire_friction_input else {}),
             }
             for car in cars
         ],

@@ -135,6 +135,17 @@ class CompositionTest(Fixture):
         with self.assertRaisesRegex(urban_composition.CompositionError, "only for Cars"):
             self.load(self.drone(tire_grip=1.2))
 
+    def test_a_cars_tire_friction_input_reaches_the_car_config(self):
+        path = self.composition(vehicle={"tire_friction_input": True})
+        [vehicle] = urban_composition.to_car_config(self.load(path), "wet")["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertIs(vehicle["tire_friction"], True)
+        [plain] = urban_composition.to_car_config(self.load(self.composition()), "wet")["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertNotIn("tire_friction", plain)
+        with self.assertRaisesRegex(urban_composition.CompositionError, "true or false"):
+            self.load(self.composition(vehicle={"tire_friction_input": "yes"}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "only for Cars"):
+            self.load(self.drone(tire_friction_input=True))
+
     def test_register_city_derives_the_id_from_the_city_world_job(self):
         receipt = self.work / "jobs" / CITY_ID / "build/world/city-world-receipt.json"
         receipt.parent.mkdir(parents=True)

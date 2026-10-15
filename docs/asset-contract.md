@@ -348,6 +348,12 @@ model's own value, which already won over the World's 1.0), and so does an
 `rc` Car (no route). The value is
 written in one Hakoniwa step and applies from the next physics step.
 
+A Car driven by another program (an `external` or `api` Car whose scenario runs as an
+extension, section 5.8) sets `tire_friction_input: true` in the Composition
+(section 5.1): it gets the same `geom_friction` component and tire priority,
+and that program writes the Car's `tire_friction` PDU itself (for example dry
+0.9, wet 0.5). Until it writes one the tires keep the model's friction.
+
 ### 4.5 Wind and rotor faults (Drone schedules)
 
 A waypoint of a Drone schedule (`apps/drone/drone_schedule.py`, the
@@ -400,6 +406,7 @@ vehicles:
     params: { <param>: <value> }          # optional, section 4.1
     spawn: { east_m, north_m, yaw_deg }   # section 5.4
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
+    tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port }    # optional
 extensions:                               # optional, section 5.8
@@ -506,8 +513,8 @@ are left untouched. `--plain-world` also removes the plain-World MJCFs
 (section 6.2), which are regenerated on demand. Nothing is removed without
 `--apply`. The compile reports progress as plain lines and as
 `[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
-events, the City World job progress format. MuJoCo Python is pinned to the
-Drone Core version (`mujoco==3.13.0`) in the managed Recipe requirements, so
+events, the City World job progress format. MuJoCo Python is pinned
+(`mujoco==3.16.0` since 2026-10-15; the Drone Core native runtime stays 3.13.0) in the managed Recipe requirements, so
 the Workspace Python that runs Urban Studio has it; without it, the height
 falls back to the terrain hfield with a warning that rooftops are ignored.
 
