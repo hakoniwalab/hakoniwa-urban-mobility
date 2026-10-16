@@ -197,9 +197,9 @@ class ControlModeTest(unittest.TestCase):
                     return_value=Path("/foundation/install"),
                 ),
                 patch.object(
-                    multi_car,
-                    "launcher_supports_cleanup",
-                    return_value=True,
+                    multi_car.hakoniwa_runtime,
+                    "launcher_kind",
+                    return_value="cleanup",
                 ),
             ):
                 path = multi_car.materialize_launcher(

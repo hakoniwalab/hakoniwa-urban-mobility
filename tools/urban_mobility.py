@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(BUSINESS_PACK / "tools"))
 
 import urban_lifecycle  # noqa: E402
+import hakoniwa_runtime  # noqa: E402
 import urban_simulation  # noqa: E402
 from workdir import foundation_install, recipe_root  # noqa: E402
 from workspace import foundation_python_layout  # noqa: E402
@@ -461,6 +462,13 @@ def launcher_command(operation: str, context: RecipeContext, args: argparse.Name
         if session_state in {"FAILED", "TERMINATED"}:
             report = urban_lifecycle.status_report(lifecycle)
             print(json.dumps(report, indent=2))
+            if session_state == "FAILED":
+                failure = session.get("failure_report") or {}
+                print("The Launcher stopped the run (fail-stop): "
+                      f"{failure.get('reason', 'see the session file')}. The runtime files are kept "
+                      "as evidence; check with `hako-cmd check`, then clear them with "
+                      "`urban_mobility.py recover --composition ...` before the next start.",
+                      file=sys.stderr)
             if operation == "stop":
                 urban_lifecycle.verify_stopped(lifecycle)
             return 0
@@ -473,6 +481,14 @@ def launcher_command(operation: str, context: RecipeContext, args: argparse.Name
         ]
     result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode != 0:
+        if operation == "start" and lifecycle.session.is_file():
+            session = urban_lifecycle.read_session(lifecycle) or {}
+            if session.get("state") == "FAILED":
+                # A dead master lock owner found before the start (hako-cmd check: ABORT).
+                print("start: the Launcher refused the run (fail-stop): the Hakoniwa runtime "
+                      "has a dead lock owner. Check with `hako-cmd check`, then "
+                      "`urban_mobility.py recover --composition ...` and start again.",
+                      file=sys.stderr)
         return result.returncode
     if operation == "stop":
         urban_lifecycle.verify_stopped(lifecycle)
@@ -554,7 +570,13 @@ def parser() -> argparse.ArgumentParser:
             "status",
             "stop",
             "open-viewer",
+            "recover",
         ),
+    )
+    result.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="recover: show what would be removed",
     )
     result.add_argument(
         "--recipe",
@@ -595,8 +617,32 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def recover(args: argparse.Namespace) -> int:
+    """Clear the Hakoniwa runtime directory for a new session, on the operator's
+    request (the fail-stop Launcher never does it: hakoniwa-core-cpp#62). The
+    Recipe must be stopped; with hako-cmd 1.1.0 `hako-cmd recover` also checks the
+    processes recorded in the runtime."""
+    recipe = args.recipe
+    if recipe is None and args.composition is not None:
+        recipe = urban_simulation.plan(args.composition).managed_recipe
+    if recipe is None:
+        raise UrbanMobilityError("recover: --recipe or --composition is required "
+                                 "(the Recipe must be stopped first)")
+    lifecycle = spec(load_context(recipe), require_viewer=False)
+    if lifecycle.session.is_file() and urban_lifecycle.launcher_running(lifecycle):
+        raise UrbanMobilityError(f"Recipe {recipe} is still RUNNING: stop it first")
+    report = hakoniwa_runtime.check()
+    print(f"hako-cmd check: {report.get('status')} ({report.get('reason', '')})")
+    done = hakoniwa_runtime.recover(dry_run=args.dry_run)
+    verb = "would remove" if args.dry_run else "removed"
+    print(f"recover: {verb} {len(done)}" + "".join(f"\n  {item}" for item in done))
+    return 0
+
+
 def main() -> int:
     args = parser().parse_args()
+    if args.command == "recover":
+        return recover(args)
     if args.recipe is None:
         if args.composition is None:
             raise UrbanMobilityError("--recipe or --composition is required")

@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "apps/drone"))
 
 import drone_one  # noqa: E402
 import multi_car  # noqa: E402
+import hakoniwa_runtime  # noqa: E402
 
 
 class RcDemoError(RuntimeError):
@@ -163,7 +164,7 @@ def merge_launchers(
         "version": "0.1",
         "defaults": defaults,
         "assets": [drone_service, car_plant, rc_controller],
-        "runtime": {"cleanup_mmap_on_start": True},
+        "runtime": hakoniwa_runtime.launcher_runtime(),
     }
     multi_car.write_json(output, launcher)
     return output

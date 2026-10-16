@@ -25,6 +25,7 @@ import drone_car_rc  # noqa: E402
 import drone_one  # noqa: E402
 import drone_px4  # noqa: E402
 import multi_car  # noqa: E402
+import hakoniwa_runtime  # noqa: E402
 import urban_fault_injection  # noqa: E402
 
 
@@ -374,7 +375,7 @@ def _merge_launchers(
             web_bridge,
             http_server,
         ],
-        "runtime": {"cleanup_mmap_on_start": True},
+        "runtime": hakoniwa_runtime.launcher_runtime(),
     })
     return output
 
