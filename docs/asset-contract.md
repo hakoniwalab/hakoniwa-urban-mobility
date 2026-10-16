@@ -409,7 +409,7 @@ vehicles:
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
-simulation: { realtime }                  # optional; realtime default true
+simulation: { realtime, lockstep }        # optional; realtime default true, lockstep default false
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
@@ -419,11 +419,22 @@ extensions:                               # optional, section 5.8
 is ready once the Launcher runs. `simulation.realtime: false` leaves the Urban
 real-time pacer out, so the run goes as fast as its slowest asset computes (the
 assets still step in lockstep with the Conductor). The Car plant's Conductor then keeps
-every asset within one of its 2 ms steps (max_delay 2 ms instead of 20 ms), so repeated
-runs are identical when they start at the same simulation time; every asset must step at
-2 ms or less. Together they are the
+every asset within one of its 2 ms steps (max_delay 2 ms instead of 20 ms), and every
+asset must step at 2 ms or less. Repeated runs started at the same simulation time stay
+close (a few cm over Town04's 35 s), but not identical: which of two assets writes or
+reads a PDU first can change with the CPU load. Together they are the
 "no rendering, as fast as possible" run, e.g. for measuring the computation
 speed. Both are for Compositions without Drones.
+
+`simulation.lockstep: true` (with `realtime: false` and exactly one Car with
+`control: external`) makes those runs identical under any CPU load. The plant
+steps only when that Car's command (and its tire friction, when the program sets
+it) for the step has arrived, reading the PDU when its receive flag is set
+(`--lockstep-input`, hakoniwa-robot-runtime `HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP`).
+It publishes the car state every step, and the program waits for that state in
+turn. The program must write those inputs once at its initialization and then
+every step. Town04 P0: 10 runs under a heavy CPU load were identical, about 25 %
+slower than without lockstep.
 
 The user places every vehicle explicitly; in the browser this is drag and
 drop onto the World (section 5.5). The Composition therefore always lists each vehicle

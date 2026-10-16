@@ -127,6 +127,9 @@ class Composition:
     extensions: tuple[dict, ...] = ()
     # simulation.realtime (section 5.1): False runs as fast as it computes, without the pacer.
     realtime: bool = True
+    # simulation.lockstep (section 5.1): the plant steps only when its one external
+    # Car's command for the step has arrived (repeatable runs).
+    lockstep: bool = False
 
     @property
     def viewer_enabled(self) -> bool:
@@ -327,12 +330,15 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     simulation = data.get("simulation", {})
     if not isinstance(simulation, dict):
         raise CompositionError("Composition simulation must be a mapping")
-    unknown = set(simulation) - {"realtime"}
+    unknown = set(simulation) - {"realtime", "lockstep"}
     if unknown:
         raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
     realtime = simulation.get("realtime", True)
     if not isinstance(realtime, bool):
         raise CompositionError("Composition simulation.realtime must be true or false")
+    lockstep = simulation.get("lockstep", False)
+    if not isinstance(lockstep, bool):
+        raise CompositionError("Composition simulation.lockstep must be true or false")
     extension_entries = data.get("extensions", [])
     if not isinstance(extension_entries, list):
         raise CompositionError("Composition extensions must be a list")
@@ -341,8 +347,18 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     composition = Composition(
         id=composition_id, path=path, world=world, vehicles=vehicles,
         interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
-        realtime=realtime,
+        realtime=realtime, lockstep=lockstep,
     )
+    if lockstep and realtime:
+        # The plant waits for a command every 2 ms step: the external program must step at
+        # the plant's step, which only the run without the pacer gives (max_delay 2 ms).
+        raise CompositionError("simulation.lockstep needs simulation.realtime: false")
+    if lockstep:
+        external = [v for v in composition.vehicles if v.asset.simulator == CAR_SIMULATOR and v.control == "external"]
+        if len(external) != 1 or "drone-core" in composition.simulators():
+            raise CompositionError(
+                "simulation.lockstep needs exactly one Car with control: external (its program must "
+                f"write the command every step) and no Drones; got {len(external)} external Cars")
     if (not realtime or not composition.viewer_enabled) and "drone-core" in composition.simulators():
         # The Drone services sleep per step and the integrated route merges the Drone Viewer:
         # neither has a run without them yet.

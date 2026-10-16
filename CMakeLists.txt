@@ -152,6 +152,8 @@ file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/bin/urban-car-hakoniwa-asset.features
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
+    # --lockstep-input (repeatable P0 runs; off unless the option is given)
+    HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1
     HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
@@ -339,6 +341,16 @@ if(BUILD_TESTING)
         ${RUNTIME_SRC})
     add_test(NAME hako-mobile-base-runtime-contract
         COMMAND hako-mobile-base-runtime-test)
+    add_executable(hako-lockstep-driver-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_hakoniwa_asset_driver_lockstep.cpp
+        ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+    target_compile_features(hako-lockstep-driver-test PRIVATE cxx_std_20)
+    target_include_directories(hako-lockstep-driver-test PRIVATE
+        ${RUNTIME_INCLUDE}
+        ${RUNTIME_SRC})
+    target_link_libraries(hako-lockstep-driver-test PRIVATE hakoniwa-core::assets)
+    add_test(NAME hako-lockstep-driver-contract
+        COMMAND hako-lockstep-driver-test)
     add_test(NAME hako-mirror-runtime-contract
         COMMAND hako-mirror-runtime-test)
     add_test(NAME hako-mirror-mujoco-plant-contract
