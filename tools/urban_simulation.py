@@ -535,13 +535,13 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.remove_pacer(launcher)
         urban_realtime.lockstep(launcher, conductor)
     if composition.lockstep:
-        [car] = [v for v in composition.vehicles if v.control == "external"]
-        # The command and, when the program sets it, the tire friction: both written every
-        # step (and once at initialization), both read in simulation-time order.
-        inputs = [multi_car.COMMAND_PDU] + ([multi_car.TIRE_FRICTION_PDU] if car.tire_friction_input else [])
-        for pdu in inputs:
-            urban_realtime.lockstep_input(launcher, conductor, car.name, pdu)
-            unnotify(target.work / "config/car/urban-car-comm.json", car.name, pdu)
+        for car in [v for v in composition.vehicles if v.control == "external"]:
+            # The command and, when the program sets it, the tire friction: both written every
+            # step (and once at initialization), both read in simulation-time order.
+            inputs = [multi_car.COMMAND_PDU] + ([multi_car.TIRE_FRICTION_PDU] if car.tire_friction_input else [])
+            for pdu in inputs:
+                urban_realtime.lockstep_input(launcher, conductor, car.name, pdu)
+                unnotify(target.work / "config/car/urban-car-comm.json", car.name, pdu)
         # The scenario waits for the car state of each plant step in turn: publish every step.
         for state in ("urban-fleet-multi-dof-state.json", "urban-fleet-joint-state.json"):
             publish_every_step(target.work / "config/car" / state)
