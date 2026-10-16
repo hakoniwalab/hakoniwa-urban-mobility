@@ -53,6 +53,12 @@ CONDUCTOR_MAX_DELAY_MSEC = {
     "drone-service-1": 20,          # Drone Core built-in Conductor
     "fpv-drone-service": 20,
 }
+# Without a pacer (Composition simulation.realtime: false) the Car plant's Conductor
+# keeps every asset within one of its own steps (2 ms): with 20 ms the assets read each
+# other's PDUs at times that differ from run to run, and repeated runs drift apart
+# (Town04 P0: 0.22 m after 35 s; with 2 ms the runs are identical, 3 % slower,
+# 2026-10-16). Every asset must then step at most this (max_delay >= each step).
+LOCKSTEP_MAX_DELAY_MSEC = 2
 # Drone services sleep this long per step unless told otherwise.
 DRONE_SLEEP_ARG = "--real-sleep-msec"
 
@@ -133,4 +139,13 @@ def remove_pacer(launcher: dict) -> dict:
         asset for asset in launcher.get("assets", [])
         if asset.get("name") not in LEGACY_PACERS | {PACER_ASSET}
     ]
+    return launcher
+
+
+def lockstep(launcher: dict, conductor: str) -> dict:
+    """Keep every asset within one Conductor step (LOCKSTEP_MAX_DELAY_MSEC), in place: repeatable
+    runs without a pacer. Only the Car plant's own Conductor takes the setting."""
+    for asset in launcher.get("assets", []):
+        if asset.get("name") == conductor and "--conductor-max-delay-msec" in asset.get("args", []):
+            asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", str(LOCKSTEP_MAX_DELAY_MSEC))
     return launcher
