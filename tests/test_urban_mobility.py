@@ -389,3 +389,12 @@ class UrbanMobilityToolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PinnedMujocoTest(unittest.TestCase):
+    def test_a_plant_on_another_mujoco_than_the_pin_is_refused(self):
+        import multi_car
+        pinned = (multi_car.MUJOCO_ROBOTS / "MUJOCO_VERSION.txt").read_text(encoding="utf-8").strip()
+        multi_car.require_pinned_mujoco({"mujoco_version": pinned})
+        with self.assertRaisesRegex(multi_car.RecipeError, "fresh build directory"):
+            multi_car.require_pinned_mujoco({"mujoco_version": "3.13.0", "mujoco_library": "mujoco.dll"})
