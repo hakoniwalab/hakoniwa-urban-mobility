@@ -27,6 +27,13 @@ import urban_manifest
 
 COMPOSITION_SCHEMA = "hakoniwa.composition/v1"
 SPAWN_KEYS = {"east_m", "north_m", "yaw_deg"}
+# Optional: the height of the surface meant, where Worlds have several levels
+# (a double-deck bridge, a road under an elevated one). Section 5.4.
+SPAWN_LEVEL_KEY = "up_m"
+# The ground is looked for from this far above the given level, and must be
+# found within this distance below it.
+SPAWN_LEVEL_ABOVE_M = 1.0
+SPAWN_LEVEL_BELOW_M = 2.0
 CAR_SIMULATOR = "ackermann-mujoco"
 DRONE_SIMULATOR = "drone-core"
 # 箱庭人間 join a Composition beside its vehicles (tools/urban_people.py); the
@@ -166,12 +173,12 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
         if definition.get("required") and param not in params and not replaced:
             raise CompositionError(f"vehicle {name} {control} control requires param {param}")
     spawn = entry.get("spawn")
-    if not isinstance(spawn, dict) or set(spawn) != SPAWN_KEYS:
+    if not isinstance(spawn, dict) or not SPAWN_KEYS <= set(spawn) <= SPAWN_KEYS | {SPAWN_LEVEL_KEY}:
         raise CompositionError(
-            f"vehicle {name} spawn must have exactly {sorted(SPAWN_KEYS)}; "
-            "the height is computed from the Asset ground clearance"
+            f"vehicle {name} spawn must have exactly {sorted(SPAWN_KEYS)} and optionally "
+            f"{SPAWN_LEVEL_KEY} (the level meant); the height is computed from the Asset ground clearance"
         )
-    spawn = {key: _finite(spawn[key], f"vehicle {name} spawn.{key}") for key in sorted(SPAWN_KEYS)}
+    spawn = {key: _finite(spawn[key], f"vehicle {name} spawn.{key}") for key in sorted(spawn)}
     program = entry.get("program")
     args = entry.get("args")
     if (program is None) != (args is None):
@@ -494,7 +501,21 @@ def _ground(composition: Composition, ground: Callable[[float, float], float] | 
 
 
 def _surface(vehicle: Vehicle, ground: Callable[[float, float], float]) -> float:
-    return round(ground(vehicle.spawn["east_m"], vehicle.spawn["north_m"]), 6)
+    """The World surface under the spawn: the top one, or with spawn.up_m the one
+    at that level (looked for from SPAWN_LEVEL_ABOVE_M above it)."""
+    east_m, north_m = vehicle.spawn["east_m"], vehicle.spawn["north_m"]
+    level = vehicle.spawn.get(SPAWN_LEVEL_KEY)
+    below = getattr(ground, "ground_below", None)
+    if level is None or below is None:  # without a ray (no MuJoCo Python) there is one level
+        return round(ground(east_m, north_m), 6)
+    surface = below(east_m, north_m, level + SPAWN_LEVEL_ABOVE_M)
+    if surface is None or surface < level - SPAWN_LEVEL_BELOW_M:
+        found = "nothing" if surface is None else f"{surface:.2f} m"
+        raise CompositionError(
+            f"vehicle {vehicle.name}: no World surface at spawn.{SPAWN_LEVEL_KEY} {level:.2f} m "
+            f"(east={east_m} m, north={north_m} m); below it is {found}"
+        )
+    return round(surface, 6)
 
 
 def _spawn_up(vehicle: Vehicle, ground: Callable[[float, float], float]) -> float:
