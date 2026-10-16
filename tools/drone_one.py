@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 import urban_manifest
+import hakoniwa_runtime  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -321,7 +322,7 @@ def patch_launcher(
     mujoco_viewer: bool = False,
 ) -> Path:
     launcher = json.loads(path.read_text(encoding="utf-8"))
-    launcher["runtime"] = {"cleanup_mmap_on_start": True}
+    launcher["runtime"] = hakoniwa_runtime.launcher_runtime()
     assets = launcher.get("assets", [])
     drone_service = next(
         (asset for asset in assets if asset.get("name") == "drone-service-1"),
@@ -389,7 +390,7 @@ def patch_launcher(
 def patch_rc_launcher(path: Path, *, paths: object, drone_root: Path) -> Path:
     """Replace the automatic mission with the proven PS4 RadioController client."""
     launcher = json.loads(path.read_text(encoding="utf-8"))
-    launcher["runtime"] = {"cleanup_mmap_on_start": True}
+    launcher["runtime"] = hakoniwa_runtime.launcher_runtime()
     assets = launcher.get("assets", [])
     drone_service = next(
         (asset for asset in assets if asset.get("name") == "drone-service-1"),

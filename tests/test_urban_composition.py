@@ -351,7 +351,7 @@ class CarCompositionTest(Fixture):
         with mock.patch.object(multi_car, "paths", return_value=source), \
                 mock.patch.object(multi_car, "foundation_python", return_value=Path("/python")), \
                 mock.patch.object(multi_car, "foundation_install", return_value=Path("/install")), \
-                mock.patch.object(multi_car, "launcher_supports_cleanup", return_value=True):
+                mock.patch.object(multi_car.hakoniwa_runtime, "launcher_kind", return_value="cleanup"):
             path = multi_car.materialize_launcher(
                 {"manifest": self.work / "manifest.json", "pdu_def": self.work / "pdudef.json"},
                 self.work, 2,
@@ -756,7 +756,7 @@ class ControlsTest(IntegratedFixture):
         with mock.patch.object(multi_car, "paths", return_value=source), \
                 mock.patch.object(multi_car, "foundation_python", return_value=Path(self.PYTHON)), \
                 mock.patch.object(multi_car, "foundation_install", return_value=Path("/install")), \
-                mock.patch.object(multi_car, "launcher_supports_cleanup", return_value=True):
+                mock.patch.object(multi_car.hakoniwa_runtime, "launcher_kind", return_value="cleanup"):
             path = multi_car.materialize_launcher(
                 {"manifest": work / "manifest.json", "pdu_def": work / "config/car/urban-car-pdudef.json"},
                 work / "out", 2, vehicles, route_scenario=route_scenario,

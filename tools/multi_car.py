@@ -24,6 +24,7 @@ import webbrowser
 import xml.etree.ElementTree as ET
 
 import urban_manifest
+import hakoniwa_runtime  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2090,12 +2091,13 @@ def materialize_launcher(
         },
         "assets": assets,
     }
-    if not launcher_supports_cleanup(python):
-        raise RecipeError(
-            "Foundation Launcher does not support runtime.cleanup_mmap_on_start; "
-            "upgrade hakoniwa-pdu before running this exclusive runtime Recipe"
-        )
-    launcher["runtime"] = {"cleanup_mmap_on_start": True}
+    # The runtime directory is this Recipe's alone: with the fail-stop Launcher it is
+    # checked (hako-cmd check) and recovered on request (urban_mobility.py recover);
+    # with the former one it is cleared at start (tools/hakoniwa_runtime.py).
+    try:
+        launcher["runtime"] = hakoniwa_runtime.launcher_runtime(python)
+    except hakoniwa_runtime.HakoniwaRuntimeError as exc:
+        raise RecipeError(str(exc)) from exc
     launcher_path = work / "config/launcher.json"
     write_json(launcher_path, launcher)
     return launcher_path
@@ -2293,7 +2295,7 @@ def configure(resolved: dict) -> int:
         "coordinate_frame": receipt["coordinate_frame"],
         "runtime_manifest": str(runtime_files["manifest"]),
         "core_config": str(source["core_config"]),
-        "runtime_ownership": "exclusive Foundation mmap; Launcher cleanup_mmap_on_start",
+        "runtime_ownership": "exclusive Foundation mmap; checked by the Launcher (hako-cmd check), recovered by urban_mobility.py recover",
         "realtime_sync_cycle_msec": resolved["realtime_sync_cycle_msec"],
         "native_mujoco_viewer": resolved["native_mujoco_viewer"],
         "launcher": str(launcher),

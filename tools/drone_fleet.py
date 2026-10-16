@@ -23,6 +23,7 @@ from pathlib import Path
 import sys
 
 import urban_manifest
+import hakoniwa_runtime  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,7 +160,7 @@ def clean_shared_memory_on_start(launcher_path: Path) -> None:
     """As tools/drone_one.py: shared memory left by another Recipe's run
     (another asset layout) must not be reused."""
     launcher = json.loads(launcher_path.read_text(encoding="utf-8"))
-    launcher["runtime"] = {"cleanup_mmap_on_start": True}
+    launcher["runtime"] = hakoniwa_runtime.launcher_runtime()
     launcher_path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
 
 

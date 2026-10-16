@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 import multi_car  # noqa: E402
+import hakoniwa_runtime  # noqa: E402
 import urban_lifecycle  # noqa: E402
 import urban_manifest  # noqa: E402
 
@@ -366,7 +367,7 @@ def launcher(resolved: dict, config: Path, browser: dict) -> dict:
                       "--directory", str(WORKSPACE)],
              "cwd": str(WORKSPACE), "depends_on": ["people-web-bridge"], "delay_sec": 1},
         ],
-        "runtime": {"cleanup_mmap_on_start": True},
+        "runtime": hakoniwa_runtime.launcher_runtime(),
     }
 
 
