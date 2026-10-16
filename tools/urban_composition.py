@@ -125,6 +125,13 @@ class Composition:
     fleets: tuple[Fleet, ...] = ()
     # Programs a workspace repository adds to the run (section 5.8).
     extensions: tuple[dict, ...] = ()
+    # simulation.realtime (section 5.1): False runs as fast as it computes, without the pacer.
+    realtime: bool = True
+
+    @property
+    def viewer_enabled(self) -> bool:
+        """viewer.enabled (section 5.1): False runs without the web bridge and the HTTP Viewer."""
+        return self.viewer.get("enabled", True)
 
     def simulators(self) -> set[str]:
         return {vehicle.asset.simulator for vehicle in (*self.vehicles, *self.fleets)}
@@ -315,15 +322,33 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     viewer = data.get("viewer", {})
     if not isinstance(viewer, dict):
         raise CompositionError("Composition viewer must be a mapping")
+    if not isinstance(viewer.get("enabled", True), bool):
+        raise CompositionError("Composition viewer.enabled must be true or false")
+    simulation = data.get("simulation", {})
+    if not isinstance(simulation, dict):
+        raise CompositionError("Composition simulation must be a mapping")
+    unknown = set(simulation) - {"realtime"}
+    if unknown:
+        raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
+    realtime = simulation.get("realtime", True)
+    if not isinstance(realtime, bool):
+        raise CompositionError("Composition simulation.realtime must be true or false")
     extension_entries = data.get("extensions", [])
     if not isinstance(extension_entries, list):
         raise CompositionError("Composition extensions must be a list")
     extensions = tuple(_extension(entry, index) for index, entry in enumerate(extension_entries))
     vehicles = _assign_route_cars(path, vehicles)
-    return Composition(
+    composition = Composition(
         id=composition_id, path=path, world=world, vehicles=vehicles,
         interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
+        realtime=realtime,
     )
+    if (not realtime or not composition.viewer_enabled) and "drone-core" in composition.simulators():
+        # The Drone services sleep per step and the integrated route merges the Drone Viewer:
+        # neither has a run without them yet.
+        raise CompositionError("simulation.realtime: false and viewer.enabled: false are for "
+                               "Compositions without Drones")
+    return composition
 
 
 def _extension(entry: object, index: int) -> dict:
@@ -671,7 +696,7 @@ def _car_inputs(
     elif route_scenarios:
         vehicles["route_scenarios"] = route_scenarios
     visualization = {
-        "enabled": True,
+        "enabled": composition.viewer_enabled,
         "web_bridge_port": int(composition.viewer.get("web_bridge_port", web_bridge_port)),
         "http_port": int(composition.viewer.get("http_port", DEFAULT_HTTP_PORT)),
         "threejs_root": str((urban_assets.WORKSPACE / "hakoniwa-threejs-drone").resolve()),

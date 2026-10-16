@@ -147,6 +147,30 @@ class CompositionTest(Fixture):
         with self.assertRaisesRegex(urban_composition.CompositionError, "only for Cars"):
             self.load(self.drone(tire_friction_input=True))
 
+    def test_simulation_realtime_and_viewer_enabled(self):
+        """P0 runs (no pacer, no Viewer) are declared in the Composition; both default to on."""
+        plain = self.load(self.composition())
+        self.assertTrue(plain.realtime)
+        self.assertTrue(plain.viewer_enabled)
+        fast = self.load(self.composition(simulation={"realtime": False},
+                                          viewer={"enabled": False}))
+        self.assertFalse(fast.realtime)
+        self.assertFalse(fast.viewer_enabled)
+        inputs = urban_composition.to_car_config(fast, "fast")["inputs"]
+        self.assertIs(inputs["browser_visualization"]["enabled"], False)
+        self.assertIs(urban_composition.to_car_config(plain, "plain")["inputs"]["browser_visualization"]["enabled"], True)
+        with self.assertRaisesRegex(urban_composition.CompositionError, "simulation.realtime must be true or false"):
+            self.load(self.composition(simulation={"realtime": "no"}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "viewer.enabled must be true or false"):
+            self.load(self.composition(viewer={"enabled": 0}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "unknown fields"):
+            self.load(self.composition(simulation={"realtime": False, "speed": 2}))
+        drone = yaml.safe_load(self.drone().read_text(encoding="utf-8"))
+        for override in ({"simulation": {"realtime": False}}, {"viewer": {"enabled": False}}):
+            with self.subTest(override=override), self.assertRaisesRegex(
+                    urban_composition.CompositionError, "without Drones"):
+                self.load(self.composition(**{**drone, **override}))
+
     def test_register_city_derives_the_id_from_the_city_world_job(self):
         receipt = self.work / "jobs" / CITY_ID / "build/world/city-world-receipt.json"
         receipt.parent.mkdir(parents=True)
@@ -1500,6 +1524,17 @@ class RealtimePacerTest(IntegratedFixture):
         self.assertEqual([asset["name"] for asset in launcher["assets"]].count("urban-realtime-pacer"), 1)
         with self.assertRaisesRegex(urban_realtime.RealtimeError, "no Conductor owner"):
             urban_realtime.apply_pacer({"assets": []}, pacer)
+
+    def test_remove_pacer_drops_every_pacer(self):
+        launcher = {"assets": [
+            {"name": "urban-car-fleet-plant", "args": []},
+            {"name": "urban-realtime-pacer"},
+            {"name": "fpv-realtime-pacer"},
+            {"name": "control-car-1-api"},
+        ]}
+        urban_realtime.remove_pacer(launcher)
+        self.assertEqual([asset["name"] for asset in launcher["assets"]],
+                         ["urban-car-fleet-plant", "control-car-1-api"])
 
     def test_apply_pacer_stops_web_bridge_wall_sleeps_once(self):
         bridge = {"name": "urban-vehicle-web-bridge", "command": "/install/bin/hakoniwa-pdu-web-bridge",

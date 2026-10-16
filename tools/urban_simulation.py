@@ -478,6 +478,8 @@ def refresh_car_poses(config_path: Path) -> None:
 def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None:
     """Put the manifest controls and the real-time pacer into the configured Launcher.
 
+    A Composition with simulation.realtime: false gets no pacer (it runs as fast as it computes).
+
     The Car route's plant owns the Conductor; in the integrated route the
     Drone service owns it and the plant joins it (--external-conductor).
     """
@@ -498,9 +500,13 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     urban_controls.apply_controls(launcher, control_processes(composition_path, runtimes))
     import urban_people
 
-    urban_people.apply(target.work, load_composition(composition_path), launcher, conductor)
-    pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
-    urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
+    composition = load_composition(composition_path)
+    urban_people.apply(target.work, composition, launcher, conductor)
+    if composition.realtime:
+        pacer = urban_realtime.pacer_asset(str(multi_car.foundation_python()), conductor)
+        urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
+    else:
+        urban_realtime.remove_pacer(launcher)
     if target.use_case != "drone-car-distributed":
         drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)

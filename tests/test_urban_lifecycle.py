@@ -156,6 +156,28 @@ class UrbanLifecycleTest(unittest.TestCase):
             self.assertFalse(report["websocket_listening"])
             self.assertFalse(report["demo_ready"])
 
+    def test_status_without_viewer_is_ready_once_the_launcher_runs(self):
+        """viewer.enabled: false: no HTTP or WebSocket probe; demo_ready is the Launcher running."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = lifecycle.LifecycleSpec(
+                recipe_id="urban-car-rc", recipe_root=root, launcher=root / "config/launcher.json",
+                session=root / "runtime/launcher-session.json", viewer_url="", ports=(), viewer=False,
+            )
+            self.write_session(spec)
+            with (
+                mock.patch.object(lifecycle, "pid_alive", return_value=True),
+                mock.patch.object(lifecycle, "http_ready") as http,
+                mock.patch.object(lifecycle, "listening") as listening,
+            ):
+                report = lifecycle.status_report(spec)
+                lifecycle.preflight_start(lifecycle.LifecycleSpec(**{**spec.__dict__, "session": root / "none.json"}))
+            http.assert_not_called()
+            listening.assert_not_called()
+            self.assertTrue(report["demo_ready"])
+            with self.assertRaisesRegex(lifecycle.LifecycleError, "without a Viewer"):
+                lifecycle.require_viewer_ready(spec)
+
     def test_status_uses_recipe_websocket_port(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

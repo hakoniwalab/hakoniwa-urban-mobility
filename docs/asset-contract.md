@@ -408,11 +408,19 @@ vehicles:
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
-viewer: { http_port, web_bridge_port }    # optional
+viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
+simulation: { realtime }                  # optional; realtime default true
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
 ```
+
+`viewer.enabled: false` runs without the web bridge and the HTTP Viewer: `start`
+is ready once the Launcher runs. `simulation.realtime: false` leaves the Urban
+real-time pacer out, so the run goes as fast as its slowest asset computes (the
+assets still step in lockstep with the Conductor). Together they are the
+"no rendering, as fast as possible" run, e.g. for measuring the computation
+speed. Both are for Compositions without Drones.
 
 The user places every vehicle explicitly; in the browser this is drag and
 drop onto the World (section 5.5). The Composition therefore always lists each vehicle

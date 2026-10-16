@@ -29,6 +29,8 @@ class LifecycleSpec:
     websocket_port: int = urban_manifest.port("web-bridge")
     ports: tuple[int, ...] = (
         urban_manifest.port("viewer-http"), urban_manifest.port("web-bridge"))
+    # False for a Composition with viewer.enabled: false: ready once the Launcher runs.
+    viewer: bool = True
 
 
 def read_session(spec: LifecycleSpec) -> dict | None:
@@ -122,6 +124,8 @@ def require_current_core_copies(spec: LifecycleSpec, foundation_bin: Path | None
 
 
 def require_viewer_ready(spec: LifecycleSpec) -> None:
+    if not spec.viewer:
+        raise LifecycleError(f"Recipe {spec.recipe_id} runs without a Viewer (viewer.enabled: false)")
     if not launcher_running(spec):
         raise LifecycleError(
             f"Recipe {spec.recipe_id} is not RUNNING: {spec.session}"
@@ -135,8 +139,8 @@ def require_viewer_ready(spec: LifecycleSpec) -> None:
 def status_report(spec: LifecycleSpec) -> dict:
     session = read_session(spec)
     running = launcher_running(spec) if session is not None else False
-    http = http_ready(spec.viewer_url) if running else False
-    websocket = listening(spec.websocket_port) if running else False
+    http = http_ready(spec.viewer_url) if running and spec.viewer else False
+    websocket = listening(spec.websocket_port) if running and spec.viewer else False
     return {
         "recipe_id": spec.recipe_id,
         "session": str(spec.session),
@@ -144,7 +148,7 @@ def status_report(spec: LifecycleSpec) -> dict:
         "launcher_running": running,
         "http_ready": http,
         "websocket_listening": websocket,
-        "demo_ready": running and http and websocket,
+        "demo_ready": running and (http and websocket or not spec.viewer),
     }
 
 
