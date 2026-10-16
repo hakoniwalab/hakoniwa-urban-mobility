@@ -1829,7 +1829,7 @@ class LockstepCompositionTest(Fixture):
     def test_lockstep_needs_the_run_without_the_pacer_and_one_external_car(self):
         with self.assertRaisesRegex(urban_composition.CompositionError, "realtime: false"):
             self.load(self.composition(simulation={"lockstep": True}))
-        with self.assertRaisesRegex(urban_composition.CompositionError, "exactly one Car with control: external"):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "Cars with control: external"):
             self.load(self.composition(simulation={"realtime": False, "lockstep": True}))
         composition = self.load(self.composition(
             vehicle={"control": "external"}, simulation={"realtime": False, "lockstep": True}))

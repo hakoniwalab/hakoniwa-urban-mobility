@@ -426,10 +426,10 @@ reads a PDU first can change with the CPU load. Together they are the
 "no rendering, as fast as possible" run, e.g. for measuring the computation
 speed. Both are for Compositions without Drones.
 
-`simulation.lockstep: true` (with `realtime: false` and exactly one Car with
-`control: external`) makes those runs identical under any CPU load. The plant
-steps only when that Car's command (and its tire friction, when the program sets
-it) for the step has arrived, reading the PDU when its receive flag is set
+`simulation.lockstep: true` (with `realtime: false` and Cars with `control:
+external`, all driven by one program) makes those runs identical under any CPU load. The plant
+steps only when those Cars' commands (and tire frictions, when the program sets
+them) for the step have arrived, reading the PDU when its receive flag is set
 (`--lockstep-input`, hakoniwa-robot-runtime `HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP`).
 It publishes the car state every step, and the program waits for that state in
 turn. The program must write those inputs once at its initialization and then

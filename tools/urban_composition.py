@@ -127,8 +127,8 @@ class Composition:
     extensions: tuple[dict, ...] = ()
     # simulation.realtime (section 5.1): False runs as fast as it computes, without the pacer.
     realtime: bool = True
-    # simulation.lockstep (section 5.1): the plant steps only when its one external
-    # Car's command for the step has arrived (repeatable runs).
+    # simulation.lockstep (section 5.1): the plant steps only when its external Cars'
+    # commands for the step have arrived (repeatable runs).
     lockstep: bool = False
 
     @property
@@ -355,10 +355,10 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         raise CompositionError("simulation.lockstep needs simulation.realtime: false")
     if lockstep:
         external = [v for v in composition.vehicles if v.asset.simulator == CAR_SIMULATOR and v.control == "external"]
-        if len(external) != 1 or "drone-core" in composition.simulators():
+        if not external or "drone-core" in composition.simulators():
             raise CompositionError(
-                "simulation.lockstep needs exactly one Car with control: external (its program must "
-                f"write the command every step) and no Drones; got {len(external)} external Cars")
+                "simulation.lockstep needs Cars with control: external (one program writes every one's "
+                f"command every step) and no Drones; got {len(external)} external Cars")
     if (not realtime or not composition.viewer_enabled) and "drone-core" in composition.simulators():
         # The Drone services sleep per step and the integrated route merges the Drone Viewer:
         # neither has a run without them yet.
