@@ -107,6 +107,29 @@ class UrbanLifecycleTest(unittest.TestCase):
             ):
                 lifecycle.preflight_start(spec)
 
+    def test_start_rejects_core_dll_copies_older_than_the_foundation(self):
+        # Windows loads the DLLs beside an executable first: after a Core upgrade the
+        # plant's copies would run the old Core until configure copies them again.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = self.spec(root)
+            plant, foundation = root / "build/bin", root / "foundation/bin"
+            plant.mkdir(parents=True)
+            foundation.mkdir(parents=True)
+            (plant / "hako.dll").write_bytes(b"old core")
+            (plant / "mujoco.dll").write_bytes(b"not from the Foundation")
+            (foundation / "hako.dll").write_bytes(b"new core")
+            (foundation / "hakoniwa-pdu-web-bridge.exe").write_bytes(b"")
+            spec.launcher.parent.mkdir(parents=True, exist_ok=True)
+            spec.launcher.write_text(json.dumps({"assets": [
+                {"name": "plant", "command": str(plant / "urban-car-hakoniwa-asset.exe")},
+                {"name": "bridge", "command": str(foundation / "hakoniwa-pdu-web-bridge.exe")},
+            ]}), encoding="utf-8")
+            with self.assertRaisesRegex(lifecycle.LifecycleError, r"hako\.dll[\s\S]*configure"):
+                lifecycle.require_current_core_copies(spec, foundation)
+            (plant / "hako.dll").write_bytes(b"new core")
+            lifecycle.require_current_core_copies(spec, foundation)
+
     def test_viewer_requires_own_running_session_and_http(self):
         with tempfile.TemporaryDirectory() as directory:
             spec = self.spec(Path(directory))

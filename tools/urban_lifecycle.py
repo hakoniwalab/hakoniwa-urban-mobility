@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import socket
 import time
@@ -98,6 +99,25 @@ def preflight_start(spec: LifecycleSpec) -> None:
         raise LifecycleError(
             "required port is already owned by another process or Recipe: "
             + ", ".join(str(port) for port in occupied)
+        )
+    if os.name == "nt":
+        require_current_core_copies(spec)
+
+
+def require_current_core_copies(spec: LifecycleSpec, foundation_bin: Path | None = None) -> None:
+    """An asset must not run an older Core from DLL copies beside its executable."""
+    import hakoniwa_runtime
+
+    if foundation_bin is None:
+        import multi_car
+
+        foundation_bin = multi_car.foundation_install() / "bin"
+    stale = hakoniwa_runtime.stale_core_copies(spec.launcher, foundation_bin)
+    if stale:
+        raise LifecycleError(
+            "these DLLs beside an asset differ from the Foundation's (built before a "
+            "Core upgrade?): " + ", ".join(str(p) for p in stale)
+            + "\n  Run `python tools/urban_mobility.py configure` to copy them again."
         )
 
 

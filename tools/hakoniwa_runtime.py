@@ -13,6 +13,7 @@ recovers the runtime directory on request.
 """
 from __future__ import annotations
 
+import filecmp
 import functools
 import json
 import os
@@ -175,6 +176,31 @@ def recover(directory: Path | None = None, *, dry_run: bool = False) -> list[str
         for path in found:
             path.unlink()
     return [str(p) for p in found]
+
+
+def stale_core_copies(launcher: Path, foundation_bin: Path) -> list[Path]:
+    """DLLs next to a Launcher asset's executable that differ from the Foundation's
+    file of the same name. Windows loads a DLL from the executable's directory first,
+    and the Urban Car plant's build copies the Foundation DLLs there (CMakeLists.txt):
+    after a Core upgrade it would run the old Core beside processes of the new one
+    (mixed Core versions on one runtime directory are unsupported) until
+    `urban_mobility.py configure` copies them again. Only meaningful on Windows."""
+    try:
+        config = json.loads(launcher.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    foundation = {p.name.lower(): p for p in foundation_bin.glob("*.dll")} if foundation_bin.is_dir() else {}
+    stale = []
+    directories = {Path(a["command"]).parent for a in config.get("assets", [])
+                   if isinstance(a, dict) and isinstance(a.get("command"), str)}
+    for directory in sorted(directories):
+        if not directory.is_dir() or directory.resolve() == foundation_bin.resolve():
+            continue
+        for copy in sorted(directory.glob("*.dll")):
+            source = foundation.get(copy.name.lower())
+            if source is not None and not filecmp.cmp(copy, source, shallow=False):
+                stale.append(copy)
+    return stale
 
 
 if __name__ == "__main__":  # a quick look: python tools/hakoniwa_runtime.py
