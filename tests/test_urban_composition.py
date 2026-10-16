@@ -1807,3 +1807,19 @@ class CompositionExtensionTest(Fixture):
         with self.catalog(), self.assertRaisesRegex(urban_simulation.SimulationError, "no workspace repository"):
             urban_simulation.run_extensions(self.work, self.composition(
                 extensions=[{"program": "${repo:no-such-repo}/x.py"}]))
+
+
+class LauncherWaitTest(unittest.TestCase):
+    def test_car_route_drops_fixed_start_waits(self):
+        # Readiness-checked assets need no grace; nothing waits before the next asset.
+        launcher = {"assets": [
+            {"name": "plant", "delay_sec": 2, "readiness": {"type": "hako_asset"}},
+            {"name": "pacer", "delay_sec": 1},
+            {"name": "bridge", "delay_sec": 1, "start_grace_sec": 2},
+        ]}
+        urban_simulation.drop_fixed_waits(launcher)
+        self.assertEqual(
+            [(a["name"], a["start_grace_sec"], a["delay_sec"]) for a in launcher["assets"]],
+            [("plant", 0, 0), ("pacer", urban_simulation.UNCHECKED_START_GRACE_SEC, 0),
+             ("bridge", urban_simulation.UNCHECKED_START_GRACE_SEC, 0)],
+        )

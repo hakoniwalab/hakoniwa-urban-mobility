@@ -281,6 +281,26 @@ def run(command: str, composition_path: Path) -> int:
 
 # --- Control runtimes -------------------------------------------------------------
 
+
+# Start-up waits the Launcher keeps without a readiness check (a process that
+# fails at once is still found by the Launcher's watch, FAILED).
+UNCHECKED_START_GRACE_SEC = 0.5
+
+
+def drop_fixed_waits(launcher: dict) -> None:
+    """Remove the Launcher's fixed start-up waits from a car route.
+
+    Each asset waited start_grace_sec (default 2 s) after its start and delay_sec
+    (1-2 s) before the next one: about 15 s of the start, though the plant and
+    the scenario assets are checked for registration (readiness: hako_asset),
+    which is what the next asset needs. Those assets now go on at once; the
+    others (pacer, bridges, HTTP server) keep a short grace, and no asset waits
+    before the next."""
+    for asset in launcher.get("assets", []):
+        asset["delay_sec"] = 0
+        asset["start_grace_sec"] = 0 if asset.get("readiness") else UNCHECKED_START_GRACE_SEC
+
+
 def car_runtime(work: Path):
     """Controls runtime for the Car simulator configured under a Recipe root."""
     import multi_car
@@ -487,6 +507,8 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     else:
         urban_realtime.remove_pacer(launcher)
+    if target.use_case != "drone-car-distributed":
+        drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)
     # The planned lines for the Viewer's "Planned path": the api Cars' routes in
     # every route, the schedule Drones' flights in the integrated one.
