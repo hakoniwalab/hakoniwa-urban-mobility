@@ -418,7 +418,10 @@ extensions:                               # optional, section 5.8
 `viewer.enabled: false` runs without the web bridge and the HTTP Viewer: `start`
 is ready once the Launcher runs. `simulation.realtime: false` leaves the Urban
 real-time pacer out, so the run goes as fast as its slowest asset computes (the
-assets still step in lockstep with the Conductor). Together they are the
+assets still step in lockstep with the Conductor). The Car plant's Conductor then keeps
+every asset within one of its 2 ms steps (max_delay 2 ms instead of 20 ms), so repeated
+runs are identical when they start at the same simulation time; every asset must step at
+2 ms or less. Together they are the
 "no rendering, as fast as possible" run, e.g. for measuring the computation
 speed. Both are for Compositions without Drones.
 

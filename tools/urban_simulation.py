@@ -507,6 +507,7 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     else:
         urban_realtime.remove_pacer(launcher)
+        urban_realtime.lockstep(launcher, conductor)
     if target.use_case != "drone-car-distributed":
         drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)
