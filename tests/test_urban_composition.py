@@ -1842,3 +1842,18 @@ class LockstepCompositionTest(Fixture):
             urban_realtime.lockstep_input(launcher, "plant", "Car-1", pdu)
         self.assertEqual(launcher["assets"][0]["args"], [
             "--no-viewer", "--lockstep-input", "Car-1/ackermann_cmd", "--lockstep-input", "Car-1/tire_friction"])
+
+
+class StepMsecTest(Fixture):
+    def test_step_msec_is_for_the_run_without_the_pacer(self):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "realtime: false"):
+            self.load(self.composition(simulation={"step_msec": 10}))
+        composition = self.load(self.composition(simulation={"realtime": False, "step_msec": 20}))
+        self.assertEqual(composition.step_msec, 20.0)
+
+    def test_substeps_must_divide_the_step(self):
+        model = self.work / "model.xml"
+        model.write_text('<mujoco><option timestep="0.002"/></mujoco>', encoding="utf-8")
+        self.assertEqual(urban_simulation.physics_substeps(model, 10), 5)
+        with self.assertRaisesRegex(urban_simulation.SimulationError, "whole number"):
+            urban_simulation.physics_substeps(model, 5)

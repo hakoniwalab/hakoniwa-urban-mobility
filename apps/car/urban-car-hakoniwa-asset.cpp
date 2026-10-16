@@ -31,6 +31,8 @@ struct Options {
     std::uint64_t conductor_max_delay_msec {100};
     /** Lockstep inputs ("robot/pdu"): each step waits for a new command. */
     std::vector<std::string> lockstep_inputs;
+    /** Physics steps per Hakoniwa step (inputs once, state once per Hakoniwa step). */
+    std::uint32_t physics_substeps {1};
 };
 
 void usage(const char* program)
@@ -46,6 +48,7 @@ void usage(const char* program)
         << "  --conductor-max-delay-msec N\n"
         << "                          how far world time may run ahead of the slowest\n"
         << "                          asset (own Conductor only; default 100)\n"
+        << "  --physics-substeps N    MuJoCo steps per Hakoniwa step (default 1)\n"
         << "  --lockstep-input ROBOT/PDU\n"
         << "                          step only when a new command has arrived on this\n"
         << "                          Ackermann input (repeatable; repeatable runs)\n"
@@ -83,6 +86,17 @@ bool parse_options(int argc, char** argv, Options& options)
             }
             if (options.conductor_max_delay_msec == 0) {
                 std::cerr << "--conductor-max-delay-msec must be positive\n";
+                return false;
+            }
+        } else if (argument == "--physics-substeps" && index + 1 < argc) {
+            try {
+                options.physics_substeps = static_cast<std::uint32_t>(std::stoul(argv[++index]));
+            } catch (const std::exception&) {
+                std::cerr << "Invalid physics substeps\n";
+                return false;
+            }
+            if (options.physics_substeps == 0) {
+                std::cerr << "--physics-substeps must be positive\n";
                 return false;
             }
         } else if (argument == "--lockstep-input" && index + 1 < argc) {
@@ -150,7 +164,8 @@ int run_asset(const Options& options)
             options.manifest,
             {options.asset_name, options.endpoint_name,
                 options.realtime_sync_cycle_msec, options.owns_conductor,
-                options.conductor_max_delay_msec * 1000, options.lockstep_inputs});
+                options.conductor_max_delay_msec * 1000, options.lockstep_inputs,
+                options.physics_substeps});
     if (runner->start() != 0) {
         return 1;
     }

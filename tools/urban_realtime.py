@@ -53,12 +53,14 @@ CONDUCTOR_MAX_DELAY_MSEC = {
     "drone-service-1": 20,          # Drone Core built-in Conductor
     "fpv-drone-service": 20,
 }
-# Without a pacer (Composition simulation.realtime: false) the Car plant's Conductor
-# keeps every asset within one of its own steps (2 ms): with 20 ms the assets read each
-# other's PDUs at times that differ from run to run, and repeated runs drift apart
-# (Town04 P0: 0.22 m after 35 s; with 2 ms the runs are identical, 3 % slower,
-# 2026-10-16). Every asset must then step at most this (max_delay >= each step).
-LOCKSTEP_MAX_DELAY_MSEC = 2
+# Without a pacer (Composition simulation.realtime: false) the Car plant steps like
+# CARLA's synchronous tick with substepping: one 10 ms Hakoniwa step of 5 MuJoCo steps
+# (the car model's 2 ms timestep), inputs taken once and the state published once per
+# step, and its Conductor keeps every asset within that step (max_delay 10 ms; every
+# asset must step at most this). With a 2 ms Hakoniwa step the processes handed off
+# 17,500 times in 35 s: lockstep spent 70 % of its wall time waiting (Windows, 2026-10-17).
+P0_STEP_MSEC = 10
+P0_PHYSICS_SUBSTEPS = 5
 # Drone services sleep this long per step unless told otherwise.
 DRONE_SLEEP_ARG = "--real-sleep-msec"
 
@@ -142,12 +144,17 @@ def remove_pacer(launcher: dict) -> dict:
     return launcher
 
 
-def lockstep(launcher: dict, conductor: str) -> dict:
-    """Keep every asset within one Conductor step (LOCKSTEP_MAX_DELAY_MSEC), in place: repeatable
-    runs without a pacer. Only the Car plant's own Conductor takes the setting."""
+def lockstep(launcher: dict, conductor: str, step_msec: float = P0_STEP_MSEC,
+             substeps: int = P0_PHYSICS_SUBSTEPS) -> dict:
+    """The run without a pacer, in place: the Car plant steps step_msec per Hakoniwa step
+    (substeps MuJoCo steps), and its Conductor keeps every asset within one such step. One
+    value sets all three that must agree under lockstep: the plant's step, the max_delay and
+    (hakoniwa-scenario's link follows the max_delay) the program's step. Only the Car plant's
+    own Conductor takes the setting."""
     for asset in launcher.get("assets", []):
         if asset.get("name") == conductor and "--conductor-max-delay-msec" in asset.get("args", []):
-            asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", str(LOCKSTEP_MAX_DELAY_MSEC))
+            asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", f"{step_msec:g}")
+            asset["args"] = _set_arg(asset["args"], "--physics-substeps", str(substeps))
     return launcher
 
 
