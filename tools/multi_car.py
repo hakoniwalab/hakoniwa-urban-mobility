@@ -1083,6 +1083,17 @@ def materialize_vehicle_fleet_model(
         compiler = ET.Element("compiler")
         root.insert(0, compiler)
     compiler.set("fusestatic", "true")
+    # Sleep (MuJoCo 3.16): the static geoms' poses are computed once instead of every step
+    # (Town04, 44k road pieces: kinematics 297 -> 19 us of a 914 us step). The Cars never
+    # sleep (below), so their motion is bit-identical to a run without it.
+    option = root.find("option")
+    if option is None:
+        option = ET.Element("option")
+        root.insert(1, option)
+    flag = option.find("flag")
+    if flag is None:
+        flag = ET.SubElement(option, "flag")
+    flag.set("sleep", "enable")
     for section_name in ("asset", "worldbody", "actuator", "contact"):
         section = root.find(section_name)
         if section is not None:
@@ -1177,6 +1188,7 @@ def materialize_vehicle_fleet_model(
         # The model still parks each car apart, clear of the City (a row 6 m apart, 50 m up):
         # loading computes the state once before the spawn poses are applied, and Cars all at
         # the origin overlap there (20 Cars: 12k contacts, beyond MuJoCo's default arena).
+        body.set("sleep", "never")
         park = [float(value) for value in body.get("pos", "0 0 0").split()]
         body.set("pos", f"{park[0] + PARKING_SPACING_M * vehicle_index:g} {park[1]:g} {park[2] + PARKING_HEIGHT_M:g}")
         worldbody_output.append(body)
