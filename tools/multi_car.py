@@ -1049,6 +1049,15 @@ def materialize_vehicle_fleet_model(
     tree = ET.parse(first_path)
     root = tree.getroot()
     root.set("model", "urban_car_fleet")
+    # Fuse the bodies without joints into their parents when compiling: a City World puts its
+    # static geoms on hundreds of bodies (Town04: 746, 44k geoms), and MuJoCo's broadphase and
+    # kinematics walk every body each step. Shapes are unchanged; Town04's step went from
+    # 1.12 ms to 0.36 ms (broadphase 0.77 -> 0.05 ms). Bodies referenced by name stay.
+    compiler = root.find("compiler")
+    if compiler is None:
+        compiler = ET.Element("compiler")
+        root.insert(0, compiler)
+    compiler.set("fusestatic", "true")
     for section_name in ("asset", "worldbody", "actuator", "contact"):
         section = root.find(section_name)
         if section is not None:
