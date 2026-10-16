@@ -486,6 +486,7 @@ def resolve_config(config_path: Path) -> dict:
             "realtime_sync_cycle_msec", 2
         ))
         native_mujoco_viewer = runtime_input.get("native_mujoco_viewer", True)
+        plant_processes = runtime_input.get("plant_processes", 1)
         visualization = config["inputs"].get("browser_visualization", {})
         visualization_enabled = bool(visualization.get("enabled", False))
         front_camera = visualization.get("front_camera")
@@ -514,6 +515,8 @@ def resolve_config(config_path: Path) -> dict:
         raise RecipeError("realtime_sync_cycle_msec must be non-negative")
     if not isinstance(native_mujoco_viewer, bool):
         raise RecipeError("native_mujoco_viewer must be boolean")
+    if isinstance(plant_processes, bool) or not isinstance(plant_processes, int) or plant_processes < 1:
+        raise RecipeError("ackermann_runtime.plant_processes must be a positive integer")
     if not (1 <= web_bridge_port <= 65535 and 1 <= http_port <= 65535):
         raise RecipeError("browser visualization ports must be within 1..65535")
     if front_camera is not None and not isinstance(front_camera, dict):
@@ -759,6 +762,7 @@ def resolve_config(config_path: Path) -> dict:
         "route_scenarios": route_scenarios,
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
         "native_mujoco_viewer": native_mujoco_viewer,
+        "plant_processes": plant_processes,
         "visualization": {
             "enabled": visualization_enabled,
             "web_bridge_port": web_bridge_port,
@@ -953,21 +957,24 @@ def initial_body_poses(resolved: dict, receipt: dict | None = None) -> list[dict
 
 
 def refresh_runtime_initial_body_poses(resolved: dict) -> list[dict]:
-    runtime_path = required(
-        resolved["work"] / "config/car/urban-car-runtime.json",
-        "generated Runtime configuration; run configure first",
-    )
-    runtime = load_json(runtime_path, "Runtime configuration")
     poses = initial_body_poses(resolved)
-    runtime["initial_body_poses"] = [
-        {
-            "mjcf_freejoint": pose["mjcf_freejoint"],
-            "position_m": pose["position_m"],
-            "orientation_rpy_rad": pose["orientation_rpy_rad"],
-        }
-        for pose in poses
-    ]
-    write_json(runtime_path, runtime)
+    for plant in load_plants(resolved["work"]):
+        runtime_path = required(
+            Path(plant["root"]) / "urban-car-runtime.json",
+            "generated Runtime configuration; run configure first",
+        )
+        runtime = load_json(runtime_path, "Runtime configuration")
+        names = plant.get("vehicles")
+        runtime["initial_body_poses"] = [
+            {
+                "mjcf_freejoint": pose["mjcf_freejoint"],
+                "position_m": pose["position_m"],
+                "orientation_rpy_rad": pose["orientation_rpy_rad"],
+            }
+            for pose in poses
+            if names is None or pose["name"] in names
+        ]
+        write_json(runtime_path, runtime)
     for pose in poses:
         terrain = pose["terrain_height_m"]
         detail = "absolute"
@@ -1120,7 +1127,7 @@ def materialize_vehicle_fleet_model(
         if child.tag not in {"body", "geom"}:
             worldbody_output.append(copy.deepcopy(child))
 
-    for vehicle in vehicles:
+    for vehicle_index, vehicle in enumerate(vehicles):
         definition = vehicle["type_definition"]
         source_path = definition["mjcf"]
         source_root = ET.parse(source_path).getroot()
@@ -1167,6 +1174,11 @@ def materialize_vehicle_fleet_model(
                 )
         # Vehicle spawn poses are runtime state, not model structure. Keeping
         # them out of MJCF lets the expensive City World MJB remain reusable.
+        # The model still parks each car apart, clear of the City (a row 6 m apart, 50 m up):
+        # loading computes the state once before the spawn poses are applied, and Cars all at
+        # the origin overlap there (20 Cars: 12k contacts, beyond MuJoCo's default arena).
+        park = [float(value) for value in body.get("pos", "0 0 0").split()]
+        body.set("pos", f"{park[0] + PARKING_SPACING_M * vehicle_index:g} {park[1]:g} {park[2] + PARKING_HEIGHT_M:g}")
         worldbody_output.append(body)
 
         for template in actuator_templates:
@@ -1427,14 +1439,52 @@ def _model_tire_friction(mjcf: object) -> float:
     return 1.0
 
 
+PLANTS_FILE = "urban-car-plants.json"
+# Where the Car model parks each Car before its spawn pose (materialize_vehicle_fleet_model).
+PARKING_SPACING_M, PARKING_HEIGHT_M = 6.0, 50.0
+
+
+def plant_identity(index: int) -> dict:
+    """The names of car plant process `index` (1-based; ackermann_runtime.plant_processes).
+    The first keeps the single-plant names, so a one-plant run and its readers are unchanged;
+    the others own their cars' state on their own PDU robot and join the first's Conductor."""
+    if index == 1:
+        return {"index": 1, "launcher_asset": CAR_PLANT_ASSET, "asset_name": FLEET_ASSET_NAME,
+                "state_robot": FLEET_PDU_ROBOT, "comm": "urban_car_fleet_shm",
+                "endpoint": "urban_car_fleet_endpoint", "state_types_id": "urban-fleet-state"}
+    return {"index": index, "launcher_asset": f"{CAR_PLANT_ASSET}-{index}",
+            "asset_name": f"{FLEET_ASSET_NAME}-{index}", "state_robot": f"{FLEET_PDU_ROBOT}-{index}",
+            "comm": f"urban_car_fleet_shm_{index}", "endpoint": f"urban_car_fleet_endpoint_{index}",
+            "state_types_id": f"urban-fleet-state-{index}"}
+
+
+def plant_partition(vehicle_count: int, processes: int) -> list[int]:
+    """Cars per plant process: as even as possible, the remainder on the last processes
+    (the Business Pack Drone Fleet's rule, tools/recipe/drone_fleet_runtime.py)."""
+    if not 1 <= processes <= vehicle_count:
+        raise RecipeError(f"plant_processes must be from 1 to the number of Cars ({vehicle_count})")
+    base, remainder = divmod(vehicle_count, processes)
+    return [base + (1 if index >= processes - remainder else 0) for index in range(processes)]
+
+
+def load_plants(work: Path) -> list[dict]:
+    """The plant processes configure wrote (one, with the single-plant names, when absent)."""
+    path = work / "config/car" / PLANTS_FILE
+    if not path.is_file():
+        return [{**plant_identity(1), "root": str(work / "config/car"), "vehicles": None}]
+    return load_json(path, "Car plant processes")["plants"]
+
+
 def materialize_runtime(
     runtime_model: Path,
     work: Path,
     vehicles: list[dict],
     mirrors: list[dict] | None = None,
+    plant: dict | None = None,
 ) -> dict[str, Path]:
     source = paths()
     mirrors = mirrors or []
+    plant = plant or plant_identity(1)
     work.mkdir(parents=True, exist_ok=True)
     runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime["actuators"] = {}
@@ -1477,7 +1527,7 @@ def materialize_runtime(
     pdu_def = {
         "paths": [
             {"id": "urban-car-command", "path": str(command_types_path)},
-            {"id": "urban-fleet-state", "path": str(state_types_path)},
+            {"id": plant["state_types_id"], "path": str(state_types_path)},
             *[
                 {"id": f"urban-drone-mirror-{index}", "path": str(mirror["pdu_types"])}
                 for index, mirror in enumerate(mirrors, start=1)
@@ -1488,7 +1538,7 @@ def materialize_runtime(
                 {"name": vehicle["name"], "pdutypes_id": "urban-car-command"}
                 for vehicle in vehicles
             ],
-            {"name": FLEET_PDU_ROBOT, "pdutypes_id": "urban-fleet-state"},
+            {"name": plant["state_robot"], "pdutypes_id": plant["state_types_id"]},
             *[
                 {"name": mirror["name"], "pdutypes_id": f"urban-drone-mirror-{index}"}
                 for index, mirror in enumerate(mirrors, start=1)
@@ -1499,7 +1549,7 @@ def materialize_runtime(
     write_json(pdu_def_path, pdu_def)
 
     comm = load_json(source["source_comm"], "source Ackermann endpoint communication config")
-    comm["name"] = "urban_car_fleet_shm"
+    comm["name"] = plant["comm"]
     comm["io"]["robots"] = [
         *[{
             "name": vehicle["name"],
@@ -1510,7 +1560,7 @@ def materialize_runtime(
             ],
         } for vehicle in vehicles],
         {
-            "name": FLEET_PDU_ROBOT,
+            "name": plant["state_robot"],
             "pdu": [
                 {"name": item["name"], "notify_on_recv": False}
                 for item in state_pdu_types
@@ -1529,7 +1579,7 @@ def materialize_runtime(
     write_json(comm_path, comm)
 
     endpoint = load_json(source["source_endpoint"], "source Ackermann endpoint config")
-    endpoint["name"] = "urban_car_fleet_endpoint"
+    endpoint["name"] = plant["endpoint"]
     endpoint["pdu_def_path"] = str(pdu_def_path)
     endpoint["cache"] = str(source["source_cache"].resolve())
     endpoint["comm"] = str(comm_path)
@@ -1645,14 +1695,14 @@ def materialize_runtime(
 
     components.extend([
         {"id": "urban_fleet_joint_states", "kind": "state_output", "type": "joint_state",
-         "config": str(joint_state_path), "pdu_robot": FLEET_PDU_ROBOT},
+         "config": str(joint_state_path), "pdu_robot": plant["state_robot"]},
         {"id": "urban_fleet_vehicle_states", "kind": "state_output",
          "type": "multi_dof_joint_state", "config": str(multi_dof_path),
-         "pdu_robot": FLEET_PDU_ROBOT},
+         "pdu_robot": plant["state_robot"]},
     ])
     manifest = {
         "schema_version": 1,
-        "name": FLEET_ASSET_NAME,
+        "name": plant["asset_name"],
         "description": "Urban-owned multi-vehicle Ackermann runtime",
         "model": str(runtime_model),
         "pdu_def": str(pdu_def_path),
@@ -1678,6 +1728,8 @@ def materialize_runtime(
         "comm": comm_path,
         "manifest": manifest_path,
         "tires": tires_path,
+        "joint_state": joint_state_path,
+        "multi_dof_state": multi_dof_path,
     }
 
 
@@ -2010,6 +2062,27 @@ def materialize_launcher(
             },
         }
     ]
+    # More plant processes (plant_processes): each its own Cars and manifest, joining the
+    # first plant's Conductor, started one after another (the Drone Fleet's order).
+    for plant in load_plants(work)[1:]:
+        args = list(plant_args)
+        args[args.index("--manifest") + 1] = plant["manifest"]
+        delay = args.index("--conductor-max-delay-msec")  # the first plant's Conductor has it
+        del args[delay:delay + 2]
+        assets.append({
+            "name": plant["launcher_asset"],
+            "activation_timing": "before_start",
+            "command": str(source["plant"]),
+            "args": [*args, "--external-conductor"],
+            "depends_on": [assets[-1]["name"]],
+            "readiness": {
+                "type": "hako_asset",
+                "asset_name": plant["asset_name"],
+                "timeout_sec": 120,
+                "poll_interval_sec": 0.2,
+                "command_timeout_sec": READINESS_PROBE_SEC,
+            },
+        })
     for vehicle in vehicles:
         if vehicle["control_mode"] != "ps5":
             continue
@@ -2183,6 +2256,21 @@ def doctor(resolved: dict) -> int:
     return 1 if failed else 0
 
 
+def write_union_pdu_def(shard_files: list[dict], output: Path) -> None:
+    """One PDU definition with every plant process's Cars and state robots, for the programs
+    that read or drive Cars of several processes (and the first plant, which keeps its path):
+    each process's own definition lists only its Cars."""
+    paths_by_id: dict[str, dict] = {}
+    robots: list[dict] = []
+    for files in shard_files:
+        definition = load_json(files["pdu_def"], "plant PDU definition")
+        for entry in definition["paths"]:
+            paths_by_id.setdefault(entry["id"], entry)
+        robots.extend(robot for robot in definition["robots"]
+                      if robot["name"] not in {r["name"] for r in robots})
+    write_json(output, {"paths": list(paths_by_id.values()), "robots": robots})
+
+
 def configure(resolved: dict) -> int:
     source = paths()
     work = resolved["work"]
@@ -2196,21 +2284,53 @@ def configure(resolved: dict) -> int:
     required(foundation_python(), "Foundation Python")
     required(source["core_config"], "Foundation Core config")
     config_root.mkdir(parents=True, exist_ok=True)
-    fleet_model = config_root / "urban-car-fleet.xml"
-    materialize_vehicle_fleet_model(fleet_model, vehicles, mirrors)
-    output = config_root / "urban-cars-city.xml"
-    command([
-        str(foundation_python()), str(source["compose_tool"]),
-        str(fleet_model), str(city_mjcf),
-        "--output", str(output),
-    ])
-
-    mjb = config_root / "urban-cars-city.mjb"
-    mjb_receipt = work / "validation/mujoco-materialization.json"
-    materialization = materialize_mjb(output, mjb, mjb_receipt)
-    require_pinned_mujoco(materialization)
-
-    runtime_files = materialize_runtime(mjb, config_root, vehicles, mirrors)
+    processes = resolved.get("plant_processes", 1)
+    if processes > 1 and (resolved["visualization"]["enabled"] or mirrors
+                          or resolved["route_scenarios"] or resolved["vehicle_generation"]
+                          or any(v.get("control_mode") == "ps5" for v in vehicles)):
+        raise RecipeError(
+            "plant_processes > 1 is for runs without the browser viewer, Drones, route scenarios "
+            "or PS5 control: each of those reads one plant's state"
+        )
+    counts = plant_partition(len(vehicles), processes)
+    plants: list[dict] = []
+    shard_files: list[dict] = []
+    start = 0
+    for index, count in enumerate(counts, start=1):
+        group = vehicles[start:start + count]
+        start += count
+        plant = plant_identity(index)
+        shard_root = config_root if index == 1 else config_root / f"plant-{index}"
+        shard_root.mkdir(parents=True, exist_ok=True)
+        shard_mirrors = mirrors if index == 1 else []
+        fleet_model = shard_root / "urban-car-fleet.xml"
+        materialize_vehicle_fleet_model(fleet_model, group, shard_mirrors)
+        output = shard_root / "urban-cars-city.xml"
+        command([
+            str(foundation_python()), str(source["compose_tool"]),
+            str(fleet_model), str(city_mjcf),
+            "--output", str(output),
+        ])
+        mjb = shard_root / "urban-cars-city.mjb"
+        mjb_receipt = work / ("validation/mujoco-materialization.json" if index == 1
+                              else f"validation/mujoco-materialization-{index}.json")
+        shard_materialization = materialize_mjb(output, mjb, mjb_receipt)
+        require_pinned_mujoco(shard_materialization)
+        files = materialize_runtime(mjb, shard_root, group, shard_mirrors, plant)
+        shard_files.append(files)
+        plants.append({**plant, "root": str(shard_root), "manifest": str(files["manifest"]),
+                       "runtime": str(files["runtime"]), "comm": str(files["comm"]),
+                       "joint_state": str(files["joint_state"]),
+                       "multi_dof_state": str(files["multi_dof_state"]),
+                       "model_xml": str(output), "vehicles": [v["name"] for v in group]})
+        if index == 1:
+            first = (shard_materialization, mjb, output, mjb_receipt)
+    runtime_files = shard_files[0]
+    # The receipt describes the first plant (the only one unless plant_processes > 1).
+    materialization, mjb, output, mjb_receipt = first
+    write_json(config_root / PLANTS_FILE, {"plants": plants})
+    if processes > 1:
+        write_union_pdu_def(shard_files, runtime_files["pdu_def"])
     configured_initial_poses = refresh_runtime_initial_body_poses(resolved)
     initial_pose_by_name = {
         pose["name"]: pose for pose in configured_initial_poses
@@ -2279,6 +2399,7 @@ def configure(resolved: dict) -> int:
         "route_scenarios": [
             {**item, "scenario": str(item["scenario"])} for item in resolved.get("route_scenarios", [])
         ],
+        "plants": plants,
         "output_mjcf": {"path": str(output), "sha256": sha256(output)},
         "runtime_mjb": {
             "path": str(mjb),

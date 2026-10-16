@@ -551,17 +551,21 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.lockstep(launcher, conductor, step_msec,
                                 physics_substeps(target.work / "config/car/urban-cars-city.xml", step_msec))
     if composition.lockstep:
+        plants = multi_car.load_plants(target.work)
         for car in [v for v in composition.vehicles if v.control == "external"]:
             # The command and, when the program sets it, the tire friction: both written every
-            # step (and once at initialization), both read in simulation-time order.
+            # step (and once at initialization), both read in simulation-time order, by the
+            # plant process that owns the Car (plant_processes).
+            plant = next((p for p in plants if p["vehicles"] is None or car.name in p["vehicles"]), plants[0])
             inputs = [multi_car.COMMAND_PDU] + ([multi_car.TIRE_FRICTION_PDU] if car.tire_friction_input else [])
             for pdu in inputs:
-                urban_realtime.lockstep_input(launcher, conductor, car.name, pdu)
-                unnotify(target.work / "config/car/urban-car-comm.json", car.name, pdu)
+                urban_realtime.lockstep_input(launcher, plant["launcher_asset"], car.name, pdu)
+                unnotify(Path(plant["root"]) / "urban-car-comm.json", car.name, pdu)
         # The scenario waits for the car state of each plant step in turn: publish every step.
-        for state in ("urban-fleet-multi-dof-state.json", "urban-fleet-joint-state.json"):
-            publish_every_step(target.work / "config/car" / state,
-                               composition.step_msec or urban_realtime.P0_STEP_MSEC)
+        for plant in multi_car.load_plants(target.work):
+            for state in ("urban-fleet-multi-dof-state.json", "urban-fleet-joint-state.json"):
+                publish_every_step(Path(plant["root"]) / state,
+                                   composition.step_msec or urban_realtime.P0_STEP_MSEC)
     if target.use_case != "drone-car-distributed":
         drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)
