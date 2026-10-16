@@ -826,6 +826,24 @@ def mujoco_library() -> Path:
     )
 
 
+def require_pinned_mujoco(materialization: dict) -> None:
+    """The plant's MuJoCo (the library the MJB was compiled with, beside the plant) must be
+    the one hakoniwa-mujoco-robots pins. A build directory kept from before a MuJoCo
+    upgrade (or a MUJOCO_ROOT left in its CMake cache) kept a Windows plant on 3.13 with
+    the pin at 3.16: 3x slower, and fusestatic had no effect (2026-10-16)."""
+    pinned = required(MUJOCO_ROBOTS / "MUJOCO_VERSION.txt", "MuJoCo version").read_text(
+        encoding="utf-8"
+    ).strip()
+    built = str(materialization.get("mujoco_version", "")).strip()
+    if built != pinned:
+        raise RecipeError(
+            f"the Urban Car plant uses MuJoCo {built or 'of an unknown version'} "
+            f"({materialization.get('mujoco_library')}), but hakoniwa-mujoco-robots pins "
+            f"{pinned}. Rebuild the plant from a fresh build directory: move "
+            f"{ROOT / 'build'} aside, make sure MUJOCO_ROOT is not set, and configure again."
+        )
+
+
 def city_inputs(city_receipt: Path) -> tuple[Path, Path, dict]:
     receipt = load_json(city_receipt, "City World receipt")
     try:
@@ -2190,6 +2208,7 @@ def configure(resolved: dict) -> int:
     mjb = config_root / "urban-cars-city.mjb"
     mjb_receipt = work / "validation/mujoco-materialization.json"
     materialization = materialize_mjb(output, mjb, mjb_receipt)
+    require_pinned_mujoco(materialization)
 
     runtime_files = materialize_runtime(mjb, config_root, vehicles, mirrors)
     configured_initial_poses = refresh_runtime_initial_body_poses(resolved)
