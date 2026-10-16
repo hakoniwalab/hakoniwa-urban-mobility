@@ -409,7 +409,7 @@ vehicles:
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
-simulation: { realtime, lockstep }        # optional; realtime default true, lockstep default false
+simulation: { realtime, lockstep, step_msec }  # optional; realtime default true, lockstep default false, step_msec 10
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
@@ -418,9 +418,13 @@ extensions:                               # optional, section 5.8
 `viewer.enabled: false` runs without the web bridge and the HTTP Viewer: `start`
 is ready once the Launcher runs. `simulation.realtime: false` leaves the Urban
 real-time pacer out, so the run goes as fast as its slowest asset computes (the
-assets still step in lockstep with the Conductor). The Car plant's Conductor then keeps
-every asset within one of its 2 ms steps (max_delay 2 ms instead of 20 ms), and every
-asset must step at 2 ms or less. Repeated runs started at the same simulation time stay
+assets still step in lockstep with the Conductor). The Car plant then steps like CARLA's
+synchronous tick with substepping: one 10 ms Hakoniwa step of 5 MuJoCo steps (its 2 ms
+timestep; `--physics-substeps`), taking its inputs once and publishing its state once per
+step, and its Conductor keeps every asset within that step (max_delay 10 ms); every asset
+must step at 10 ms or less. `simulation.step_msec` sets that step (a whole number of the Car
+model's timestep); the plant's step, the max_delay and, under lockstep, the program's step
+and the state output rate all follow it, which is what keeps lockstep from stalling. Repeated runs started at the same simulation time stay
 close (a few cm over Town04's 35 s), but not identical: which of two assets writes or
 reads a PDU first can change with the CPU load. Together they are the
 "no rendering, as fast as possible" run, e.g. for measuring the computation

@@ -317,13 +317,27 @@ def unnotify(comm_path: Path, robot: str, pdu: str) -> None:
     multi_car.write_json(comm_path, comm)
 
 
-def publish_every_step(output_path: Path) -> None:
-    """Set a plant state output to publish every plant step (lockstep)."""
+def physics_substeps(model_xml: Path, step_msec: float) -> int:
+    """MuJoCo steps per Hakoniwa step: step_msec over the Car model's timestep, which must
+    divide it (the plant takes its inputs and publishes its state once per Hakoniwa step)."""
+    import xml.etree.ElementTree as ET
+
+    option = ET.parse(model_xml).getroot().find("option")
+    timestep_msec = float(option.get("timestep", "0.002")) * 1000.0 if option is not None else 2.0
+    substeps = round(step_msec / timestep_msec)
+    if substeps < 1 or abs(substeps * timestep_msec - step_msec) > 1e-9:
+        raise SimulationError(
+            f"simulation.step_msec {step_msec:g} is not a whole number of the Car model's "
+            f"{timestep_msec:g} ms timestep")
+    return substeps
+
+
+def publish_every_step(output_path: Path, step_msec: float) -> None:
+    """Set a plant state output to publish every plant (Hakoniwa) step (lockstep)."""
     import multi_car
-    import urban_realtime
 
     output = multi_car.load_json(output_path, "Car plant state output")
-    output["pdu_config"]["update_rate_hz"] = 1000.0 / urban_realtime.LOCKSTEP_MAX_DELAY_MSEC
+    output["pdu_config"]["update_rate_hz"] = 1000.0 / step_msec
     multi_car.write_json(output_path, output)
 
 
@@ -533,7 +547,9 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.apply_pacer(launcher, pacer, drone_services=drone_services)
     else:
         urban_realtime.remove_pacer(launcher)
-        urban_realtime.lockstep(launcher, conductor)
+        step_msec = composition.step_msec or urban_realtime.P0_STEP_MSEC
+        urban_realtime.lockstep(launcher, conductor, step_msec,
+                                physics_substeps(target.work / "config/car/urban-cars-city.xml", step_msec))
     if composition.lockstep:
         for car in [v for v in composition.vehicles if v.control == "external"]:
             # The command and, when the program sets it, the tire friction: both written every
@@ -544,7 +560,8 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
                 unnotify(target.work / "config/car/urban-car-comm.json", car.name, pdu)
         # The scenario waits for the car state of each plant step in turn: publish every step.
         for state in ("urban-fleet-multi-dof-state.json", "urban-fleet-joint-state.json"):
-            publish_every_step(target.work / "config/car" / state)
+            publish_every_step(target.work / "config/car" / state,
+                               composition.step_msec or urban_realtime.P0_STEP_MSEC)
     if target.use_case != "drone-car-distributed":
         drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)

@@ -130,6 +130,9 @@ class Composition:
     # simulation.lockstep (section 5.1): the plant steps only when its external Cars'
     # commands for the step have arrived (repeatable runs).
     lockstep: bool = False
+    # simulation.step_msec (section 5.1): the Car plant's Hakoniwa step without the pacer,
+    # a whole number of its physics timesteps (None: urban_realtime.P0_STEP_MSEC).
+    step_msec: float | None = None
 
     @property
     def viewer_enabled(self) -> bool:
@@ -330,12 +333,18 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     simulation = data.get("simulation", {})
     if not isinstance(simulation, dict):
         raise CompositionError("Composition simulation must be a mapping")
-    unknown = set(simulation) - {"realtime", "lockstep"}
+    unknown = set(simulation) - {"realtime", "lockstep", "step_msec"}
     if unknown:
         raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
     realtime = simulation.get("realtime", True)
     if not isinstance(realtime, bool):
         raise CompositionError("Composition simulation.realtime must be true or false")
+    step_msec = simulation.get("step_msec")
+    if step_msec is not None:
+        if isinstance(step_msec, bool) or not isinstance(step_msec, (int, float)) or not step_msec > 0:
+            raise CompositionError("Composition simulation.step_msec must be a positive number")
+        if realtime:
+            raise CompositionError("simulation.step_msec is for simulation.realtime: false")
     lockstep = simulation.get("lockstep", False)
     if not isinstance(lockstep, bool):
         raise CompositionError("Composition simulation.lockstep must be true or false")
@@ -348,6 +357,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         id=composition_id, path=path, world=world, vehicles=vehicles,
         interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
         realtime=realtime, lockstep=lockstep,
+        step_msec=None if step_msec is None else float(step_msec),
     )
     if lockstep and realtime:
         # The plant waits for a command every 2 ms step: the external program must step at
