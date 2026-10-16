@@ -22,6 +22,7 @@ import urban_realtime  # noqa: E402
 import plain_world  # noqa: E402
 from tools import urban_mobility  # noqa: E402
 import drone_one  # noqa: E402
+import hakoniwa_runtime  # noqa: E402
 import multi_car  # noqa: E402
 
 FPV_ASSETS = urban_assets.WORKSPACE / "hakoniwa-fpv-drone/assets"
@@ -106,7 +107,7 @@ class Fixture(unittest.TestCase):
 class CompositionTest(Fixture):
     def test_spawn_height_comes_from_the_asset_not_the_user(self):
         with self.assertRaisesRegex(urban_composition.CompositionError, "height is computed"):
-            self.load(self.composition(vehicle={"spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0, "up_m": 3}}))
+            self.load(self.composition(vehicle={"spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0, "z_m": 3}}))
 
     def test_rejects_unknown_asset_and_undeclared_control(self):
         with self.assertRaisesRegex(urban_composition.CompositionError, "unknown vehicle Asset"):
@@ -249,6 +250,28 @@ class CarCompositionTest(Fixture):
         spawn = config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]
         self.assertAlmostEqual(spawn["up_m"], 21.054 + 0.45)
         self.assertNotIn("ground_clearance_m", spawn)
+
+    def test_spawn_level_picks_the_surface_under_a_higher_one(self):
+        # A road under an elevated one: the top surface is the upper deck; spawn.up_m
+        # (the level meant) selects the road under it.
+        class TwoLevels:
+            def __call__(self, east, north):
+                return 45.0
+
+            def ground_below(self, east, north, from_up_m):
+                return next((z for z in (45.0, 13.0) if z <= from_up_m), None)
+
+        def spawn_up(level):
+            spawn = {"east_m": 0, "north_m": 0, "yaw_deg": 0, **({"up_m": level} if level is not None else {})}
+            config = urban_composition.to_car_config(
+                self.load(self.composition(vehicle={"spawn": spawn})), "urban-car-rc", ground=TwoLevels())
+            return config["inputs"]["ackermann_vehicles"]["vehicles"][0]["spawn_pose_enu"]["up_m"]
+
+        self.assertAlmostEqual(spawn_up(None), 45.0 + 0.45)
+        self.assertAlmostEqual(spawn_up(13.1), 13.0 + 0.45)
+        self.assertAlmostEqual(spawn_up(44.8), 45.0 + 0.45)
+        with self.assertRaisesRegex(urban_composition.CompositionError, "no World surface at spawn.up_m 30.00"):
+            spawn_up(30.0)
 
     def route_file(self, name: str, vehicles: list[tuple[str, float]], east0: float = 0.0) -> str:
         path = self.work / f"{name}.yaml"
@@ -1644,7 +1667,9 @@ class FleetCompositionTest(Fixture):
             drone_fleet.launcher_writer()(mock.Mock(recipe_config=self.work), "drone", "viewer", "exp", "Darwin")
         self.assertEqual(write.call_args.kwargs,
                          {"http_port": urban_manifest.port("viewer-http"), "websocket_port": 29866})
-        self.assertEqual(json.loads(launcher.read_text(encoding="utf-8"))["runtime"], {"cleanup_mmap_on_start": True})
+        # The runtime section the installed Launcher takes (hakoniwa_runtime.launcher_runtime).
+        self.assertEqual(json.loads(launcher.read_text(encoding="utf-8"))["runtime"],
+                         hakoniwa_runtime.launcher_runtime())
 
     def test_the_fleet_route_runs_one_fleet_alone(self):
         with self.catalog():

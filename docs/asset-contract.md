@@ -404,7 +404,7 @@ vehicles:
     asset: <vehicle Asset id>
     control: rc | api
     params: { <param>: <value> }          # optional, section 4.1
-    spawn: { east_m, north_m, yaw_deg }   # section 5.4
+    spawn: { east_m, north_m, yaw_deg }   # section 5.4; optional up_m selects a level
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
@@ -480,6 +480,14 @@ could start inside a colliding one under it, such as a line painted on a
 road, and report that geom's underside); a model with every group taken
 falls back to passing through them. The same rule applies to Cars and Drones; the builders
 receive the result as an absolute height.
+
+Where a World has several levels at one point (a double-deck bridge, a road
+under an elevated one) the top surface may not be the one meant. A spawn may
+then also give `up_m`, the height of the level meant (for a scenario, the
+road height from OpenDRIVE): the ray looks down from 1 m above it, and the
+surface it finds must be at most 2 m below it, or the Composition is refused.
+`up_m` selects the level only; the spawn height is still that surface plus the
+Asset clearance.
 
 `tools/world_height.py` implements the ray on the City World MJCF named by
 the receipt. The City World workflow converts PLATEAU into MJCF, but the ray
