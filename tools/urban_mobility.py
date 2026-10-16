@@ -137,6 +137,16 @@ def spec(
             raise UrbanMobilityError(
                 f"invalid Viewer URL contract: {contract_path}: {exc}"
             ) from exc
+        if payload.get("viewer") is False:
+            return urban_lifecycle.LifecycleSpec(
+                recipe_id=context.recipe_id,
+                recipe_root=recipe_root_path,
+                launcher=recipe_root_path / "config/launcher.json",
+                session=recipe_root_path / "runtime/launcher-session.json",
+                viewer_url="",
+                ports=(),
+                viewer=False,
+            )
     elif require_viewer:
         url = viewer_url(context)
 
@@ -341,20 +351,25 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     if selected is not None:
         urban_simulation.apply_managed_runtime(managed_target(context), selected)
 
-    viewer_config = root(context) / "config/threejs/viewer-config.json"
-    url = multi_car.map_viewer_url(resolved, viewer_config)
-    viewer_contract = {
-        "url": url,
-        "layout": "three-main",
-        "use_case": context.use_case,
-        "http_port": resolved["visualization"]["http_port"],
-        "websocket_port": resolved["visualization"]["web_bridge_port"],
-    }
-    collider_config = root(context) / "config/threejs/viewer-config-colliders.json"
-    if collider_config.is_file():
-        viewer_contract["collider_url"] = multi_car.map_viewer_url(
-            resolved, collider_config
-        )
+    if resolved["visualization"]["enabled"]:
+        viewer_config = root(context) / "config/threejs/viewer-config.json"
+        url = multi_car.map_viewer_url(resolved, viewer_config)
+        viewer_contract = {
+            "url": url,
+            "layout": "three-main",
+            "use_case": context.use_case,
+            "http_port": resolved["visualization"]["http_port"],
+            "websocket_port": resolved["visualization"]["web_bridge_port"],
+        }
+        collider_config = root(context) / "config/threejs/viewer-config-colliders.json"
+        if collider_config.is_file():
+            viewer_contract["collider_url"] = multi_car.map_viewer_url(
+                resolved, collider_config
+            )
+    else:
+        # viewer.enabled: false: no web bridge and no HTTP Viewer; start waits for the Launcher only.
+        url = "none (viewer.enabled: false)"
+        viewer_contract = {"viewer": False, "use_case": context.use_case}
     multi_car.write_json(root(context) / "config/viewer-url.json", viewer_contract)
     print(f"Urban Recipe : {context.recipe_id}")
     print(f"Use case     : {context.use_case}")

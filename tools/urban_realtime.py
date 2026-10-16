@@ -121,3 +121,16 @@ def apply_pacer(launcher: dict, pacer: dict, *, drone_services: tuple[str, ...] 
     position = names.index(conductor) + 1
     launcher["assets"] = assets[:position] + [pacer] + assets[position:]
     return launcher
+
+
+def remove_pacer(launcher: dict) -> dict:
+    """Run without real-time pacing (Composition simulation.realtime: false), in place.
+
+    Every Hakoniwa asset steps in lockstep with the Conductor without sleeping, so
+    with no pacer the run goes as fast as its slowest asset computes.
+    """
+    launcher["assets"] = [
+        asset for asset in launcher.get("assets", [])
+        if asset.get("name") not in LEGACY_PACERS | {PACER_ASSET}
+    ]
+    return launcher
