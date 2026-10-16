@@ -409,7 +409,7 @@ vehicles:
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
-simulation: { realtime, lockstep, step_msec }  # optional; realtime default true, lockstep default false, step_msec 10
+simulation: { realtime, lockstep, step_msec, plant_processes }  # optional; realtime default true, lockstep default false, step_msec 10, plant_processes 1
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
@@ -439,6 +439,15 @@ It publishes the car state every step, and the program waits for that state in
 turn. The program must write those inputs once at its initialization and then
 every step. Town04 P0: 10 runs under a heavy CPU load were identical, about 25 %
 slower than without lockstep.
+
+`simulation.plant_processes: K` (with `realtime: false` and `viewer.enabled: false`,
+Cars only) splits the Cars over K plant processes, each with its own MuJoCo model and state
+PDU robot (`UrbanFleet`, `UrbanFleet-2`, ...; `config/car/urban-car-plants.json` lists
+them), as evenly as possible with the remainder on the last processes (the Business Pack
+Drone Fleet's rule). The first process owns the Conductor; the others join it. The Cars of
+different processes do not touch each other physically. With lockstep each process waits
+for its own Cars' commands and the program waits for every process's state, so the run
+stays identical.
 
 The user places every vehicle explicitly; in the browser this is drag and
 drop onto the World (section 5.5). The Composition therefore always lists each vehicle

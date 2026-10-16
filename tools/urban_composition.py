@@ -133,6 +133,9 @@ class Composition:
     # simulation.step_msec (section 5.1): the Car plant's Hakoniwa step without the pacer,
     # a whole number of its physics timesteps (None: urban_realtime.P0_STEP_MSEC).
     step_msec: float | None = None
+    # simulation.plant_processes (section 5.1): the Cars split over this many plant
+    # processes, each stepping its share (lockstep keeps the run repeatable).
+    plant_processes: int = 1
 
     @property
     def viewer_enabled(self) -> bool:
@@ -333,7 +336,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     simulation = data.get("simulation", {})
     if not isinstance(simulation, dict):
         raise CompositionError("Composition simulation must be a mapping")
-    unknown = set(simulation) - {"realtime", "lockstep", "step_msec"}
+    unknown = set(simulation) - {"realtime", "lockstep", "step_msec", "plant_processes"}
     if unknown:
         raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
     realtime = simulation.get("realtime", True)
@@ -348,6 +351,9 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     lockstep = simulation.get("lockstep", False)
     if not isinstance(lockstep, bool):
         raise CompositionError("Composition simulation.lockstep must be true or false")
+    plant_processes = simulation.get("plant_processes", 1)
+    if isinstance(plant_processes, bool) or not isinstance(plant_processes, int) or plant_processes < 1:
+        raise CompositionError("Composition simulation.plant_processes must be a positive integer")
     extension_entries = data.get("extensions", [])
     if not isinstance(extension_entries, list):
         raise CompositionError("Composition extensions must be a list")
@@ -358,6 +364,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
         realtime=realtime, lockstep=lockstep,
         step_msec=None if step_msec is None else float(step_msec),
+        plant_processes=plant_processes,
     )
     if lockstep and realtime:
         # The plant waits for a command every 2 ms step: the external program must step at
@@ -369,6 +376,14 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
             raise CompositionError(
                 "simulation.lockstep needs Cars with control: external (one program writes every one's "
                 f"command every step) and no Drones; got {len(external)} external Cars")
+    if plant_processes > 1:
+        cars = [v for v in composition.vehicles if v.asset.simulator == CAR_SIMULATOR]
+        if realtime or composition.viewer_enabled or plant_processes > len(cars) \
+                or set(composition.simulators()) - {CAR_SIMULATOR}:
+            # One pacer, one viewer and the mirrors serve the first plant only.
+            raise CompositionError(
+                "simulation.plant_processes > 1 needs simulation.realtime: false, viewer.enabled: false, "
+                f"only Cars and at most one process per Car (got {len(cars)} Cars)")
     if (not realtime or not composition.viewer_enabled) and "drone-core" in composition.simulators():
         # The Drone services sleep per step and the integrated route merges the Drone Viewer:
         # neither has a run without them yet.
@@ -737,7 +752,9 @@ def _car_inputs(
         "ackermann_vehicles": vehicles,
         # The Urban real-time pacer paces the plant (tools/urban_realtime.py), so
         # the plant does not sleep on its own.
-        "ackermann_runtime": {"realtime_sync_cycle_msec": 0, "native_mujoco_viewer": False},
+        "ackermann_runtime": {"realtime_sync_cycle_msec": 0, "native_mujoco_viewer": False,
+                              **({"plant_processes": composition.plant_processes}
+                                 if composition.plant_processes > 1 else {})},
         "browser_visualization": visualization,
     }
 

@@ -291,9 +291,9 @@ class ControlModeTest(unittest.TestCase):
                 self.assertIn(f'name="{prefix}wheel_motor"', text)
                 self.assertIn(f'joint="{prefix}wheel_joint"', text)
             root = multi_car.ET.parse(fleet).getroot()
-            self.assertIsNone(
-                root.find("./worldbody/body[@name='car_1_vehicle']").get("pos")
-            )
+            # No spawn pose in the model: only the fixed parking row (6 m apart, 50 m up).
+            self.assertEqual(root.find("./worldbody/body[@name='car_1_vehicle']").get("pos"), "0 0 50")
+            self.assertEqual(root.find("./worldbody/body[@name='car_2_vehicle']").get("pos"), "6 0 50")
 
     def test_runtime_initial_pose_uses_mujoco_terrain_triangle(self):
         with tempfile.TemporaryDirectory() as directory:

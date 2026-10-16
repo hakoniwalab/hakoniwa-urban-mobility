@@ -1844,6 +1844,41 @@ class LockstepCompositionTest(Fixture):
             "--no-viewer", "--lockstep-input", "Car-1/ackermann_cmd", "--lockstep-input", "Car-1/tire_friction"])
 
 
+class PlantProcessesTest(Fixture):
+    def test_plant_processes_need_the_run_without_the_pacer_and_the_viewer(self):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "plant_processes"):
+            self.load(self.composition(simulation={"plant_processes": 2}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "positive integer"):
+            self.load(self.composition(simulation={"realtime": False, "plant_processes": 0}))
+        composition = self.load(self.composition(simulation={"realtime": False, "plant_processes": 1}))
+        self.assertEqual(composition.plant_processes, 1)
+
+    def test_cars_split_evenly_with_the_remainder_on_the_last_processes(self):
+        import multi_car
+        self.assertEqual(multi_car.plant_partition(40, 8), [5] * 8)
+        self.assertEqual(multi_car.plant_partition(10, 4), [2, 2, 3, 3])
+        with self.assertRaises(multi_car.RecipeError):
+            multi_car.plant_partition(2, 3)
+
+    def test_the_first_plant_keeps_the_single_plant_names(self):
+        import multi_car
+        first, second = multi_car.plant_identity(1), multi_car.plant_identity(2)
+        self.assertEqual((first["launcher_asset"], first["state_robot"]),
+                         (multi_car.CAR_PLANT_ASSET, multi_car.FLEET_PDU_ROBOT))
+        self.assertEqual((second["launcher_asset"], second["state_robot"]),
+                         (f"{multi_car.CAR_PLANT_ASSET}-2", f"{multi_car.FLEET_PDU_ROBOT}-2"))
+
+    def test_physics_substeps_go_to_every_plant_process(self):
+        launcher = {"assets": [
+            {"name": "urban-car-fleet-plant", "args": ["--manifest", "a", "--conductor-max-delay-msec", "2"]},
+            {"name": "urban-car-fleet-plant-2", "args": ["--manifest", "b", "--external-conductor"]}]}
+        urban_realtime.lockstep(launcher, "urban-car-fleet-plant", 10, 5)
+        first, second = (asset["args"] for asset in launcher["assets"])
+        self.assertIn("--physics-substeps", first)
+        self.assertIn("--physics-substeps", second)
+        self.assertNotIn("--conductor-max-delay-msec", second)
+
+
 class StepMsecTest(Fixture):
     def test_step_msec_is_for_the_run_without_the_pacer(self):
         with self.assertRaisesRegex(urban_composition.CompositionError, "realtime: false"):

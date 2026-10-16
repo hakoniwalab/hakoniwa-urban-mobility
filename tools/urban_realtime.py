@@ -154,6 +154,8 @@ def lockstep(launcher: dict, conductor: str, step_msec: float = P0_STEP_MSEC,
     for asset in launcher.get("assets", []):
         if asset.get("name") == conductor and "--conductor-max-delay-msec" in asset.get("args", []):
             asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", f"{step_msec:g}")
+        # Every plant process (plant_processes) steps the same Hakoniwa step.
+        if str(asset.get("name", "")).startswith(conductor) and "--manifest" in asset.get("args", []):
             asset["args"] = _set_arg(asset["args"], "--physics-substeps", str(substeps))
     return launcher
 
