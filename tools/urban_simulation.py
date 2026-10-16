@@ -301,6 +301,32 @@ def drop_fixed_waits(launcher: dict) -> None:
         asset["start_grace_sec"] = 0 if asset.get("readiness") else UNCHECKED_START_GRACE_SEC
 
 
+def unnotify(comm_path: Path, robot: str, pdu: str) -> None:
+    """Take robot/pdu out of the plant Endpoint's receive notifications (a lockstep input):
+    the plant registers its own flag-type receive event for it and reads it itself. With
+    both, a flag check finds the Endpoint's event first, whose flag the step-boundary
+    callback has already cleared, and the plant waits forever."""
+    import multi_car
+
+    comm = multi_car.load_json(comm_path, "Car plant communication config")
+    for entry in comm.get("io", {}).get("robots", []):
+        if entry.get("name") == robot:
+            for item in entry.get("pdu", []):
+                if item.get("name") == pdu:
+                    item["notify_on_recv"] = False
+    multi_car.write_json(comm_path, comm)
+
+
+def publish_every_step(output_path: Path) -> None:
+    """Set a plant state output to publish every plant step (lockstep)."""
+    import multi_car
+    import urban_realtime
+
+    output = multi_car.load_json(output_path, "Car plant state output")
+    output["pdu_config"]["update_rate_hz"] = 1000.0 / urban_realtime.LOCKSTEP_MAX_DELAY_MSEC
+    multi_car.write_json(output_path, output)
+
+
 def car_runtime(work: Path):
     """Controls runtime for the Car simulator configured under a Recipe root."""
     import multi_car
@@ -508,6 +534,17 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
     else:
         urban_realtime.remove_pacer(launcher)
         urban_realtime.lockstep(launcher, conductor)
+    if composition.lockstep:
+        [car] = [v for v in composition.vehicles if v.control == "external"]
+        # The command and, when the program sets it, the tire friction: both written every
+        # step (and once at initialization), both read in simulation-time order.
+        inputs = [multi_car.COMMAND_PDU] + ([multi_car.TIRE_FRICTION_PDU] if car.tire_friction_input else [])
+        for pdu in inputs:
+            urban_realtime.lockstep_input(launcher, conductor, car.name, pdu)
+            unnotify(target.work / "config/car/urban-car-comm.json", car.name, pdu)
+        # The scenario waits for the car state of each plant step in turn: publish every step.
+        for state in ("urban-fleet-multi-dof-state.json", "urban-fleet-joint-state.json"):
+            publish_every_step(target.work / "config/car" / state)
     if target.use_case != "drone-car-distributed":
         drop_fixed_waits(launcher)
     multi_car.write_json(launcher_path, launcher)

@@ -149,3 +149,16 @@ def lockstep(launcher: dict, conductor: str) -> dict:
         if asset.get("name") == conductor and "--conductor-max-delay-msec" in asset.get("args", []):
             asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", str(LOCKSTEP_MAX_DELAY_MSEC))
     return launcher
+
+
+def lockstep_input(launcher: dict, conductor: str, robot: str, pdu: str) -> dict:
+    """The plant steps only when a new command has arrived on robot/pdu (Composition
+    simulation.lockstep), in place: --lockstep-input of the Urban Car plant."""
+    value = f"{robot}/{pdu}"
+    for asset in launcher.get("assets", []):
+        if asset.get("name") == conductor:
+            args = asset.get("args", [])
+            pairs = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--lockstep-input"]
+            if value not in pairs:  # repeatable: one flag per input
+                asset["args"] = [*args, "--lockstep-input", value]
+    return launcher

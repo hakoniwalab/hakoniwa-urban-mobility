@@ -1823,3 +1823,22 @@ class LauncherWaitTest(unittest.TestCase):
             [("plant", 0, 0), ("pacer", urban_simulation.UNCHECKED_START_GRACE_SEC, 0),
              ("bridge", urban_simulation.UNCHECKED_START_GRACE_SEC, 0)],
         )
+
+
+class LockstepCompositionTest(Fixture):
+    def test_lockstep_needs_the_run_without_the_pacer_and_one_external_car(self):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "realtime: false"):
+            self.load(self.composition(simulation={"lockstep": True}))
+        with self.assertRaisesRegex(urban_composition.CompositionError, "exactly one Car with control: external"):
+            self.load(self.composition(simulation={"realtime": False, "lockstep": True}))
+        composition = self.load(self.composition(
+            vehicle={"control": "external"}, simulation={"realtime": False, "lockstep": True}))
+        self.assertTrue(composition.lockstep)
+
+    def test_lockstep_inputs_are_added_once_each(self):
+        import urban_realtime
+        launcher = {"assets": [{"name": "plant", "args": ["--no-viewer"]}]}
+        for pdu in ("ackermann_cmd", "tire_friction", "ackermann_cmd"):
+            urban_realtime.lockstep_input(launcher, "plant", "Car-1", pdu)
+        self.assertEqual(launcher["assets"][0]["args"], [
+            "--no-viewer", "--lockstep-input", "Car-1/ackermann_cmd", "--lockstep-input", "Car-1/tire_friction"])
