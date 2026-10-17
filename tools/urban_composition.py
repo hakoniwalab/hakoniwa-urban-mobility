@@ -136,6 +136,9 @@ class Composition:
     # simulation.plant_processes (section 5.1): the Cars split over this many plant
     # processes, each stepping its share (lockstep keeps the run repeatable).
     plant_processes: int = 1
+    # simulation.lockstep_pipeline (section 5.1): under lockstep the program works out the next
+    # step's commands while the plants step (the Conductor's max_delay is two steps).
+    lockstep_pipeline: bool = False
 
     @property
     def viewer_enabled(self) -> bool:
@@ -336,7 +339,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     simulation = data.get("simulation", {})
     if not isinstance(simulation, dict):
         raise CompositionError("Composition simulation must be a mapping")
-    unknown = set(simulation) - {"realtime", "lockstep", "step_msec", "plant_processes"}
+    unknown = set(simulation) - {"realtime", "lockstep", "step_msec", "plant_processes", "lockstep_pipeline"}
     if unknown:
         raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
     realtime = simulation.get("realtime", True)
@@ -351,6 +354,11 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     lockstep = simulation.get("lockstep", False)
     if not isinstance(lockstep, bool):
         raise CompositionError("Composition simulation.lockstep must be true or false")
+    lockstep_pipeline = simulation.get("lockstep_pipeline", False)
+    if not isinstance(lockstep_pipeline, bool):
+        raise CompositionError("Composition simulation.lockstep_pipeline must be true or false")
+    if lockstep_pipeline and not lockstep:
+        raise CompositionError("simulation.lockstep_pipeline needs simulation.lockstep: true")
     plant_processes = simulation.get("plant_processes", 1)
     if isinstance(plant_processes, bool) or not isinstance(plant_processes, int) or plant_processes < 1:
         raise CompositionError("Composition simulation.plant_processes must be a positive integer")
@@ -364,7 +372,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         interactions=interactions, viewer=viewer, fleets=fleets, extensions=extensions,
         realtime=realtime, lockstep=lockstep,
         step_msec=None if step_msec is None else float(step_msec),
-        plant_processes=plant_processes,
+        plant_processes=plant_processes, lockstep_pipeline=lockstep_pipeline,
     )
     if lockstep and realtime:
         # The plant waits for a command every 2 ms step: the external program must step at

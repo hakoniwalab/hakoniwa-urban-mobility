@@ -409,7 +409,7 @@ vehicles:
     tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
-simulation: { realtime, lockstep, step_msec, plant_processes }  # optional; realtime default true, lockstep default false, step_msec 10, plant_processes 1
+simulation: { realtime, lockstep, step_msec, plant_processes, lockstep_pipeline }  # optional; realtime default true, lockstep default false, step_msec 10, plant_processes 1, lockstep_pipeline false
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
@@ -448,6 +448,12 @@ Drone Fleet's rule). The first process owns the Conductor; the others join it. T
 different processes do not touch each other physically. With lockstep each process waits
 for its own Cars' commands and the program waits for every process's state, so the run
 stays identical.
+
+`simulation.lockstep_pipeline: true` (with lockstep) sets the Conductor's max_delay to two
+steps, so the program can work out the next step's commands while the plants step: each plant
+step takes the commands the program worked out from the state two steps before (one step more
+than without it), and the run stays identical. Town04, 40 Cars, 4 plant processes, Mac: RTF
+2.1 -> 3.05, three runs identical.
 
 The user places every vehicle explicitly; in the browser this is drag and
 drop onto the World (section 5.5). The Composition therefore always lists each vehicle

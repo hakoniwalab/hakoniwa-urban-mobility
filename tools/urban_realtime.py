@@ -145,15 +145,17 @@ def remove_pacer(launcher: dict) -> dict:
 
 
 def lockstep(launcher: dict, conductor: str, step_msec: float = P0_STEP_MSEC,
-             substeps: int = P0_PHYSICS_SUBSTEPS) -> dict:
+             substeps: int = P0_PHYSICS_SUBSTEPS, max_delay_steps: int = 1) -> dict:
     """The run without a pacer, in place: the Car plant steps step_msec per Hakoniwa step
     (substeps MuJoCo steps), and its Conductor keeps every asset within one such step. One
     value sets all three that must agree under lockstep: the plant's step, the max_delay and
     (hakoniwa-scenario's link follows the max_delay) the program's step. Only the Car plant's
-    own Conductor takes the setting."""
+    own Conductor takes the setting. max_delay_steps 2 (simulation.lockstep_pipeline) lets the
+    program work one step ahead of the plants; the link keeps its own step."""
     for asset in launcher.get("assets", []):
         if asset.get("name") == conductor and "--conductor-max-delay-msec" in asset.get("args", []):
-            asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec", f"{step_msec:g}")
+            asset["args"] = _set_arg(asset["args"], "--conductor-max-delay-msec",
+                                     f"{step_msec * max_delay_steps:g}")
         # Every plant process (plant_processes) steps the same Hakoniwa step.
         if str(asset.get("name", "")).startswith(conductor) and "--manifest" in asset.get("args", []):
             asset["args"] = _set_arg(asset["args"], "--physics-substeps", str(substeps))
