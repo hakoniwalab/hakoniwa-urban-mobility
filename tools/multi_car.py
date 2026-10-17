@@ -1086,6 +1086,8 @@ def materialize_vehicle_fleet_model(
     # Sleep (MuJoCo 3.16): the static geoms' poses are computed once instead of every step
     # (Town04, 44k road pieces: kinematics 297 -> 19 us of a 914 us step). The Cars never
     # sleep (below), so their motion is bit-identical to a run without it.
+    # URBAN_MUJOCO_SLEEP=0 at configure leaves it out: with fewer static pieces (Town04 rebuilt:
+    # 13k) its own per-step check (mj_sleepState) may cost more than it saves (2026-10-17).
     option = root.find("option")
     if option is None:
         option = ET.Element("option")
@@ -1093,7 +1095,7 @@ def materialize_vehicle_fleet_model(
     flag = option.find("flag")
     if flag is None:
         flag = ET.SubElement(option, "flag")
-    flag.set("sleep", "enable")
+    flag.set("sleep", "disable" if os.environ.get("URBAN_MUJOCO_SLEEP") == "0" else "enable")
     for section_name in ("asset", "worldbody", "actuator", "contact"):
         section = root.find(section_name)
         if section is not None:
