@@ -549,7 +549,8 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
         urban_realtime.remove_pacer(launcher)
         step_msec = composition.step_msec or urban_realtime.P0_STEP_MSEC
         urban_realtime.lockstep(launcher, conductor, step_msec,
-                                physics_substeps(target.work / "config/car/urban-cars-city.xml", step_msec))
+                                physics_substeps(target.work / "config/car/urban-cars-city.xml", step_msec),
+                                max_delay_steps=2 if composition.lockstep_pipeline else 1)
     if composition.lockstep:
         plants = multi_car.load_plants(target.work)
         for car in [v for v in composition.vehicles if v.control == "external"]:

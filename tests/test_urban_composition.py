@@ -1879,6 +1879,21 @@ class PlantProcessesTest(Fixture):
         self.assertNotIn("--conductor-max-delay-msec", second)
 
 
+class LockstepPipelineTest(Fixture):
+    def test_pipeline_needs_lockstep_and_doubles_the_max_delay(self):
+        with self.assertRaisesRegex(urban_composition.CompositionError, "lockstep_pipeline needs"):
+            self.load(self.composition(simulation={"realtime": False, "lockstep_pipeline": True}))
+        composition = self.load(self.composition(
+            vehicle={"control": "external"},
+            simulation={"realtime": False, "lockstep": True, "lockstep_pipeline": True}))
+        self.assertTrue(composition.lockstep_pipeline)
+        launcher = {"assets": [{"name": "urban-car-fleet-plant",
+                                "args": ["--manifest", "m", "--conductor-max-delay-msec", "2"]}]}
+        urban_realtime.lockstep(launcher, "urban-car-fleet-plant", 10, 5, max_delay_steps=2)
+        args = launcher["assets"][0]["args"]
+        self.assertEqual(args[args.index("--conductor-max-delay-msec") + 1], "20")
+
+
 class StepMsecTest(Fixture):
     def test_step_msec_is_for_the_run_without_the_pacer(self):
         with self.assertRaisesRegex(urban_composition.CompositionError, "realtime: false"):
