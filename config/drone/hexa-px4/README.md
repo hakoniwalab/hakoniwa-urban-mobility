@@ -17,7 +17,7 @@ model is made from this `drone.xml` without the landing box of `../hexa`
 City origin.
 
 The executable aircraft service comes from the public `hakoniwa-drone-core`
-v4.1.1 distribution (`mac-main_hako_aircraft_service_px4`).
+v4.2.0 distribution (`mac-main_hako_aircraft_service_px4`).
 
 ## SITL settings in `drone_config_0.json`
 

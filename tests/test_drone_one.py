@@ -108,6 +108,32 @@ class DroneMissionTest(unittest.TestCase):
 
 
 class DroneOneToolTest(unittest.TestCase):
+    def test_native_distribution_is_pinned_to_v420_with_bundled_mujoco(self):
+        self.assertEqual(drone_one.base.PUBLIC_DRONE_RELEASE, "v4.2.0")
+        self.assertEqual(
+            drone_one.base.PUBLIC_DRONE_SOURCE_REVISION,
+            "444ccc0f1213d65c07b2068ec6557ecf2f91a7b8",
+        )
+        self.assertEqual(
+            drone_one.base.PUBLIC_DRONE_ARCHIVES["Darwin"],
+            (
+                "mac.zip",
+                "f64460fceea08c232539066ebec8565f8b3f76d644a798d1d5816f6ce91892e9",
+            ),
+        )
+        self.assertEqual(
+            drone_one.base.recipe_file(),
+            ROOT / "recipes/usecases/urban-drone-fleet.yaml",
+        )
+        for relative in (
+            "config/drone/hexa/drone_config_0.json",
+            "config/drone/hexa-px4/drone_config_0.json",
+        ):
+            config = json.loads((ROOT / relative).read_text(encoding="utf-8"))
+            self.assertEqual(config["configVersion"], "4.2")
+            self.assertEqual(config["validatedWith"]["mujoco"], "3.16.0")
+            self.assertEqual(config["validatedWith"]["droneProVersion"], "4.2.0")
+
     def test_urban_launcher_composition_is_explicit(self):
         original_writer = drone_one.base.write_launcher
         recipe = types.SimpleNamespace(
@@ -465,7 +491,7 @@ viewer:
             self.assertEqual(params["ANGLE_RATE_CONTROL_ENABLE"], "0")
             self.assertEqual(params["ALT_SPD_CONTROL_ENABLE"], "0")
             # Hovering start holds the spawn altitude on any World; the
-            # v4.1.1 takeoff sequence targets a world altitude and stays on
+            # v4.2.0 takeoff sequence targets a world altitude and stays on
             # the ground when the City terrain is above it.
             self.assertEqual(params["CTRLMODE_START_IN_HOVERING"], "1")
             self.assertEqual(

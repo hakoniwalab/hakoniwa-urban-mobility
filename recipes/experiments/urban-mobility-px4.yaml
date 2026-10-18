@@ -25,7 +25,7 @@ validation:
   steps: []
 constraints:
 - native-cross-platform
-- public-drone-core-v4.1.1
+- public-drone-core-v4.2.0
 - one-launcher
 - exactly-one-conductor-owner
 - one-drone
@@ -47,7 +47,7 @@ target_environment:
     path: work/foundation/install/python
   - name: MuJoCo
     required: true
-    version: 3.13.0
+    version: 3.16.0
     path: hakoniwa-drone-core/MUJOCO_VERSION.txt
   hakoniwa:
     install_prefix: work/foundation/install
@@ -102,7 +102,7 @@ native_runtime_requirements:
   schema_version: 1
   components:
     hakoniwa-drone-core:
-      profile: public-v4.1.1
+      profile: public-v4.2.0
       required_roles:
       - visual_state_publisher
       optional_roles: []
@@ -474,7 +474,7 @@ source_artifacts:
   description: Urban-owned managed Recipe and dependency contract.
 - repository: toppers/hakoniwa-drone-core
   path: NATIVE_RUNTIME_REQUIREMENTS.yaml
-  revision: v4.1.1
+  revision: v4.2.0
   description: Public native binary and MuJoCo runtime contract.
 missing_pieces:
 - Add the tracked city-independent composition and a Shizuoka example scenario in Step 8.

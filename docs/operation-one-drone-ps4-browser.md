@@ -1,7 +1,7 @@
 # One Urban EAMS Hexa: PS4 control and browser visualization
 
 This procedure runs one Urban-managed EAMS six-rotor Drone with the public
-Hakoniwa Drone Core v4.1.1 service binary in the PLATEAU City
+Hakoniwa Drone Core v4.2.0 service binary in the PLATEAU City
 World selected by `recipes/experiments/urban-drone-one.yaml`, controls it with
 a PS4 controller, and displays it in the
 Map Viewer / Three.js browser view. It does not start the Golf Cart.
@@ -24,8 +24,8 @@ python3 tools/drone_one.py configure \
 python3 tools/drone_one.py doctor
 ```
 
-`prepare-native` selects the host's v4.1.1 release archive, verifies its
-SHA-256, and installs the MuJoCo 3.13.0 runtime declared by Drone Core. The
+`prepare-native` selects the host's v4.2.0 release archive, verifies its
+SHA-256, and uses the bundled MuJoCo 3.16.0 runtime declared by Drone Core. The
 checked-in recipe uses `control.mode: ps4-rc`; `configure` materializes the
 RadioController configuration and Urban-owned Hexa model/PID set into the
 Recipe workspace without editing the Core checkout.
@@ -33,10 +33,9 @@ Recipe workspace without editing the Core checkout.
 MuJoCo version ownership is aligned as follows:
 
 - `hakoniwa-drone-core/MUJOCO_VERSION.txt` is the native Drone runtime authority.
-- `hakoniwa-mujoco-robots` builds its Viewer/backend against 3.16.0 (since
-  2026-10-15; the car and road side moved, the Drone native runtime did not).
+- `hakoniwa-mujoco-robots` builds its Viewer/backend against 3.16.0.
 - The Ackermann tooling of `hakoniwa-mbody-registry` imports the Foundation
-  Python MuJoCo package (3.16.0).
+  Python MuJoCo package (3.16.0), so the native and Python runtimes are aligned.
 - `hakoniwa-envsim` only emits MJCF/XML and does not pin or link a MuJoCo
   runtime, so it requires no version change.
 

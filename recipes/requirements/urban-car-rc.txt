@@ -1,7 +1,7 @@
 # Urban Car RC managed Recipe runtime dependencies.
 PyYAML>=6.0,<7
 pygame==2.6.1
-# MuJoCo Python for the car/road side: 3.16.0 since 2026-10-15 (3.13.0 stalled cars on finely
-# cut road surfaces). The Drone native runtime stays 3.13.0 (hakoniwa-drone-core/MUJOCO_VERSION.txt):
+# MuJoCo Python and the Drone native runtime are aligned at 3.16.0. This also avoids the
+# 3.13.0 stalled-car behavior seen on finely cut road surfaces:
 # Python here only computes spawn heights and checks composed models.
 mujoco==3.16.0
