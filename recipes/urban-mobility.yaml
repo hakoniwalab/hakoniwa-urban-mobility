@@ -161,7 +161,7 @@ delivery_stages:
     constraints:
       - The car treats the mirrored Drone as a static local obstacle.
       - Exact reciprocal collision physics and momentum conservation are out of scope.
-      - hakoniwa-drone-core v4.1.1 is consumed through its verified native release.
+      - hakoniwa-drone-core v4.2.0 is consumed through its verified native release.
     acceptance:
       - A planned contact produces one observable ContactEvent and one Drone impulse.
       - Duplicate impulses are suppressed while the contact remains active.

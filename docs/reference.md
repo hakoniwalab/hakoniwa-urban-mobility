@@ -156,8 +156,8 @@ See [`docs/operation-managed-recipe.md`](operation-managed-recipe.md).
 ## Recipe-selected one-Drone checkpoint
 
 Prepare the pinned public native distribution first. This selects `mac.zip`,
-`lnx.zip`, or `win.zip` for the host, verifies the v4.1.1 SHA-256, and installs
-the MuJoCo 3.13.0 runtime declared by Drone Core:
+`lnx.zip`, or `win.zip` for the host, verifies the v4.2.0 SHA-256, and uses
+the bundled MuJoCo 3.16.0 runtime declared by Drone Core:
 
 ```bash
 python3 tools/drone_one.py prepare-native
@@ -211,7 +211,7 @@ holds between phases so its motion remains visible in the native viewer.
 
 `start` launches the PLATEAU browser view and the mission together. The
 browser uses the Urban-managed EAMS Hexa and reads motor channels 0
-through 5. The native service binary remains Drone Core v4.1.1.
+through 5. The native service binary is Drone Core v4.2.0.
 The mission result is written to the Business Pack Recipe workspace as
 `validation/urban-drone-mission.json`; a successful run contains all four
 command phases and the actual takeoff, target, and landing poses.

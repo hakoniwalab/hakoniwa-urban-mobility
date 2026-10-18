@@ -56,6 +56,27 @@ import urban_fault_injection
 import urban_lifecycle
 
 
+# Urban consumes the v4.2.0 native distribution while the reusable Business
+# Pack fleet example intentionally remains pinned to its v4.1.1 profile.
+base.PUBLIC_DRONE_RELEASE = "v4.2.0"
+base.PUBLIC_DRONE_SOURCE_REVISION = "444ccc0f1213d65c07b2068ec6557ecf2f91a7b8"
+base.PUBLIC_DRONE_ARCHIVES = {
+    "Darwin": (
+        "mac.zip",
+        "f64460fceea08c232539066ebec8565f8b3f76d644a798d1d5816f6ce91892e9",
+    ),
+    "Linux": (
+        "lnx.zip",
+        "344aac4b6bc1f2d82205c7740b574d0439eb9359363bcd6d69ef427587a865b0",
+    ),
+    "Windows": (
+        "win.zip",
+        "43427991efa6ba5c38c72b637d8abaf5c32706b4cc9e76a625d449fcd59390e3",
+    ),
+}
+base.recipe_file = lambda: ROOT / "recipes/usecases/urban-drone-fleet.yaml"
+
+
 CONTROL_MODE_FILE = "urban-drone-control.json"
 SELECTED_RECIPE_FILE = "urban-drone-one-recipe.json"
 DRONE_SERVICE_READINESS_TIMEOUT_SEC = 180
@@ -741,7 +762,7 @@ def materialize_eams_controller_params(
             "ALT_SPD_CONTROL_ENABLE": "0",
             # Start in Hovering, as the Hexa tuning file
             # (config/drone/hexa/controller-tuning.txt) already selects. The
-            # public Drone Core v4.1.1 takeoff sequence (START_IN_HOVERING 0)
+            # public Drone Core v4.2.0 takeoff sequence (START_IN_HOVERING 0)
             # targets CTRLMODE_TAKEOFF_ACTION_TARGET_ALTITUDE_M as a WORLD
             # altitude, so on a City whose ground is above z=0 (Sapporo:
             # 2.5 m) the drone is already "above" the 0.23 m target and

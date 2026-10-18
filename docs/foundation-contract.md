@@ -111,7 +111,7 @@ models, browser ports, or Launcher ownership.
 | Foundation capabilities and limits | Business Pack Recipe manifest | generated `foundation-requirements.yaml` and Foundation evaluator |
 | installed Foundation state | installed Component Receipts | `plan` and `doctor` evaluation |
 | City coordinate and artifact contract | City World Receipt | Car and Drone composers, Viewer config |
-| Drone executable and MuJoCo runtime | Drone Core v4.1.1 public native release | Recipe-local launcher and runtime environment |
+| Drone executable and MuJoCo runtime | Drone Core v4.2.0 public native release | Recipe-local launcher and runtime environment |
 | Drone vehicle and physics configuration | Urban `config/drone/hexa` | Recipe-local Hexa MJCF/MJB and type config |
 | Drone PID tuning | Urban `config/drone/hexa/controller-params.txt` and `controller-tuning.txt` | Recipe-local `controller-params.txt` at `configure` or `start` |
 | Drone RC mapping | Drone Core tracked RC mapping selected by composition config | PS4 controller asset arguments |

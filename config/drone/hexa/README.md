@@ -15,6 +15,6 @@ six-rotor vehicle used by the Drone-only and integrated Urban Mobility recipes.
   overshooting far
 
 The executable service, visual-state publisher, RC client, and MuJoCo runtime
-come from the public `hakoniwa-drone-core` v4.1.1 distribution. Configuration
+come from the public `hakoniwa-drone-core` v4.2.0 distribution. Configuration
 does not read `hakoniwa-drone-pro`; generated copies stay under the Business
 Pack Recipe workspace.

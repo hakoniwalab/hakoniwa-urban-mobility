@@ -19,7 +19,7 @@ PX4 SITL  <-- TCP 4560 (HIL sensors / actuators) -->  Drone Core aircraft servic
    +-- UDP 14550 --> QGroundControl (optional)
 ```
 
-The aircraft service is the public `hakoniwa-drone-core` v4.1.1 binary
+The aircraft service is the public `hakoniwa-drone-core` v4.2.0 binary
 (`mac-main_hako_aircraft_service_px4`). Run the commands below inside the
 Hakoniwa Business Pack Workspace, where `python` is the Foundation Python.
 

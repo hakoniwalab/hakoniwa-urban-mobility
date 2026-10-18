@@ -563,7 +563,7 @@ are left untouched. `--plain-world` also removes the plain-World MJCFs
 `--apply`. The compile reports progress as plain lines and as
 `[HAKO_PROGRESS] {"phase":"world_height_model","current":n,"total":m}`
 events, the City World job progress format. MuJoCo Python is pinned
-(`mujoco==3.16.0` since 2026-10-15; the Drone Core native runtime stays 3.13.0) in the managed Recipe requirements, so
+(`mujoco==3.16.0`, aligned with the Drone Core v4.2.0 native runtime) in the managed Recipe requirements, so
 the Workspace Python that runs Urban Studio has it; without it, the height
 falls back to the terrain hfield with a warning that rooftops are ignored.
 

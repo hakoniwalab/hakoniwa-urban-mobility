@@ -98,6 +98,11 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     service = bin_dir / service_source.name
     shutil.copy2(service_source, service)
     service.chmod(0o755)
+    # From Drone Core v4.2.0 the zip bundles MuJoCo (and other shared libraries) next to the
+    # executables, which load them from their own directory (@loader_path / $ORIGIN).
+    for library in sorted(service_source.parent.glob("lib*")):
+        if library.is_file() and (".dylib" in library.name or ".so" in library.name):
+            shutil.copy2(library, service.parent / library.name)
 
     marker = {
         "status": "ready",

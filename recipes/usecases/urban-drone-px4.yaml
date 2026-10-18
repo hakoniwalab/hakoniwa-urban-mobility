@@ -16,7 +16,7 @@ goal:
     runtime. The World is a Composition input. PX4 is built out of tree under build/px4-sitl when the route configures.'
 constraints:
 - native-cross-platform
-- public-drone-core-v4.1.1
+- public-drone-core-v4.2.0
 - px4-autopilot-pinned
 - one-drone
 - shared-foundation-runtime-is-exclusive
@@ -34,7 +34,7 @@ target_environment:
     path: work/foundation/install/python
   - name: MuJoCo
     required: true
-    version: 3.13.0
+    version: 3.16.0
     path: hakoniwa-drone-core/MUJOCO_VERSION.txt
   - name: PX4 build tools
     required: true
@@ -84,7 +84,7 @@ runtime_dependencies:
       version: '>=6.0,<7'
       purpose: Parse Urban composition and scenario YAML in Foundation Python.
     - name: mujoco
-      version: 3.13.0
+      version: 3.16.0
       purpose: Spawn heights and composed-model checks during configure.
     - name: pymavlink
       version: '>=2.4.40,<3'
@@ -93,7 +93,7 @@ native_runtime_requirements:
   schema_version: 1
   components:
     hakoniwa-drone-core:
-      profile: public-v4.1.1
+      profile: public-v4.2.0
       required_roles:
       - visual_state_publisher
       optional_roles: []
