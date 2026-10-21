@@ -52,6 +52,7 @@ for path in (
 import drone_fleet_single_host as base
 import drone_px4
 import drone_fleet_city as city
+import multi_car
 import urban_fault_injection
 import urban_lifecycle
 
@@ -641,6 +642,12 @@ def prepare_external_runtime(marker: dict[str, Any], recipe: UrbanDroneRecipe, p
         if not required.exists():
             raise base.RecipeError(f"external runtime result does not exist: {required}")
     runtime_mjb = runtime_xml.with_suffix(".mjb")
+    compose_drone_city_model(
+        body_xml,
+        Path(marker["city_world"]["mjcf"]),
+        runtime_xml,
+        _top_level_body_names(body_xml),
+    )
     compiled = city.compile_mujoco_xml(runtime_xml, runtime_mjb, city.find_mujoco_library(drone_root))
     for config_path in sorted(config_dir.glob("drone_config_*.json")):
         config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -975,6 +982,74 @@ def _body_prefix(index: int) -> str:
     return f"d{index}_"
 
 
+def compose_drone_city_model(
+    drone_model: Path,
+    city_model: Path,
+    output: Path,
+    drone_body_names: list[str],
+) -> None:
+    """Fuse the City alone, then attach an untouched Drone model to it."""
+    fused_city = output.with_name(f"{output.stem}-fused-city.xml")
+    subprocess.run(
+        [str(multi_car.foundation_python()), str(ROOT / "tools/fuse_static_city.py"),
+         str(city_model), str(fused_city)],
+        cwd=ROOT,
+        check=True,
+    )
+    compose_tool = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
+    subprocess.run(
+        [sys.executable, str(compose_tool), str(drone_model), str(fused_city),
+         "--output", str(output), "--no-validate"],
+        cwd=ROOT,
+        check=True,
+    )
+
+    tree = ET.parse(output)
+    root = tree.getroot()
+    compiler = root.find("compiler")
+    if compiler is not None:
+        compiler.attrib.pop("fusestatic", None)
+
+    option = root.find("option")
+    if option is None:
+        option = ET.Element("option")
+        root.insert(1, option)
+    flag = option.find("flag")
+    if os.environ.get("URBAN_MUJOCO_SLEEP") != "0":
+        if flag is None:
+            flag = ET.SubElement(option, "flag")
+        flag.set("sleep", "enable")
+    elif flag is not None:
+        flag.attrib.pop("sleep", None)
+        if not flag.attrib and not list(flag) and not (flag.text or "").strip():
+            option.remove(flag)
+
+    worldbody = root.find("worldbody")
+    if worldbody is None:
+        raise base.RecipeError(f"composed Drone City model has no worldbody: {output}")
+    bodies = {body.get("name"): body for body in worldbody.findall("./body")}
+    missing = [name for name in drone_body_names if name not in bodies]
+    if missing:
+        raise base.RecipeError(
+            f"composed Drone City model has no Drone root bodies {missing}: {output}"
+        )
+    for name in drone_body_names:
+        bodies[name].set("sleep", "never")
+
+    ET.indent(tree, space="  ")
+    tree.write(output, encoding="utf-8", xml_declaration=True)
+
+
+def _top_level_body_names(model_path: Path) -> list[str]:
+    worldbody = ET.parse(model_path).getroot().find("worldbody")
+    if worldbody is None:
+        raise base.RecipeError(f"Drone body model has no worldbody: {model_path}")
+    names = [body.get("name") for body in worldbody.findall("./body")]
+    if not names or any(not name for name in names):
+        raise base.RecipeError(f"Drone body model has unnamed or no root bodies: {model_path}")
+    return names
+
+
 def _prefixed(body: ET.Element, prefix: str) -> ET.Element:
     """A copy of a body whose every name (bodies, joints, geoms, sites) starts with prefix."""
     result = copy.deepcopy(body)
@@ -1038,12 +1113,14 @@ def materialize_eams_city_model(
         ET.indent(tree, space="  ")
         world_bodies = process_dir / "hexa-fleet-body.xml"
         tree.write(world_bodies, encoding="utf-8", xml_declaration=True)
-    compose_tool = WORKSPACE / "hakoniwa-mbody-registry/tools/compose_mujoco_world.py"
-    subprocess.run([
-        sys.executable, str(compose_tool), str(world_bodies),
-        str(Path(marker["city_world"]["mjcf"])), "--output", str(runtime_xml),
-        "--no-validate",
-    ], cwd=ROOT, check=True)
+    drone_body_names = [
+        f"{_body_prefix(index)}drone_base" if len(drones) > 1 else "drone_base"
+        for index in range(1, len(drones) + 1)
+    ]
+    compose_drone_city_model(
+        world_bodies, Path(marker["city_world"]["mjcf"]), runtime_xml,
+        drone_body_names,
+    )
     compiled = city.compile_mujoco_xml(
         runtime_xml, runtime_mjb, city.find_mujoco_library(drone_root)
     )

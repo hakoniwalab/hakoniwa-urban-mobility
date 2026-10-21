@@ -387,6 +387,109 @@ viewer:
         with self.assertRaises(drone_one.base.RecipeError):
             drone_one.apply_eams_city_contact_policy(body)
 
+    def test_drone_city_model_fuses_city_but_preserves_jointless_drone_bodies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            city = root / "city.xml"
+            drone = root / "drone.xml"
+            model = root / "composed.xml"
+            city.write_text(
+                "<mujoco><worldbody><body name='city-a'><body name='city-b'>"
+                "<geom type='box' size='.1 .1 .1'/></body></body></worldbody></mujoco>",
+                encoding="utf-8",
+            )
+            drone.write_text(
+                "<mujoco><option timestep='0.001' integrator='RK4' density='1.2' "
+                "viscosity='0.00002'/><worldbody><body name='drone_base'>"
+                "<freejoint/><geom type='sphere' size='.1' mass='1'/>"
+                "<body name='prop1'/><body name='prop2'/>"
+                "</body></worldbody></mujoco>", encoding="utf-8",
+            )
+
+            drone_one.compose_drone_city_model(
+                drone, city, model, ["drone_base"]
+            )
+
+            xml = ET.parse(model).getroot()
+            option = xml.find("option")
+            self.assertEqual(option.get("timestep"), "0.001")
+            self.assertEqual(option.get("integrator"), "RK4")
+            self.assertEqual(option.get("density"), "1.2")
+            self.assertEqual(option.get("viscosity"), "0.00002")
+            self.assertEqual(option.find("flag").get("sleep"), "enable")
+            self.assertEqual(xml.find("./worldbody/body[@name='drone_base']").get("sleep"), "never")
+            mujoco = __import__("mujoco")
+            compiled = mujoco.MjModel.from_xml_path(str(model))
+            names = {mujoco.mj_id2name(compiled, mujoco.mjtObj.mjOBJ_BODY, i)
+                     for i in range(compiled.nbody)}
+            self.assertEqual(compiled.nbody, 4)
+            self.assertTrue({"drone_base", "prop1", "prop2"} <= names)
+            self.assertNotIn("city-a", names)
+            self.assertNotIn("city-b", names)
+
+    def test_eams_named_body_set_survives_city_fusion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            city = root / "city.xml"
+            output = root / "composed.xml"
+            city.write_text(
+                "<mujoco><worldbody><body name='city-a'><body name='city-b'>"
+                "<geom type='box' size='.1 .1 .1'/></body></body></worldbody></mujoco>",
+                encoding="utf-8",
+            )
+            source = ROOT / "config/drone/hexa/drone.xml"
+            drone = root / "eams-body.xml"
+            tree = ET.parse(source)
+            worldbody = tree.getroot().find("worldbody")
+            drone_base = worldbody.find("./body[@name='drone_base']")
+            for child in list(worldbody):
+                if child is not drone_base:
+                    worldbody.remove(child)
+            tree.write(drone, encoding="utf-8", xml_declaration=True)
+            expected = {
+                body.get("name") for body in
+                ET.parse(drone).getroot().findall(".//body[@name]")
+            }
+            drone_one.compose_drone_city_model(
+                drone, city, output, drone_one._top_level_body_names(drone)
+            )
+
+            mujoco = __import__("mujoco")
+            compiled = mujoco.MjModel.from_xml_path(str(output))
+            actual = {mujoco.mj_id2name(compiled, mujoco.mjtObj.mjOBJ_BODY, i)
+                      for i in range(compiled.nbody)}
+            self.assertTrue(expected <= actual)
+            self.assertTrue({f"prop{i}" for i in range(1, 7)} <= actual)
+            self.assertEqual(compiled.nbody, len(expected) + 1)
+            self.assertNotIn("city-a", actual)
+            self.assertNotIn("city-b", actual)
+
+    def test_drone_city_model_leaves_sleep_out_when_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            drone = root / "drone.xml"
+            city = root / "city.xml"
+            model = root / "composed.xml"
+            drone.write_text(
+                "<mujoco><option><flag energy='enable' sleep='enable'/></option>"
+                "<worldbody><body name='drone_base'/></worldbody></mujoco>",
+                encoding="utf-8",
+            )
+            city.write_text("<mujoco><worldbody/></mujoco>", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"URBAN_MUJOCO_SLEEP": "0"}):
+                drone_one.compose_drone_city_model(
+                    drone, city, model, ["drone_base"]
+                )
+
+            root = ET.parse(model).getroot()
+            flag = root.find("./option/flag")
+            self.assertEqual(flag.get("energy"), "enable")
+            self.assertNotIn("sleep", flag.attrib)
+            self.assertEqual(
+                root.find("./worldbody/body[@name='drone_base']").get("sleep"),
+                "never",
+            )
+
     def test_drone_runtime_selects_validated_mjb_instead_of_source_xml(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime_mjb = Path(directory) / "eams-hexa-city.mjb"
