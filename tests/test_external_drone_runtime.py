@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,47 @@ import urban_simulation  # noqa: E402
 
 
 class ExternalDroneRuntimeTest(unittest.TestCase):
+    def test_external_jointless_body_names_survive_city_fusion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            body_model = root / "body.xml"
+            city_model = root / "city.xml"
+            body_model.write_text(
+                "<mujoco><worldbody><body name='ProviderDrone-1'><freejoint/>"
+                "<geom type='sphere' size='.1' mass='1'/>"
+                "<body name='prop1'/><body name='prop2'/><body name='prop3'/>"
+                "<body name='prop4'/></body></worldbody></mujoco>",
+                encoding="utf-8",
+            )
+            city_model.write_text(
+                "<mujoco><worldbody><body name='static-city'><body name='block'>"
+                "<geom type='box' size='.1 .1 .1'/></body></body></worldbody></mujoco>",
+                encoding="utf-8",
+            )
+
+            names = drone_one._top_level_body_names(body_model)
+            output = root / "composed.xml"
+            drone_one.compose_drone_city_model(body_model, city_model, output, names)
+
+            model = ET.parse(output).getroot()
+            self.assertEqual(model.find("./option/flag").get("sleep"), "enable")
+            self.assertEqual(names, ["ProviderDrone-1"])
+            for name in names:
+                self.assertEqual(
+                    model.find(f"./worldbody/body[@name='{name}']").get("sleep"),
+                    "never",
+                )
+            mujoco = __import__("mujoco")
+            compiled = mujoco.MjModel.from_xml_path(str(output))
+            body_names = {mujoco.mj_id2name(
+                compiled, mujoco.mjtObj.mjOBJ_BODY, index
+            ) for index in range(compiled.nbody)}
+            self.assertTrue(
+                {"ProviderDrone-1", "prop1", "prop2", "prop3", "prop4"}
+                <= body_names
+            )
+            self.assertEqual(compiled.nbody, 6)
+
     def test_launcher_uses_provider_service_and_config_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

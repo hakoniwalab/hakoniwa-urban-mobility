@@ -5,12 +5,12 @@ listed with where it applies today, what it does, what it cost or gained when
 measured, and what to watch for. The measurements come from Town04 (an
 OpenDRIVE highway city, 13k road pieces), lockstep, Mac and Windows, 2026-10-17.
 
-## In every run (set when the Car model is generated)
+## In every run (set when the vehicle model is generated)
 
 | Setting | Where | Effect |
 |---|---|---|
-| `<compiler fusestatic="true"/>` | `tools/multi_car.py` | Static bodies merge into the world body. Town04's step went from 1.12 to 0.36 ms (broadphase 0.77 → 0.05 ms). |
-| MuJoCo sleep: `<flag sleep="enable"/>`, every Car `sleep="never"` | `tools/multi_car.py` | The City's static geoms are posed once instead of every step (kinematics 297 → 19 µs, 10 Cars). Cars never sleep, so their motion is bit-identical to a run without it. Windows, lockstep, sleep off was 10–60 % slower. `URBAN_MUJOCO_SLEEP=0` at configure leaves it out, for measuring. |
+| City-only static fusion | `tools/fuse_static_city.py`, `tools/drone_one.py` | The City is compiled with `fusestatic` before Drone bodies are attached, so named jointless Drone bodies (including propellers) cannot be fused away. Town04 X500 fell from 744 to 6 bodies and from 1656 to 60.6 µs per RK4 1 ms step. |
+| MuJoCo sleep: `<flag sleep="enable"/>`, every Car/Drone root `sleep="never"` | `tools/multi_car.py`, `tools/drone_one.py` | The City's static geoms are posed once instead of every step while moving vehicles never sleep. Town04 X500's optimized and unoptimized 1-second free-fall trajectories had 0 m maximum z difference. Cars are bit-identical to a run without it; Windows Car lockstep with sleep off was 10–60 % slower. `URBAN_MUJOCO_SLEEP=0` at configure leaves sleep out, for measuring. |
 | Cars parked apart in the model | `tools/multi_car.py` | The model puts each Car in a row 6 m apart, 50 m up; the runtime then moves them to their spawn poses. MuJoCo computes the state once at load, before the poses are applied. With all Cars at the origin, that overlapped them, and 20 or more Cars overflowed MuJoCo's arena at load. |
 | MuJoCo 3.16.0, pinned | Foundation | A Windows plant that linked an older MuJoCo (3.13) ran 3× slower, and fusestatic had no effect. |
 
