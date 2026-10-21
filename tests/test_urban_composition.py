@@ -540,6 +540,65 @@ class DroneCompositionTest(Fixture):
         with self.assertRaisesRegex(urban_composition.CompositionError, "by schedule only"):
             urban_composition.to_drone_recipe(composition, ground=lambda east, north: 0.0)
 
+    def external_asset(self, asset_id="external-quad", program="prepare.py"):
+        path = self.work / "assets/vehicles" / f"{asset_id}.asset.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump({
+            "schema": "hakoniwa.asset/v1", "id": asset_id, "kind": "vehicle", "category": "drone",
+            "version": 1, "portable": False, "simulator": "drone-core",
+            "source": {"profile": "external-drone-runtime-v1", "external_runtime": {
+                "schema": "hakoniwa.external-drone-runtime/v1",
+                "prepare": {"program": program},
+                "viewer": {"type_config": "viewer.json", "type": "quad", "rotor_count": 4}}},
+            "spawn": {"ground_clearance_m": 0.18},
+            "controls": {"api": {"scope": "vehicle", "program": "control.py"}},
+        }), encoding="utf-8")
+        (path.parent / program).write_text("", encoding="utf-8")
+        (path.parent / "control.py").write_text("", encoding="utf-8")
+        (path.parent / "viewer.json").write_text("{}", encoding="utf-8")
+        self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, self.work / "assets"])
+        return asset_id
+
+    def test_external_runtime_allows_several_api_drones(self):
+        asset = self.external_asset()
+        drones = [{"name": f"Drone-{index}", "asset": asset, "control": "api",
+                   "spawn": {"east_m": index, "north_m": 0, "yaw_deg": 0}} for index in (1, 2)]
+        recipe = urban_composition.to_drone_recipe(
+            self.load(self.composition(world="test-city", vehicles=drones)), ground=lambda _e, _n: 0.0)
+        self.assertEqual((recipe["control"]["mode"], list(recipe["drones"])),
+                         ("fleet-rpc", ["Drone-1", "Drone-2"]))
+
+    def test_external_drones_reject_different_resolved_contracts(self):
+        first = self.external_asset("external-a", "a.py")
+        second = self.external_asset("external-b", "b.py")
+        drones = [{"name": "Drone-1", "asset": first, "control": "api",
+                   "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}},
+                  {"name": "Drone-2", "asset": second, "control": "api",
+                   "spawn": {"east_m": 1, "north_m": 0, "yaw_deg": 0}}]
+        with self.assertRaisesRegex(urban_composition.CompositionError, "resolved external runtime contract"):
+            urban_composition.to_drone_recipe(
+                self.load(self.composition(world="test-city", vehicles=drones)), ground=lambda _e, _n: 0.0)
+
+    def test_external_drones_reject_mixed_controls(self):
+        asset = self.external_asset()
+        # Add schedule only to exercise the one-service control invariant.
+        path = self.work / "assets/vehicles/external-quad.asset.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["controls"]["schedule"] = {"scope": "vehicle", "program": "control.py",
+                                        "params": {"schedule": {"required": True}}}
+        path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        self.assets = urban_assets.catalog([urban_assets.REPOSITORY_ASSETS, self.work / "assets"])
+        schedule = self.work / "schedule.yaml"
+        schedule.write_text("drones: []\n", encoding="utf-8")
+        drones = [{"name": "Drone-1", "asset": asset, "control": "api",
+                   "spawn": {"east_m": 0, "north_m": 0, "yaw_deg": 0}},
+                  {"name": "Drone-2", "asset": asset, "control": "schedule",
+                   "params": {"schedule": str(schedule)},
+                   "spawn": {"east_m": 1, "north_m": 0, "yaw_deg": 0}}]
+        with self.assertRaisesRegex(urban_composition.CompositionError, "share one control"):
+            urban_composition.to_drone_recipe(
+                self.load(self.composition(world="test-city", vehicles=drones)), ground=lambda _e, _n: 0.0)
+
     def test_drone_only_composition_is_run_by_drone_one(self):
         recipe_path = self.work / "workspace/config" / urban_simulation.DRONE_RECIPE_FILE
         calls = []
