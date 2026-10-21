@@ -417,10 +417,10 @@ def configure(
         paths.recipe_config / "launcher.json", "Drone Launcher"
     )
 
-    generated_body = (
-        paths.recipe_config
-        / "drone/mujoco-city-fleet/process-01/hexa-body.xml"
+    runtime_marker = multi_car.load_json(
+        paths.recipe_config / "mujoco-city-fleet.json", "Drone City marker"
     )
+    generated_body = Path(runtime_marker["runtime_model"]["mirror_model"])
     multi_car.required(generated_body, "generated Urban Hexa mirror model")
     spawn = drone_scenario["spawn"]
     spawns = dict(drone_recipe.spawns())

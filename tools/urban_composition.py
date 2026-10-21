@@ -46,6 +46,7 @@ CAR_CONTROL_MODES = {"rc": "ps5", "api": "external_python", "external": "externa
 DRONE_CONTROL_MODES = {"rc": "ps4-rc", "api": "fleet-rpc", "schedule": "fleet-rpc"}
 # Drone profiles tools/drone_one.py runs: Drone Core control, and PX4 SITL (tools/drone_px4.py).
 DRONE_PROFILES = {"eams-nominal-9kg", "eams-nominal-9kg-px4"}
+EXTERNAL_DRONE_PROFILE = "external-drone-runtime-v1"
 # drone_one.py inputs the contract does not expose. The RC mode still
 # requires a mission file, and the launch area only shapes the mission plan;
 # the runtime spawn is always the Composition spawn.
@@ -835,7 +836,37 @@ def _drone_recipe(
     if len(profiles) != 1:
         raise CompositionError(f"the Drones must share one Asset profile (they fly in one Drone service): {sorted(map(str, profiles))}")
     profile = profiles.pop()
-    if profile not in DRONE_PROFILES:
+    external_runtime = None
+    if profile == EXTERNAL_DRONE_PROFILE:
+        contract = drones[0].asset.data.get("source", {}).get("external_runtime")
+        if not isinstance(contract, dict) or contract.get("schema") != "hakoniwa.external-drone-runtime/v1":
+            raise CompositionError(
+                f"vehicle {drones[0].name}: source.external_runtime must use hakoniwa.external-drone-runtime/v1"
+            )
+        prepare = contract.get("prepare")
+        viewer_contract = contract.get("viewer")
+        if not isinstance(prepare, dict) or not isinstance(prepare.get("program"), str):
+            raise CompositionError(f"vehicle {drones[0].name}: external runtime has no prepare.program")
+        if not isinstance(viewer_contract, dict) or not all(
+            key in viewer_contract for key in ("type_config", "type", "rotor_count")
+        ):
+            raise CompositionError(f"vehicle {drones[0].name}: external runtime has an incomplete viewer contract")
+        rotor_count = viewer_contract.get("rotor_count")
+        if not isinstance(rotor_count, int) or rotor_count < 1:
+            raise CompositionError(f"vehicle {drones[0].name}: external runtime viewer.rotor_count must be positive")
+        external_runtime = {
+            "schema": contract["schema"],
+            "prepare": {
+                "program": str(drones[0].asset.resolve(prepare["program"])),
+                "args": list(prepare.get("args", [])),
+            },
+            "viewer": {
+                "type_config": str(drones[0].asset.resolve(viewer_contract["type_config"])),
+                "type": str(viewer_contract["type"]),
+                "rotor_count": rotor_count,
+            },
+        }
+    elif profile not in DRONE_PROFILES:
         raise CompositionError(
             f"vehicle {drones[0].name}: tools/drone_one.py runs the {' and '.join(sorted(DRONE_PROFILES))} profiles only"
         )
@@ -844,7 +875,7 @@ def _drone_recipe(
         raise CompositionError("more than one Drone fly by schedule only (the schedule control)")
     first = drones[0]
     mission = DRONE_DEFAULT_MISSION
-    if first.control == "api":
+    if first.control == "api" and "mission" in first.params:
         mission = _param_path(composition, first.params["mission"])
     spawn, rooftop = _drone_spawn(first, ground)
     recipe = {
@@ -862,6 +893,8 @@ def _drone_recipe(
         "mission": {"path": mission.as_posix()},
         "viewer": {"map_layout": "bottom-left", "collider_overlay_default": False},
     }
+    if external_runtime is not None:
+        recipe["drone"]["external_runtime"] = external_runtime
     if len(drones) > 1:
         recipe["drones"] = {}
         for drone in drones:

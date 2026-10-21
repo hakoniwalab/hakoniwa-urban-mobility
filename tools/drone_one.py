@@ -101,6 +101,7 @@ class UrbanDroneRecipe:
     controller_params: Path | None
     map_layout: str
     collider_overlay_default: bool
+    external_runtime: dict[str, Any] | None = None
     # Every Drone's (name, spawn ENU) in fleet order when the recipe has more
     # than one (its drones: section); empty for one Drone, Drone-1 at spawn_pose_enu.
     drone_spawns: tuple[tuple[str, dict[str, float]], ...] = ()
@@ -192,8 +193,12 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
         else None
     )
     drone_profile = drone.get("profile")
-    if drone_profile not in {"eams-nominal-9kg", drone_px4.PROFILE}:
-        raise base.RecipeError(f"drone.profile must be eams-nominal-9kg or {drone_px4.PROFILE}")
+    external_runtime = drone.get("external_runtime")
+    if drone_profile == "external-drone-runtime-v1":
+        if not isinstance(external_runtime, dict) or external_runtime.get("schema") != "hakoniwa.external-drone-runtime/v1":
+            raise base.RecipeError("external Drone profile requires hakoniwa.external-drone-runtime/v1")
+    elif drone_profile not in {"eams-nominal-9kg", drone_px4.PROFILE}:
+        raise base.RecipeError(f"drone.profile must be eams-nominal-9kg, {drone_px4.PROFILE}, or external-drone-runtime-v1")
     if drone_px4.is_px4(drone_profile) and control_mode != "fleet-rpc":
         raise base.RecipeError(f"{drone_px4.PROFILE} is flown by a schedule or mission (control.mode fleet-rpc)")
     try:
@@ -240,6 +245,7 @@ def load_urban_recipe(path: Path) -> UrbanDroneRecipe:
         controller_params=controller_params,
         map_layout=map_layout,
         collider_overlay_default=collider_default,
+        external_runtime=external_runtime,
         drone_spawns=_drone_spawns(data.get("drones"), spawn_pose_enu),
     )
     if result.drone_count > 1:
@@ -280,6 +286,7 @@ def write_selected_recipe(paths: object, recipe: UrbanDroneRecipe) -> Path:
         ),
         "map_layout": recipe.map_layout,
         "collider_overlay_default": recipe.collider_overlay_default,
+        "external_runtime": recipe.external_runtime,
         "drone_spawns": [[name, pose] for name, pose in recipe.drone_spawns],
     }, indent=2) + "\n", encoding="utf-8")
     return output
@@ -322,6 +329,7 @@ def read_selected_recipe(paths: object) -> UrbanDroneRecipe:
             ),
             map_layout=data["map_layout"],
             collider_overlay_default=data["collider_overlay_default"],
+            external_runtime=data.get("external_runtime"),
             drone_spawns=tuple(
                 (str(name), {key: float(pose[key]) for key in ("east_m", "north_m", "up_m", "yaw_deg")})
                 for name, pose in data.get("drone_spawns", [])
@@ -575,6 +583,95 @@ def patch_eams_city_viewer(paths: object) -> tuple[Path, Path]:
     return scene_path, viewer_path
 
 
+def patch_external_city_viewer(paths: object, contract: dict[str, Any]) -> tuple[Path, Path]:
+    """Apply viewer metadata supplied by an external runtime contract."""
+    viewer_contract = _recipe_mapping(contract.get("viewer"), "external_runtime.viewer")
+    source_type = Path(str(viewer_contract.get("type_config", ""))).resolve()
+    type_name = viewer_contract.get("type")
+    rotor_count = viewer_contract.get("rotor_count")
+    if not source_type.is_file() or not isinstance(type_name, str) or not isinstance(rotor_count, int) or rotor_count < 1:
+        raise base.RecipeError("external runtime viewer contract is incomplete")
+    embedded = paths.recipe_root / "web/map-viewer/thirdparty/hakoniwa-threejs-drone"
+    scene_path = embedded / "config/drone_config-city-fleet.json"
+    viewer_path = embedded / "config/viewer-config-fleets.json"
+    if not scene_path.is_file() or not viewer_path.is_file():
+        raise base.RecipeError("generated Three.js City viewer is incomplete")
+    target_type = embedded / "config/external-drone-types.json"
+    shutil.copy2(source_type, target_type)
+    scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    scene["droneTypesPath"] = "./external-drone-types.json"
+    for drone in scene.get("drones", []):
+        drone["type"] = type_name
+    scene_path.write_text(json.dumps(scene, indent=2) + "\n", encoding="utf-8")
+    viewer = json.loads(viewer_path.read_text(encoding="utf-8"))
+    viewer.setdefault("stateInput", {}).setdefault("fleets", {})["motorChannels"] = list(range(rotor_count))
+    viewer_path.write_text(json.dumps(viewer, indent=2) + "\n", encoding="utf-8")
+    return scene_path, viewer_path
+
+
+def prepare_external_runtime(marker: dict[str, Any], recipe: UrbanDroneRecipe, paths: object, drone_root: Path) -> Path:
+    """Run the provider-owned preparer and compile its City model generically."""
+    contract = _recipe_mapping(recipe.external_runtime, "drone.external_runtime")
+    prepare = _recipe_mapping(contract.get("prepare"), "external_runtime.prepare")
+    program = Path(str(prepare.get("program", ""))).resolve()
+    args = prepare.get("args", [])
+    if not program.is_file() or not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        raise base.RecipeError("external runtime prepare command is invalid")
+    output = paths.recipe_config / "drone/external-runtime"
+    result_path = output / "runtime.json"
+    spawn_path = output / "spawn.json"
+    output.mkdir(parents=True, exist_ok=True)
+    spawn_path.write_text(json.dumps({name: pose for name, pose in recipe.spawns()}, indent=2) + "\n", encoding="utf-8")
+    command = ([sys.executable, str(program)] if program.suffix == ".py" else [str(program)])
+    subprocess.run(command + args + [
+        "--output", str(output), "--city-mjcf", str(Path(marker["city_world"]["mjcf"])),
+        "--spawn-json", str(spawn_path), "--result", str(result_path),
+    ], cwd=program.parent, check=True)
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        runtime_xml = Path(result["city_model_xml"]).resolve()
+        config_dir = Path(result["config_dir"]).resolve()
+        body_xml = Path(result["body_xml"]).resolve()
+        service_config = Path(result["service_config"]).resolve()
+        service_executable = Path(result["service_executable"]).resolve()
+        runtime_root = Path(result["drone_root"]).resolve()
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise base.RecipeError(f"invalid external runtime result {result_path}: {exc}") from exc
+    for required in (runtime_xml, config_dir, body_xml, service_config, service_executable, runtime_root):
+        if not required.exists():
+            raise base.RecipeError(f"external runtime result does not exist: {required}")
+    runtime_mjb = runtime_xml.with_suffix(".mjb")
+    compiled = city.compile_mujoco_xml(runtime_xml, runtime_mjb, city.find_mujoco_library(drone_root))
+    for config_path in sorted(config_dir.glob("drone_config_*.json")):
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        select_compiled_mujoco_model(config, runtime_mjb)
+        config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    marker["runtime_model"] = {"format": "mjb", "path": str(runtime_mjb), "mirror_model": str(body_xml), "compiled_validation": compiled}
+    marker["external_runtime"] = {
+        "config_dir": str(config_dir), "service_config": str(service_config),
+        "service_executable": str(service_executable), "drone_root": str(runtime_root),
+    }
+    (paths.recipe_config / "mujoco-city-fleet.json").write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+    return runtime_mjb
+
+
+def patch_external_launcher(path: Path, paths: object) -> Path:
+    marker = json.loads((paths.recipe_config / "mujoco-city-fleet.json").read_text(encoding="utf-8"))
+    runtime = marker["external_runtime"]
+    launcher = json.loads(path.read_text(encoding="utf-8"))
+    service = next((asset for asset in launcher.get("assets", []) if asset.get("name") == "drone-service-1"), None)
+    if service is None:
+        raise base.RecipeError("generated Launcher has no drone-service-1 asset")
+    service["command"] = runtime["service_executable"]
+    arguments = service.setdefault("args", [])
+    if arguments:
+        arguments[0] = runtime["config_dir"]
+    else:
+        arguments.append(runtime["config_dir"])
+    path.write_text(json.dumps(launcher, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def map_origin_query(paths: object | None = None) -> str:
     """The map viewer's origin (the City World's) as URL parameters, or "" before
     configure: without it the map shows the viewer's default place."""
@@ -631,7 +728,11 @@ def urban_launcher_writer(
             paths, drone_root, viewer_root, experiment, system_name,
             http_port=VIEWER_HTTP_PORT, websocket_port=WEB_BRIDGE_PORT,
         )
-        patch_eams_city_viewer(paths)
+        external_runtime = getattr(recipe, "external_runtime", None)
+        if external_runtime is not None:
+            patch_external_city_viewer(paths, external_runtime)
+        else:
+            patch_eams_city_viewer(paths)
         if recipe.control_mode == "ps4-rc":
             path = patch_rc_launcher(path, paths=paths, drone_root=drone_root)
         else:
@@ -647,6 +748,8 @@ def urban_launcher_writer(
             path = drone_px4.patch_launcher(
                 path, recipe_root=paths.recipe_root, drone_root=drone_root, marker=marker
             )
+        if external_runtime is not None:
+            path = patch_external_launcher(path, paths)
         path = apply_composition_controls(path, paths)
         return apply_fault_injection(path, paths)
 
@@ -1171,14 +1274,15 @@ def configure(
         launch_area=recipe.launch_area,
     )
     set_runtime_spawn(marker, recipe.spawns())
-    runtime_model = materialize_eams_city_model(
-        marker,
-        drone_root,
-        paths=paths,
-        rc_mode=recipe.control_mode == "ps4-rc",
-        runtime_config_dir=runtime_config_dir,
-        px4=drone_px4.is_px4(recipe.drone_profile),
-    )
+    if recipe.external_runtime is not None:
+        runtime_model = prepare_external_runtime(marker, recipe, paths, drone_root)
+    else:
+        runtime_model = materialize_eams_city_model(
+            marker, drone_root, paths=paths,
+            rc_mode=recipe.control_mode == "ps4-rc",
+            runtime_config_dir=runtime_config_dir,
+            px4=drone_px4.is_px4(recipe.drone_profile),
+        )
     write_control_mode(paths, recipe.control_mode)
     write_selected_recipe(paths, recipe)
     spawn = recipe.spawn_pose_enu
