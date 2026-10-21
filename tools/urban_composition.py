@@ -838,40 +838,43 @@ def _drone_recipe(
     profile = profiles.pop()
     external_runtime = None
     if profile == EXTERNAL_DRONE_PROFILE:
-        contract = drones[0].asset.data.get("source", {}).get("external_runtime")
-        if not isinstance(contract, dict) or contract.get("schema") != "hakoniwa.external-drone-runtime/v1":
-            raise CompositionError(
-                f"vehicle {drones[0].name}: source.external_runtime must use hakoniwa.external-drone-runtime/v1"
-            )
-        prepare = contract.get("prepare")
-        viewer_contract = contract.get("viewer")
-        if not isinstance(prepare, dict) or not isinstance(prepare.get("program"), str):
-            raise CompositionError(f"vehicle {drones[0].name}: external runtime has no prepare.program")
-        if not isinstance(viewer_contract, dict) or not all(
-            key in viewer_contract for key in ("type_config", "type", "rotor_count")
-        ):
-            raise CompositionError(f"vehicle {drones[0].name}: external runtime has an incomplete viewer contract")
-        rotor_count = viewer_contract.get("rotor_count")
-        if not isinstance(rotor_count, int) or rotor_count < 1:
-            raise CompositionError(f"vehicle {drones[0].name}: external runtime viewer.rotor_count must be positive")
-        external_runtime = {
-            "schema": contract["schema"],
-            "prepare": {
-                "program": str(drones[0].asset.resolve(prepare["program"])),
-                "args": list(prepare.get("args", [])),
-            },
-            "viewer": {
-                "type_config": str(drones[0].asset.resolve(viewer_contract["type_config"])),
-                "type": str(viewer_contract["type"]),
-                "rotor_count": rotor_count,
-            },
-        }
+        resolved_contracts = []
+        for drone in drones:
+            contract = drone.asset.data.get("source", {}).get("external_runtime")
+            if not isinstance(contract, dict) or contract.get("schema") != "hakoniwa.external-drone-runtime/v1":
+                raise CompositionError(
+                    f"vehicle {drone.name}: source.external_runtime must use hakoniwa.external-drone-runtime/v1"
+                )
+            prepare = contract.get("prepare")
+            viewer_contract = contract.get("viewer")
+            if not isinstance(prepare, dict) or not isinstance(prepare.get("program"), str):
+                raise CompositionError(f"vehicle {drone.name}: external runtime has no prepare.program")
+            if not isinstance(viewer_contract, dict) or not all(
+                key in viewer_contract for key in ("type_config", "type", "rotor_count")
+            ):
+                raise CompositionError(f"vehicle {drone.name}: external runtime has an incomplete viewer contract")
+            rotor_count = viewer_contract.get("rotor_count")
+            if not isinstance(rotor_count, int) or rotor_count < 1:
+                raise CompositionError(f"vehicle {drone.name}: external runtime viewer.rotor_count must be positive")
+            resolved_contracts.append({
+                "schema": contract["schema"],
+                "prepare": {"program": str(drone.asset.resolve(prepare["program"])),
+                            "args": list(prepare.get("args", []))},
+                "viewer": {"type_config": str(drone.asset.resolve(viewer_contract["type_config"])),
+                           "type": str(viewer_contract["type"]), "rotor_count": rotor_count},
+            })
+        if any(contract != resolved_contracts[0] for contract in resolved_contracts[1:]):
+            raise CompositionError("the external Drones must share one resolved external runtime contract")
+        external_runtime = resolved_contracts[0]
     elif profile not in DRONE_PROFILES:
         raise CompositionError(
             f"vehicle {drones[0].name}: tools/drone_one.py runs the {' and '.join(sorted(DRONE_PROFILES))} profiles only"
         )
     controls = {drone.control for drone in drones}
-    if len(drones) > 1 and controls - {"schedule"}:
+    if len(controls) != 1:
+        raise CompositionError("the Drones in one service must share one control")
+    if len(drones) > 1 and not (controls == {"schedule"} or
+                               profile == EXTERNAL_DRONE_PROFILE and controls == {"api"}):
         raise CompositionError("more than one Drone fly by schedule only (the schedule control)")
     first = drones[0]
     mission = DRONE_DEFAULT_MISSION
