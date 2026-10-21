@@ -1053,6 +1053,37 @@ vehicles:
     spawn: { east_m: 0.0, north_m: 0.0, yaw_deg: 0.0 }
 ```
 
+### 8.6 External Drone runtime profile
+
+A non-portable Drone Asset may select `source.profile: external-drone-runtime-v1`.
+Urban only owns the following provider-neutral connection contract; the Asset's
+repository owns validation and preparation of the actual runtime.
+
+```yaml
+source:
+  profile: external-drone-runtime-v1
+  external_runtime:
+    schema: hakoniwa.external-drone-runtime/v1
+    prepare:
+      program: ${repo:provider}/tools/prepare_runtime.py
+      args: []
+    viewer:
+      type_config: ${repo:provider}/assets/drone-types.json
+      type: provider_type
+      rotor_count: 4
+```
+
+At configure time Urban invokes `prepare.program` with provider arguments followed
+by `--output DIR --city-mjcf PATH --spawn-json PATH --result PATH`. The provider
+must write a JSON object containing absolute paths for `city_model_xml`,
+`config_dir`, `body_xml`, `service_config`, `service_executable`, and `drone_root`.
+Urban compiles the returned City XML, selects that MJB in every generated
+`drone_config_*.json`, replaces the Drone service executable and its first
+argument, and exposes the returned root and service config to control programs.
+The provider owns provenance checks, runtime copying, robot/service naming, and
+absolute controller/backend paths. Urban owns City composition, Launcher/PDU
+integration, and consumes only the viewer type name and rotor count.
+
 ## 9. Open items
 
 - `${runtime.*}` names: fix the list per simulator once the builders are

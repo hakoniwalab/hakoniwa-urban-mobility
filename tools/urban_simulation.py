@@ -382,11 +382,22 @@ def drone_runtime(paths: object, pdu_def: Path):
     import multi_car
     import urban_controls
 
+    drone_root = drone_one.DEFAULT_DRONE_ROOT.resolve()
+    service_config = paths.recipe_config / "drone/fleets/services/api-current-service.json"
+    marker_path = paths.recipe_config / "mujoco-city-fleet.json"
+    if marker_path.is_file():
+        try:
+            external = json.loads(marker_path.read_text(encoding="utf-8")).get("external_runtime")
+            if isinstance(external, dict):
+                drone_root = Path(external["drone_root"])
+                service_config = Path(external["service_config"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            pass
     return urban_controls.Runtime(
         values={
             "pdu_def": pdu_def,
-            "drone_root": drone_one.DEFAULT_DRONE_ROOT.resolve(),
-            "service_config": paths.recipe_config / "drone/fleets/services/api-current-service.json",
+            "drone_root": drone_root,
+            "service_config": service_config,
             "city_marker": paths.recipe_config / "mujoco-city-fleet.json",
             "summary_json": paths.recipe_validation / "urban-drone-mission.json",
         },
