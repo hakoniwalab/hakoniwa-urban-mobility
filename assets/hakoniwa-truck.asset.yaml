@@ -6,7 +6,7 @@ version: 0.1.0
 title: Hakoniwa Truck（青）
 source: {repository: hakoniwa-mbody-registry, generator: "python bodies/hakoniwa_truck/config/build_model.py && python tools/ackermann/forge.py hakoniwa_truck"}
 simulator: ackermann-mujoco
-# The highway vehicles (hakoniwa-scenario): not in the Windows portable package,
+# The highway vehicles (hakoniwa-scenario-pro): not in the Windows portable package,
 # and they do not widen the route wall clearance of the existing city routes.
 portable: false
 route_clearance: false

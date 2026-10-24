@@ -684,8 +684,8 @@ A Composition may add programs to its run, so that a workspace repository
 
 ```yaml
 extensions:
-  - program: ${repo:hakoniwa-scenario}/tools/urban_scenario_link.py
-    args: ["${repo:hakoniwa-scenario}/scenarios/cut-in-highway/link.yaml", "--work", "${runtime.work}"]
+  - program: ${repo:hakoniwa-scenario-pro}/tools/urban_scenario_link.py
+    args: ["${repo:hakoniwa-scenario-pro}/scenarios/cut-in-highway/link.yaml", "--work", "${runtime.work}"]
 ```
 
 Urban runs each extension, in order, with the Foundation Python, after it

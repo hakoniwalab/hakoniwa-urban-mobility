@@ -27,7 +27,7 @@ Measured best: 40 Cars, 4 plant processes, pipelined lockstep. RTF 3.05 on Mac a
 
 ## The City
 
-- **Rebuild OpenDRIVE cities with the current generator** (hakoniwa-scenario `xodr2recipe.py`; the road detail setting stays the same). Town04 built before 2026-10-16 had 44,107 road pieces; rebuilt, it has 13,305, with trajectories within 6 cm and 1.4× the speed. Every static piece is posed (without sleep) and swept (broadphase) every step.
+- **Rebuild OpenDRIVE cities with the current generator** (hakoniwa-scenario-pro `xodr2recipe.py`; the road detail setting stays the same). Town04 built before 2026-10-16 had 44,107 road pieces; rebuilt, it has 13,305, with trajectories within 6 cm and 1.4× the speed. Every static piece is posed (without sleep) and swept (broadphase) every step.
 - The road detail `light` is only about 8 % faster than `balanced`, and it changes trajectories (mean 0.6 m over 35 s). Use `balanced`.
 - Where the road pieces are cut changes trajectories, even with the same surface: moving the cuts moved 40 Cars by 0.2 m on average over 35 s.
 
