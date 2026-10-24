@@ -436,7 +436,7 @@ class ControlModeTest(unittest.TestCase):
             self.assertEqual(priorities[first["prefix"] + geom + "_visual"], None)
             for other in others:
                 # The other Cars keep their model's own tire priority (the
-                # registry vehicles carry priority 1 since hakoniwa-scenario M4-3).
+                # registry vehicles carry priority 1 since hakoniwa-scenario-pro M4-3).
                 self.assertIn(priorities[other["prefix"] + geom], (None, "1"))
 
     def test_the_executor_restores_the_models_tire_friction(self):
