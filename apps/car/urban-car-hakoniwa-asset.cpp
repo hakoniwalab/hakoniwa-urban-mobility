@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -31,6 +32,9 @@ struct Options {
     std::uint64_t conductor_max_delay_msec {100};
     /** Lockstep inputs ("robot/pdu"): each step waits for a new command. */
     std::vector<std::string> lockstep_inputs;
+    /** Vehicles driven by CarService/AckermannStep/<vehicle> instead of PDU. */
+    std::vector<std::string> ackermann_rpc_inputs;
+    std::string rpc_service_config;
     /** Physics steps per Hakoniwa step (inputs once, state once per Hakoniwa step). */
     std::uint32_t physics_substeps {1};
 };
@@ -52,6 +56,12 @@ void usage(const char* program)
         << "  --lockstep-input ROBOT/PDU\n"
         << "                          step only when a new command has arrived on this\n"
         << "                          Ackermann input (repeatable; repeatable runs)\n"
+#if HAKO_ENABLE_ASYNC_RPC_INPUT
+        << "  --ackermann-rpc-input VEHICLE\n"
+        << "                          use CarService/AckermannStep/<VEHICLE> (repeatable)\n"
+        << "  --rpc-service-config PATH\n"
+        << "                          Core service definition JSON for RPC inputs\n"
+#endif
         << "  --view-model            inspect the model without Hakoniwa\n"
         << "  --validate-model        load the XML/MJB and exit\n";
 }
@@ -101,6 +111,12 @@ bool parse_options(int argc, char** argv, Options& options)
             }
         } else if (argument == "--lockstep-input" && index + 1 < argc) {
             options.lockstep_inputs.emplace_back(argv[++index]);
+#if HAKO_ENABLE_ASYNC_RPC_INPUT
+        } else if (argument == "--ackermann-rpc-input" && index + 1 < argc) {
+            options.ackermann_rpc_inputs.emplace_back(argv[++index]);
+        } else if (argument == "--rpc-service-config" && index + 1 < argc) {
+            options.rpc_service_config = argv[++index];
+#endif
         } else if (argument == "--view-model") {
             options.view_model_only = true;
         } else if (argument == "--validate-model") {
@@ -118,6 +134,12 @@ bool parse_options(int argc, char** argv, Options& options)
         usage(argv[0]);
         return false;
     }
+#if HAKO_ENABLE_ASYNC_RPC_INPUT
+    if (options.ackermann_rpc_inputs.empty() != options.rpc_service_config.empty()) {
+        std::cerr << "--ackermann-rpc-input and --rpc-service-config must be used together\n";
+        return false;
+    }
+#endif
     return true;
 }
 
@@ -159,13 +181,19 @@ int view_model(const std::string& manifest_path)
 
 int run_asset(const Options& options)
 {
-    auto runner =
-        hakoniwa::robot_runtime::factory::ManifestFactory::create(
-            options.manifest,
-            {options.asset_name, options.endpoint_name,
-                options.realtime_sync_cycle_msec, options.owns_conductor,
-                options.conductor_max_delay_msec * 1000, options.lockstep_inputs,
-                options.physics_substeps});
+    auto config = hakoniwa::robot_runtime::factory::ManifestFactoryConfig {
+        options.asset_name,
+        options.endpoint_name,
+        options.realtime_sync_cycle_msec,
+        options.owns_conductor,
+        options.conductor_max_delay_msec * 1000,
+        options.lockstep_inputs,
+        options.physics_substeps,
+        options.ackermann_rpc_inputs,
+        options.rpc_service_config,
+    };
+    auto runner = hakoniwa::robot_runtime::factory::ManifestFactory::create(
+        options.manifest, std::move(config));
     if (runner->start() != 0) {
         return 1;
     }
