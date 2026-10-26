@@ -27,6 +27,8 @@ option(HAKO_URBAN_ENABLE_VIEWER "Build the native MuJoCo viewer" ON)
 # by defining HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE.
 option(HAKO_URBAN_ENABLE_MIRROR
     "Build the opt-in Robot Runtime Plant Directive extension (Mirror, geom friction)" OFF)
+option(HAKO_ENABLE_ASYNC_RPC_INPUT
+    "Build the opt-in Robot Runtime asynchronous RPC input extension" OFF)
 
 foreach(required_path IN ITEMS
     "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src/runtime/actuator_runtime.cpp"
@@ -117,6 +119,12 @@ add_executable(urban-car-hakoniwa-asset
     ${HAKO_MUJOCO_ROOT}/src/config/asset_manifest.cpp
 )
 
+if(HAKO_ENABLE_ASYNC_RPC_INPUT)
+    target_sources(urban-car-hakoniwa-asset PRIVATE
+        ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+        ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp)
+endif()
+
 if(HAKO_URBAN_ENABLE_MIRROR)
     target_sources(urban-car-hakoniwa-asset PRIVATE
         ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
@@ -154,6 +162,7 @@ target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
     # --lockstep-input (repeatable P0 runs; off unless the option is given)
     HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1
+    HAKO_ENABLE_ASYNC_RPC_INPUT=$<BOOL:${HAKO_ENABLE_ASYNC_RPC_INPUT}>
     HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
@@ -351,6 +360,64 @@ if(BUILD_TESTING)
     target_link_libraries(hako-lockstep-driver-test PRIVATE hakoniwa-core::assets)
     add_test(NAME hako-lockstep-driver-contract
         COMMAND hako-lockstep-driver-test)
+    if(HAKO_ENABLE_ASYNC_RPC_INPUT)
+        add_executable(hako-async-rpc-input-test
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        target_compile_features(hako-async-rpc-input-test PRIVATE cxx_std_20)
+        target_compile_definitions(hako-async-rpc-input-test PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-async-rpc-input-test PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC})
+        target_link_libraries(hako-async-rpc-input-test PRIVATE hakoniwa-core::assets)
+        add_test(NAME hako-async-rpc-input-contract
+            COMMAND hako-async-rpc-input-test)
+
+        add_executable(hako-async-rpc-integration-server
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_server.cpp
+            ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        target_compile_features(hako-async-rpc-integration-server PRIVATE cxx_std_20)
+        target_compile_definitions(hako-async-rpc-integration-server PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-async-rpc-integration-server PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-async-rpc-integration-server PRIVATE
+            hakoniwa-core::assets)
+
+        add_executable(hako-async-rpc-integration-client
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_client.cpp)
+        target_compile_features(hako-async-rpc-integration-client PRIVATE cxx_std_20)
+        target_include_directories(hako-async-rpc-integration-client PRIVATE
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-async-rpc-integration-client PRIVATE
+            hakoniwa-core::shakoc)
+
+        add_executable(hako-async-rpc-integration-conductor
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
+        target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
+        target_include_directories(hako-async-rpc-integration-conductor PRIVATE
+            ${HAKONIWA_FOUNDATION_PREFIX}/include/hakoniwa)
+        target_link_libraries(hako-async-rpc-integration-conductor PRIVATE
+            hakoniwa-core::conductor)
+
+        if(UNIX)
+            add_test(NAME hako-async-rpc-input-integration
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_async_rpc_input.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
+            set_tests_properties(hako-async-rpc-input-integration PROPERTIES
+                TIMEOUT 60
+                LABELS integration)
+        endif()
+    endif()
     add_test(NAME hako-mirror-runtime-contract
         COMMAND hako-mirror-runtime-test)
     add_test(NAME hako-mirror-mujoco-plant-contract
