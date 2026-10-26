@@ -243,6 +243,7 @@ class CarCompositionTest(Fixture):
         types = {entry["type"]: entry for entry in config["inputs"]["ackermann_vehicles"]["types"]}
         self.assertEqual(types["golf_cart"]["front_camera"]["position"], [1.25, 0.0, 1.25])
         self.assertEqual(types["hakoniwa_car"]["front_camera"]["position"], [1.15, 0.0, 0.80])
+        self.assertEqual(types["golf_cart"]["seats"]["driver"], [-0.28, 0.22, 0.58])
         # Different cameras: none composition-wide.
         self.assertNotIn("front_camera", config["inputs"]["browser_visualization"])
         self.assertIn("hakoniwa_car/generated/view-model.json", types["hakoniwa_car"]["view_model"])
