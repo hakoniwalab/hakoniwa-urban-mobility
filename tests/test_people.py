@@ -28,6 +28,7 @@ def load(name: str, path: Path):
 plant = load("people_plant", ROOT / "apps/people/people_plant.py")
 sys.path.insert(0, str(ROOT / "apps/people"))
 people_sim = load("people_sim", ROOT / "tools/people_sim.py")
+urban_people = load("urban_people", ROOT / "tools/urban_people.py")
 
 
 
@@ -176,6 +177,82 @@ class RecipeTest(unittest.TestCase):
         self.assertEqual({geom.get("name") for geom in root.findall("worldbody/geom")}, {"wall"})
         self.assertIsNotNone(root.find("worldbody/body[@name='Person-1/person']"))
         self.assertEqual(root.find("compiler").get("angle"), "degree")
+
+
+class RpcPeopleCompositionTest(unittest.TestCase):
+    def test_rpc_people_join_car_world_and_separate_plant_is_removed(self):
+        temporary = Path(tempfile.mkdtemp())
+        work = temporary / "work"
+        root = work / "config/car"
+        people_config = work / "config/people"
+        (work / "validation").mkdir(parents=True)
+        root.mkdir(parents=True)
+        people_config.mkdir(parents=True)
+        model = temporary / "person.xml"
+        model.write_text(
+            '<mujoco><worldbody><body name="person"><joint name="slide_x_joint"/>'
+            '<joint name="turn_joint" type="hinge"/>'
+            '<joint name="hip_left_joint" type="hinge" range="-90 90"/></body></worldbody>'
+            '<actuator><motor name="move" joint="slide_x_joint"/></actuator></mujoco>',
+            encoding="utf-8",
+        )
+        world = root / "urban-cars-city.xml"
+        world.write_text('<mujoco><worldbody><body name="Car-1"/></worldbody><actuator/></mujoco>',
+                         encoding="utf-8")
+        pdu_def = root / "urban-car-pdudef.json"
+        pdu_def.write_text('{"paths": [], "robots": []}', encoding="utf-8")
+        comm = root / "urban-car-comm.json"
+        comm.write_text('{"io": {"robots": []}}', encoding="utf-8")
+        endpoint = root / "urban-car-endpoint.json"
+        endpoint.write_text(json.dumps({"comm": str(comm)}), encoding="utf-8")
+        manifest = root / "urban-car-asset-manifest.json"
+        runtime = root / "urban-car-runtime.json"
+        runtime.write_text('{}', encoding="utf-8")
+        manifest.write_text(json.dumps({
+            "model": str(root / "urban-cars-city.mjb"),
+            "pdu_def": str(pdu_def), "endpoint": str(endpoint),
+            "runtime_config": str(runtime),
+        }), encoding="utf-8")
+        people = [
+            {
+                "name": name, "look": "staff", "scale": 1.0,
+                "model": str(model), "view_model": "unused",
+                "spawn": {"east_m": 2.0, "north_m": 3.0, "yaw_deg": yaw_deg},
+            }
+            for name, yaw_deg in (("North", 90.0), ("East", 0.0), ("Bridge", -21.144))
+        ]
+        composition = type("Composition", (), {"id": "rpc-people"})()
+        launcher = {"assets": [{"name": urban_people.PLANT_NAME}, {"name": "car"}]}
+        with patch.object(urban_people.urban_composition, "people", return_value=people), \
+             patch.object(urban_people.multi_car, "load_plants", return_value=[{
+                 "root": str(root), "model_xml": str(world),
+             }]), \
+             patch.object(urban_people.multi_car, "materialize_mjb"):
+            names = urban_people.apply_rpc(work, composition, launcher, "car")
+
+        self.assertEqual(names, ["North", "East", "Bridge"])
+        self.assertNotIn(urban_people.PLANT_NAME, [item["name"] for item in launcher["assets"]])
+        merged = ET.parse(world).getroot()
+        self.assertIsNotNone(merged.find("worldbody/body[@name='North/person']"))
+        self.assertEqual(merged.find("worldbody/body[@name='North/person']").get("pos"), "3 -2 0")
+        for name in ("North", "East", "Bridge"):
+            self.assertEqual(merged.find(f".//joint[@name='{name}/turn_joint']").get("ref"), "0")
+        initial = json.loads(runtime.read_text())["person_initial_poses"]
+        initial_by_name = {item["name"]: item["yaw_rad"] for item in initial}
+        self.assertAlmostEqual(initial_by_name["North"], 0.0)
+        self.assertAlmostEqual(initial_by_name["East"], -math.pi / 2.0)
+        self.assertAlmostEqual(initial_by_name["Bridge"], math.radians(-21.144) - math.pi / 2.0)
+        hip_range = [float(value) for value in
+                     merged.find(".//joint[@name='North/hip_left_joint']").get("range").split()]
+        self.assertAlmostEqual(hip_range[0], -math.pi / 2, places=5)
+        self.assertAlmostEqual(hip_range[1], math.pi / 2, places=5)
+        definitions = json.loads(pdu_def.read_text())
+        self.assertIn("North", {item["name"] for item in definitions["robots"]})
+        self.assertIn("UrbanPeople", {item["name"] for item in definitions["robots"]})
+        self.assertIn("contact", {item["name"] for item in json.loads(
+            (people_config / "people-command-pdutypes.json").read_text())})
+        self.assertIn("contact_events", {item["name"] for item in json.loads(
+            (people_config / "people-state-pdutypes.json").read_text())})
 
 
 class FakeTransport:
