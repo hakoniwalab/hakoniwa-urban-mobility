@@ -36,6 +36,8 @@ struct Options {
     std::vector<std::string> ackermann_rpc_inputs;
     /** People driven by PersonService/PersonStep/<person> instead of PDU. */
     std::vector<std::string> person_rpc_inputs;
+    /** Optional JSONL record of person contact edges. */
+    std::string person_contact_log;
     std::string rpc_service_config;
     /** Physics steps per Hakoniwa step (inputs once, state once per Hakoniwa step). */
     std::uint32_t physics_substeps {1};
@@ -63,6 +65,8 @@ void usage(const char* program)
         << "                          use CarService/AckermannStep/<VEHICLE> (repeatable)\n"
         << "  --person-rpc-input PERSON\n"
         << "                          use PersonService/PersonStep/<PERSON> (repeatable)\n"
+        << "  --person-contact-log PATH\n"
+        << "                          append person contact events as JSONL\n"
         << "  --rpc-service-config PATH\n"
         << "                          Core service definition JSON for RPC inputs\n"
 #endif
@@ -120,6 +124,8 @@ bool parse_options(int argc, char** argv, Options& options)
             options.ackermann_rpc_inputs.emplace_back(argv[++index]);
         } else if (argument == "--person-rpc-input" && index + 1 < argc) {
             options.person_rpc_inputs.emplace_back(argv[++index]);
+        } else if (argument == "--person-contact-log" && index + 1 < argc) {
+            options.person_contact_log = argv[++index];
         } else if (argument == "--rpc-service-config" && index + 1 < argc) {
             options.rpc_service_config = argv[++index];
 #endif
@@ -145,6 +151,11 @@ bool parse_options(int argc, char** argv, Options& options)
             && options.person_rpc_inputs.empty())
         != options.rpc_service_config.empty()) {
         std::cerr << "RPC inputs and --rpc-service-config must be used together\n";
+        return false;
+    }
+    if (!options.person_contact_log.empty()
+        && options.person_rpc_inputs.empty()) {
+        std::cerr << "--person-contact-log requires --person-rpc-input\n";
         return false;
     }
 #endif
@@ -201,6 +212,7 @@ int run_asset(const Options& options)
         options.person_rpc_inputs,
         "UrbanPeople",
         options.rpc_service_config,
+        options.person_contact_log,
     };
     auto runner = hakoniwa::robot_runtime::factory::ManifestFactory::create(
         options.manifest, std::move(config));
