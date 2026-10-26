@@ -122,6 +122,7 @@ add_executable(urban-car-hakoniwa-asset
 if(HAKO_ENABLE_ASYNC_RPC_INPUT)
     target_sources(urban-car-hakoniwa-asset PRIVATE
         ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+        ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
         ${RUNTIME_SRC}/runner/async_rpc_input.cpp
         ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp)
 endif()
@@ -392,6 +393,34 @@ if(BUILD_TESTING)
             hakoniwa-core::assets)
         add_test(NAME hako-ackermann-rpc-input-contract
             COMMAND hako-ackermann-rpc-input-test)
+
+        add_executable(hako-person-rpc-input-test
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_person_rpc_input.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp)
+        target_compile_features(hako-person-rpc-input-test PRIVATE cxx_std_20)
+        target_compile_definitions(hako-person-rpc-input-test PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-person-rpc-input-test PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_MUJOCO_ROOT}/src
+            ${HAKO_MUJOCO_ROOT}/include
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_include_directories(hako-person-rpc-input-test SYSTEM PRIVATE
+            ${HAKO_MUJOCO_INCLUDE})
+        if(HAKO_MUJOCO_LIB_DIR)
+            target_link_directories(hako-person-rpc-input-test PRIVATE
+                ${HAKO_MUJOCO_LIB_DIR})
+        endif()
+        target_link_libraries(hako-person-rpc-input-test PRIVATE
+            mujoco-common
+            ${HAKO_MUJOCO_LIBRARY}
+            hakoniwa-core::assets)
+        add_test(NAME hako-person-rpc-input-contract
+            COMMAND hako-person-rpc-input-test)
         add_test(NAME hako-rpc-service-config-generator-contract
             COMMAND
                 "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
@@ -444,6 +473,31 @@ if(BUILD_TESTING)
         target_link_libraries(hako-ackermann-rpc-integration-client PRIVATE
             hakoniwa-core::shakoc)
 
+        add_executable(hako-person-rpc-integration-server
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_rpc_server.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        target_compile_features(hako-person-rpc-integration-server PRIVATE cxx_std_20)
+        target_compile_definitions(hako-person-rpc-integration-server PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-person-rpc-integration-server PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-person-rpc-integration-server PRIVATE
+            hakoniwa-core::assets)
+
+        add_executable(hako-person-rpc-integration-client
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_rpc_client.cpp)
+        target_compile_features(hako-person-rpc-integration-client PRIVATE cxx_std_20)
+        target_include_directories(hako-person-rpc-integration-client PRIVATE
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-person-rpc-integration-client PRIVATE
+            hakoniwa-core::shakoc)
+
         add_executable(hako-async-rpc-integration-conductor
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
         target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
@@ -469,6 +523,15 @@ if(BUILD_TESTING)
                     ${HAKONIWA_FOUNDATION_PREFIX}
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
             set_tests_properties(hako-ackermann-rpc-input-integration PROPERTIES
+                TIMEOUT 60
+                LABELS integration)
+            add_test(NAME hako-person-rpc-input-integration
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_person_rpc_input.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
+            set_tests_properties(hako-person-rpc-input-integration PROPERTIES
                 TIMEOUT 60
                 LABELS integration)
         endif()
