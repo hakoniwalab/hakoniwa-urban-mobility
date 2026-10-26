@@ -714,6 +714,9 @@ def _car_inputs(
             "mjcf": str(asset.resolve(model["physics"])),
             "contract": str(asset.resolve(model["contract"])),
             "view_model": str(asset.resolve(model["visual"])),
+            # PersonStep rides use the same Asset-defined body-frame offsets
+            # as the legacy people plant.
+            "seats": asset.data.get("seats", {}),
             # Each car type its own vehicle-mounted camera (a golf cart and a
             # delivery car see from different places).
             **({"front_camera": camera} if camera is not None else {}),

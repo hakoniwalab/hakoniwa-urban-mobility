@@ -540,6 +540,19 @@ def resolve_config(config_path: Path) -> dict:
                 raise RecipeError(f"vehicle type {type_name} front_camera must be a mapping")
             if view_model.get("format") != "hako_viewer_model":
                 raise RecipeError(f"vehicle type {type_name} has an invalid view model")
+            seats_input = type_input.get("seats", {})
+            if not isinstance(seats_input, dict):
+                raise TypeError("seats must be a mapping")
+            seats = {}
+            for seat_name, offset in seats_input.items():
+                seat_name = str(seat_name).strip()
+                if (not seat_name or not isinstance(offset, (list, tuple))
+                        or len(offset) != 3):
+                    raise TypeError("seat requires a name and three-number offset")
+                seat_offset = [float(value) for value in offset]
+                if any(not math.isfinite(value) for value in seat_offset):
+                    raise ValueError("seat offset must be finite")
+                seats[seat_name] = seat_offset
             validation = contract["validation"]
             interface = validation["interface"]
             geometry = validation["geometry"]
@@ -553,6 +566,7 @@ def resolve_config(config_path: Path) -> dict:
                 "view_model_data": view_model,
                 # Its vehicle-mounted camera; else browser_visualization.front_camera.
                 "front_camera": type_camera,
+                "seats": seats,
                 "interface": {
                     "base_freejoint": str(interface["base_freejoint"]),
                     "joints": {
@@ -1502,6 +1516,18 @@ def materialize_runtime(
     work.mkdir(parents=True, exist_ok=True)
     runtime = load_json(source["source_runtime"], "Robot Runtime config")
     runtime["actuators"] = {}
+    runtime["person_vehicles"] = [
+        {
+            "name": vehicle["name"],
+            "mjcf_freejoint": (
+                vehicle["prefix"]
+                + vehicle["type_definition"]["interface"]["base_freejoint"]
+            ),
+            "seats": vehicle["type_definition"]["seats"],
+        }
+        for vehicle in vehicles
+        if vehicle["type_definition"]["seats"]
+    ]
 
     # JointState carries the actuator-backed steering and driven-wheel joints.
     # MultiDOFJointState also carries one name, transform, twist, and wrench per

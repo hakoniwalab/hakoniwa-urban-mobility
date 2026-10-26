@@ -493,10 +493,15 @@ class ControlModeTest(unittest.TestCase):
             vehicles = multi_car.resolve_config(
                 ROOT / "recipes/multi-car-viewer.yaml"
             )["vehicles"]
+            for vehicle in vehicles:
+                vehicle["type_definition"]["seats"] = {
+                    "driver": [0.3, 0.4, 0.5]
+                }
             files = multi_car.materialize_runtime(
                 work / "fleet.mjb", work, vehicles
             )
             manifest = json.loads(files["manifest"].read_text(encoding="utf-8"))
+            runtime = json.loads(files["runtime"].read_text(encoding="utf-8"))
             pdu_def = json.loads(files["pdu_def"].read_text(encoding="utf-8"))
             self.assertEqual(
                 [item["name"] for item in pdu_def["robots"]],
@@ -523,6 +528,12 @@ class ControlModeTest(unittest.TestCase):
                 [item["pdu_size"] for item in state_pdu_types],
                 [16384, 16384],
             )
+            self.assertEqual(len(runtime["person_vehicles"]), 10)
+            self.assertEqual(runtime["person_vehicles"][0], {
+                "name": "Car-1",
+                "mjcf_freejoint": "car_1_base_freejoint",
+                "seats": {"driver": [0.3, 0.4, 0.5]},
+            })
 
 
 class AckermannClientTest(unittest.TestCase):
