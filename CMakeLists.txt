@@ -121,6 +121,7 @@ add_executable(urban-car-hakoniwa-asset
 
 if(HAKO_ENABLE_ASYNC_RPC_INPUT)
     target_sources(urban-car-hakoniwa-asset PRIVATE
+        ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
         ${RUNTIME_SRC}/runner/async_rpc_input.cpp
         ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp)
 endif()
@@ -375,6 +376,27 @@ if(BUILD_TESTING)
         add_test(NAME hako-async-rpc-input-contract
             COMMAND hako-async-rpc-input-test)
 
+        add_executable(hako-ackermann-rpc-input-test
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_ackermann_rpc_input.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp)
+        target_compile_features(hako-ackermann-rpc-input-test PRIVATE cxx_std_20)
+        target_compile_definitions(hako-ackermann-rpc-input-test PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-ackermann-rpc-input-test PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-ackermann-rpc-input-test PRIVATE
+            hakoniwa-core::assets)
+        add_test(NAME hako-ackermann-rpc-input-contract
+            COMMAND hako-ackermann-rpc-input-test)
+        add_test(NAME hako-rpc-service-config-generator-contract
+            COMMAND
+                "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+                "${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_gen_rpc_service_config.py")
+
         add_executable(hako-async-rpc-integration-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_server.cpp
             ${RUNTIME_SRC}/runner/async_rpc_input.cpp
@@ -398,6 +420,30 @@ if(BUILD_TESTING)
         target_link_libraries(hako-async-rpc-integration-client PRIVATE
             hakoniwa-core::shakoc)
 
+        add_executable(hako-ackermann-rpc-integration-server
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_rpc_server.cpp
+            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/runner/async_rpc_input.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        target_compile_features(hako-ackermann-rpc-integration-server PRIVATE cxx_std_20)
+        target_compile_definitions(hako-ackermann-rpc-integration-server PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-ackermann-rpc-integration-server PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-ackermann-rpc-integration-server PRIVATE
+            hakoniwa-core::assets)
+
+        add_executable(hako-ackermann-rpc-integration-client
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_rpc_client.cpp)
+        target_compile_features(hako-ackermann-rpc-integration-client PRIVATE cxx_std_20)
+        target_include_directories(hako-ackermann-rpc-integration-client PRIVATE
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-ackermann-rpc-integration-client PRIVATE
+            hakoniwa-core::shakoc)
+
         add_executable(hako-async-rpc-integration-conductor
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
         target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
@@ -414,6 +460,15 @@ if(BUILD_TESTING)
                     ${HAKONIWA_FOUNDATION_PREFIX}
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
             set_tests_properties(hako-async-rpc-input-integration PROPERTIES
+                TIMEOUT 60
+                LABELS integration)
+            add_test(NAME hako-ackermann-rpc-input-integration
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_ackermann_rpc_input.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
+            set_tests_properties(hako-ackermann-rpc-input-integration PROPERTIES
                 TIMEOUT 60
                 LABELS integration)
         endif()
@@ -434,6 +489,9 @@ if(BUILD_TESTING)
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_control_modes.py")
+    set_tests_properties(urban-car-control-mode-contract PROPERTIES
+        ENVIRONMENT
+            "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/tools;HAKONIWA_WORKSPACE_ACTIVE=1;HAKONIWA_WORKSPACE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/../hakoniwa-business-pack;HAKONIWA_WORK_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../hakoniwa-business-pack/work")
     add_test(NAME urban-car-scenario-contract
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
