@@ -498,6 +498,29 @@ if(BUILD_TESTING)
         target_link_libraries(hako-person-rpc-integration-client PRIVATE
             hakoniwa-core::shakoc)
 
+        # Stage A of hakoniwa-robot-runtime docs/design-async-rpc.md: cancel as an event.
+        add_executable(hako-async-rpc-cancel-server
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_cancel_server.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/async_rpc_service_channel.cpp
+            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        target_compile_features(hako-async-rpc-cancel-server PRIVATE cxx_std_20)
+        target_compile_definitions(hako-async-rpc-cancel-server PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-async-rpc-cancel-server PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC}
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-async-rpc-cancel-server PRIVATE
+            hakoniwa-core::assets)
+
+        add_executable(hako-async-rpc-cancel-client
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_cancel_client.cpp)
+        target_compile_features(hako-async-rpc-cancel-client PRIVATE cxx_std_20)
+        target_include_directories(hako-async-rpc-cancel-client PRIVATE
+            ${HAKO_PDU_TYPES_INCLUDE})
+        target_link_libraries(hako-async-rpc-cancel-client PRIVATE
+            hakoniwa-core::shakoc)
+
         add_executable(hako-async-rpc-integration-conductor
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
         target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
@@ -532,6 +555,15 @@ if(BUILD_TESTING)
                     ${HAKONIWA_FOUNDATION_PREFIX}
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
             set_tests_properties(hako-person-rpc-input-integration PROPERTIES
+                TIMEOUT 60
+                LABELS integration)
+            add_test(NAME hako-async-rpc-cancel-integration
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_async_rpc_cancel.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
+            set_tests_properties(hako-async-rpc-cancel-integration PROPERTIES
                 TIMEOUT 60
                 LABELS integration)
         endif()
