@@ -99,6 +99,25 @@ def _set_arg(args: list, flag: str, value: str) -> list:
     return [*args, flag, value]
 
 
+# Paced to real time, the Hakoniwa processes sleep while they wait for the world time instead of
+# asking again at once (hakoniwa-core-pro: each waiting process kept one core busy, about five
+# for a car scenario, 2026-11-15). A wait late by the sleep is absorbed by the pacing. Without
+# the pacer (lockstep, as fast as possible) they keep asking at once.
+IDLE_SLEEP_ENV = {
+    "HAKO_CONDUCTOR_IDLE_SLEEP_USEC": "200",
+    "HAKO_ASSET_IDLE_SLEEP_USEC": "200",
+}
+
+
+def _set_idle_sleep(launcher: dict, enabled: bool) -> None:
+    env = launcher.setdefault("defaults", {}).setdefault("env", {}).setdefault("set", {})
+    for name, value in IDLE_SLEEP_ENV.items():
+        if enabled:
+            env[name] = value
+        else:
+            env.pop(name, None)
+
+
 WEB_BRIDGE_EXECUTABLE = "hakoniwa-pdu-web-bridge"
 WEB_BRIDGE_NO_SLEEP_ARG = "--disable-real-sleep"
 
@@ -111,6 +130,7 @@ def apply_pacer(launcher: dict, pacer: dict, *, drone_services: tuple[str, ...] 
     assets stop sleeping too: by default a WebBridge sleeps its 20 ms step in
     wall time on top of its work, so its asset time falls behind wall time and
     the Conductor holds the whole simulation to about 0.83x real time.
+    Every process sleeps while it waits for the world time (IDLE_SLEEP_ENV).
     """
     conductor = pacer["depends_on"][0]
     assets = [
@@ -128,6 +148,7 @@ def apply_pacer(launcher: dict, pacer: dict, *, drone_services: tuple[str, ...] 
             asset["args"] = [*asset.get("args", []), WEB_BRIDGE_NO_SLEEP_ARG]
     position = names.index(conductor) + 1
     launcher["assets"] = assets[:position] + [pacer] + assets[position:]
+    _set_idle_sleep(launcher, True)
     return launcher
 
 
@@ -141,6 +162,7 @@ def remove_pacer(launcher: dict) -> dict:
         asset for asset in launcher.get("assets", [])
         if asset.get("name") not in LEGACY_PACERS | {PACER_ASSET}
     ]
+    _set_idle_sleep(launcher, False)
     return launcher
 
 

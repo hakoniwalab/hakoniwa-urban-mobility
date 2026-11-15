@@ -1596,6 +1596,21 @@ class RealtimePacerTest(IntegratedFixture):
         self.assertEqual([asset["name"] for asset in launcher["assets"]],
                          ["urban-car-fleet-plant", "control-car-1-api"])
 
+    def test_paced_runs_sleep_while_waiting_and_unpaced_runs_do_not(self):
+        launcher = {"defaults": {"env": {"set": {"HAKONIWA_CORE_ROOT": "/core"}}},
+                    "assets": [{"name": "urban-car-fleet-plant", "args": []}]}
+        pacer = urban_realtime.pacer_asset("/python", "urban-car-fleet-plant")
+        urban_realtime.apply_pacer(launcher, pacer)
+        env = launcher["defaults"]["env"]["set"]
+        self.assertEqual(env["HAKONIWA_CORE_ROOT"], "/core")
+        self.assertEqual(env["HAKO_CONDUCTOR_IDLE_SLEEP_USEC"], "200")
+        self.assertEqual(env["HAKO_ASSET_IDLE_SLEEP_USEC"], "200")
+        urban_realtime.remove_pacer(launcher)
+        self.assertEqual(launcher["defaults"]["env"]["set"], {"HAKONIWA_CORE_ROOT": "/core"})
+        bare = {"assets": [{"name": "urban-car-fleet-plant", "args": []}]}
+        urban_realtime.apply_pacer(bare, pacer)
+        self.assertEqual(bare["defaults"]["env"]["set"]["HAKO_ASSET_IDLE_SLEEP_USEC"], "200")
+
     def test_apply_pacer_stops_web_bridge_wall_sleeps_once(self):
         bridge = {"name": "urban-vehicle-web-bridge", "command": "/install/bin/hakoniwa-pdu-web-bridge",
                   "args": ["--config-root", "web-bridge", "--delta-time-step-usec", "20000"]}
