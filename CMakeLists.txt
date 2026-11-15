@@ -377,6 +377,19 @@ if(BUILD_TESTING)
         add_test(NAME hako-async-rpc-input-contract
             COMMAND hako-async-rpc-input-test)
 
+        # Stage B of hakoniwa-robot-runtime docs/design-async-rpc.md: non-lockstep service input.
+        add_executable(hako-async-service-input-test
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_input.cpp
+            ${RUNTIME_SRC}/runner/async_service_input.cpp)
+        target_compile_features(hako-async-service-input-test PRIVATE cxx_std_20)
+        target_compile_definitions(hako-async-service-input-test PRIVATE
+            HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+        target_include_directories(hako-async-service-input-test PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC})
+        add_test(NAME hako-async-service-input-contract
+            COMMAND hako-async-service-input-test)
+
         add_executable(hako-ackermann-rpc-input-test
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_ackermann_rpc_input.cpp
             ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
