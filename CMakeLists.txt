@@ -582,6 +582,19 @@ if(BUILD_TESTING)
             endif()
         endif()
     endif()
+    if(HAKO_ENABLE_ASYNC_SERVICE)
+        # Stage B0 of robot-runtime docs/design-async-rpc.md: two rates.
+        add_executable(hako-runtime-two-rates-test
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_runtime_two_rates.cpp
+            ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
+            ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp)
+        target_compile_features(hako-runtime-two-rates-test PRIVATE cxx_std_20)
+        target_include_directories(hako-runtime-two-rates-test PRIVATE
+            ${RUNTIME_INCLUDE}
+            ${RUNTIME_SRC})
+        add_test(NAME hako-runtime-two-rates-contract
+            COMMAND hako-runtime-two-rates-test)
+    endif()
     add_test(NAME hako-mirror-runtime-contract
         COMMAND hako-mirror-runtime-test)
     add_test(NAME hako-mirror-mujoco-plant-contract
