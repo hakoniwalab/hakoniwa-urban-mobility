@@ -29,6 +29,16 @@ option(HAKO_URBAN_ENABLE_MIRROR
     "Build the opt-in Robot Runtime Plant Directive extension (Mirror, geom friction)" OFF)
 option(HAKO_ENABLE_ASYNC_RPC_INPUT
     "Build the opt-in Robot Runtime asynchronous RPC input extension" OFF)
+# Robot Runtime async services, two rates and observation/estimate
+# (hakoniwa-robot-runtime docs/design-async-rpc.md, section 3.3). One switch
+# for the three; it needs HAKO_ENABLE_ASYNC_RPC_INPUT for the Core channel.
+option(HAKO_ENABLE_ASYNC_SERVICE
+    "Build the opt-in Robot Runtime async service extension" OFF)
+if(HAKO_ENABLE_ASYNC_SERVICE AND NOT HAKO_ENABLE_ASYNC_RPC_INPUT)
+    message(FATAL_ERROR "HAKO_ENABLE_ASYNC_SERVICE needs HAKO_ENABLE_ASYNC_RPC_INPUT")
+endif()
+add_compile_definitions(
+    HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE=$<BOOL:${HAKO_ENABLE_ASYNC_SERVICE}>)
 
 foreach(required_path IN ITEMS
     "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src/runtime/actuator_runtime.cpp"
@@ -498,6 +508,7 @@ if(BUILD_TESTING)
         target_link_libraries(hako-person-rpc-integration-client PRIVATE
             hakoniwa-core::shakoc)
 
+        if(HAKO_ENABLE_ASYNC_SERVICE)
         # Stage A of hakoniwa-robot-runtime docs/design-async-rpc.md: cancel as an event.
         add_executable(hako-async-rpc-cancel-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_cancel_server.cpp
@@ -520,6 +531,7 @@ if(BUILD_TESTING)
             ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-async-rpc-cancel-client PRIVATE
             hakoniwa-core::shakoc)
+        endif()
 
         add_executable(hako-async-rpc-integration-conductor
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
@@ -557,6 +569,7 @@ if(BUILD_TESTING)
             set_tests_properties(hako-person-rpc-input-integration PROPERTIES
                 TIMEOUT 60
                 LABELS integration)
+            if(HAKO_ENABLE_ASYNC_SERVICE)
             add_test(NAME hako-async-rpc-cancel-integration
                 COMMAND bash
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_async_rpc_cancel.bash
@@ -566,6 +579,7 @@ if(BUILD_TESTING)
             set_tests_properties(hako-async-rpc-cancel-integration PROPERTIES
                 TIMEOUT 60
                 LABELS integration)
+            endif()
         endif()
     endif()
     add_test(NAME hako-mirror-runtime-contract
