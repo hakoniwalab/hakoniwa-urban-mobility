@@ -64,6 +64,7 @@ class ControlModeTest(unittest.TestCase):
                 os.environ,
                 {"HAKONIWA_WORK_DIR": str(selected_workdir)},
             ):
+                os.environ.pop("HAKONIWA_FOUNDATION_PREFIX", None)
                 self.assertEqual(
                     multi_car.foundation_install(),
                     selected_workdir.resolve() / "foundation/install",
