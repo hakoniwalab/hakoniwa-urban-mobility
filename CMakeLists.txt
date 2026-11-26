@@ -328,6 +328,7 @@ if(BUILD_TESTING)
         ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES})
     target_compile_features(hako-person-step-plant-test PRIVATE cxx_std_20)
     target_include_directories(hako-person-step-plant-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR}
         ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
@@ -410,6 +411,7 @@ if(BUILD_TESTING)
             ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES})
         target_compile_features(hako-async-service-reply-server PRIVATE cxx_std_20)
         target_include_directories(hako-async-service-reply-server PRIVATE
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
             ${HAKO_RUNTIME_INCLUDE_DIR}
             ${HAKO_RUNTIME_SRC_DIR}
             ${HAKO_PDU_TYPES_INCLUDE})
@@ -455,6 +457,7 @@ if(BUILD_TESTING)
         target_compile_definitions(hako-async-service-lockstep-server PRIVATE
             ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
         target_include_directories(hako-async-service-lockstep-server PRIVATE
+            ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
             ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR} ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-async-service-lockstep-server PRIVATE hakoniwa-core::assets)
 
@@ -618,6 +621,7 @@ if(BUILD_TESTING)
         ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
     target_compile_features(hako-async-service-zero-step-test PRIVATE cxx_std_20)
     target_include_directories(hako-async-service-zero-step-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR}
         ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-zero-step-contract
@@ -646,6 +650,7 @@ if(BUILD_TESTING)
     target_compile_definitions(hako-async-service-lockstep-test PRIVATE
         ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-async-service-lockstep-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-lockstep-contract
         COMMAND hako-async-service-lockstep-test)
@@ -655,6 +660,7 @@ if(BUILD_TESTING)
         ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
     target_compile_features(hako-async-service-lockstep-disabled-test PRIVATE cxx_std_20)
     target_include_directories(hako-async-service-lockstep-disabled-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-lockstep-disabled-contract
         COMMAND hako-async-service-lockstep-disabled-test)
@@ -671,6 +677,7 @@ if(BUILD_TESTING)
     target_compile_definitions(hako-async-service-lockstep-runner-test PRIVATE
         ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-async-service-lockstep-runner-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR}
         ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
@@ -706,6 +713,7 @@ if(BUILD_TESTING)
     target_compile_definitions(hako-ackermann-step-service-test PRIVATE
         ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-ackermann-step-service-test PRIVATE
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests
         ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR}
         ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
     target_link_libraries(hako-ackermann-step-service-test PRIVATE hakoniwa-core::assets)
