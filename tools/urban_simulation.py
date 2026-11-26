@@ -569,7 +569,9 @@ def apply_managed_runtime(target: ManagedTarget, composition_path: Path) -> None
             # step (and once at initialization), both read in simulation-time order, by the
             # plant process that owns the Car (plant_processes).
             plant = next((p for p in plants if p["vehicles"] is None or car.name in p["vehicles"]), plants[0])
-            inputs = [multi_car.COMMAND_PDU] + ([multi_car.TIRE_FRICTION_PDU] if car.tire_friction_input else [])
+            inputs = [multi_car.COMMAND_PDU]
+            if car.tire_friction_input is True:
+                inputs.append(multi_car.TIRE_FRICTION_PDU)
             for pdu in inputs:
                 urban_realtime.lockstep_input(launcher, plant["launcher_asset"], car.name, pdu)
                 unnotify(Path(plant["root"]) / "urban-car-comm.json", car.name, pdu)

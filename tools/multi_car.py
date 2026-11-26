@@ -620,10 +620,10 @@ def resolve_config(config_path: Path) -> dict:
             height_value = float(spawn[height_key])
             yaw_deg = float(spawn["yaw_deg"])
             tire_grip = float(vehicle_input.get("tire_grip", 1.0))
-            # A program sets the tires' friction (tire_friction PDU), not a route.
+            # Programs can set tire friction via the PDU or the AckermannStep request.
             tire_friction_input = vehicle_input.get("tire_friction", False)
-            if not isinstance(tire_friction_input, bool):
-                raise TypeError("tire_friction must be a boolean")
+            if not isinstance(tire_friction_input, bool) and tire_friction_input != "ackermann_step":
+                raise TypeError("tire_friction must be a boolean or ackermann_step")
         except (KeyError, TypeError, ValueError) as error:
             raise RecipeError(f"invalid vehicle entry at index {index - 1}") from error
         if not name or name in names:
@@ -650,7 +650,7 @@ def resolve_config(config_path: Path) -> dict:
             "control_mode": control_mode,
             # Multiplies a route's road_friction (apps/car/scenario_executor.py).
             "tire_grip": tire_grip,
-            **({"tire_friction": True} if tire_friction_input else {}),
+            **({"tire_friction": tire_friction_input} if tire_friction_input else {}),
             "spawn_enu": {
                 "frame": "city_origin_local_enu",
                 "east_m": east,
@@ -1439,14 +1439,16 @@ def _materialize_vehicle_configs(work: Path, vehicle: dict) -> tuple[list[dict],
         "pdu_robot": name,
     })
     if vehicle.get("tire_friction"):
-        # Its route sets road friction: the four tires take the tire_friction
-        # PDU (and win over the World's friction by the geom priority the
-        # fleet MJCF gives them, materialize_vehicle_fleet_model).
+        # The fleet MJCF gives these four tires priority over the World's friction.
         friction_path = work / f"{key}-tire-friction.json"
+        friction_input = (
+            {"source": "ackermann_step"} if vehicle["tire_friction"] == "ackermann_step"
+            else {"pdu_name": TIRE_FRICTION_PDU, "message_type": "std_msgs/Float64"}
+        )
         write_json(friction_path, {
             "schema_version": 1,
             "spec": {"geoms": [prefix + geom for geom in TIRE_GEOMS]},
-            "input": {"pdu_name": TIRE_FRICTION_PDU, "message_type": "std_msgs/Float64"},
+            "input": friction_input,
         })
         components.append({
             "id": prefix + "tire_friction",
@@ -1564,12 +1566,20 @@ def materialize_runtime(
     command_types_path.write_text(
         json.dumps(command_pdu_types, indent=2) + "\n", encoding="utf-8"
     )
+    step_friction_vehicles = {
+        vehicle["name"] for vehicle in vehicles if vehicle.get("tire_friction") == "ackermann_step"
+    }
+    step_types_path = work / "urban-car-step-command-pdutypes.json"
+    if step_friction_vehicles:
+        write_json(step_types_path, [item for item in command_pdu_types if item["name"] != TIRE_FRICTION_PDU])
     state_types_path.write_text(
         json.dumps(state_pdu_types, indent=2) + "\n", encoding="utf-8"
     )
     pdu_def = {
         "paths": [
             {"id": "urban-car-command", "path": str(command_types_path)},
+            *([{"id": "urban-car-step-command", "path": str(step_types_path)}]
+              if step_friction_vehicles else []),
             {"id": plant["state_types_id"], "path": str(state_types_path)},
             *[
                 {"id": f"urban-drone-mirror-{index}", "path": str(mirror["pdu_types"])}
@@ -1578,7 +1588,8 @@ def materialize_runtime(
         ],
         "robots": [
             *[
-                {"name": vehicle["name"], "pdutypes_id": "urban-car-command"}
+                {"name": vehicle["name"], "pdutypes_id": "urban-car-step-command"
+                 if vehicle["name"] in step_friction_vehicles else "urban-car-command"}
                 for vehicle in vehicles
             ],
             {"name": plant["state_robot"], "pdutypes_id": plant["state_types_id"]},
@@ -1600,6 +1611,7 @@ def materialize_runtime(
                 # The runtime takes these on receive events.
                 {"name": item["name"], "notify_on_recv": item["name"] in (COMMAND_PDU, TIRE_FRICTION_PDU)}
                 for item in command_pdu_types
+                if vehicle["name"] not in step_friction_vehicles or item["name"] != TIRE_FRICTION_PDU
             ],
         } for vehicle in vehicles],
         {

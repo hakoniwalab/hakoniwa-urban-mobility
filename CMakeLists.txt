@@ -303,6 +303,15 @@ if(BUILD_TESTING)
     target_link_libraries(hako-geom-friction-mujoco-plant-test PRIVATE
         mujoco-common
         ${HAKO_MUJOCO_LIBRARY})
+    if(HAKO_ENABLE_ASYNC_SERVICE)
+        target_sources(hako-geom-friction-mujoco-plant-test PRIVATE
+            ${ACKERMANN_STEP_SERVICE_SOURCE}
+            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
+            ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
+            ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp)
+        target_include_directories(hako-geom-friction-mujoco-plant-test BEFORE PRIVATE
+            ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
+    endif()
 
     add_executable(hako-geom-friction-configuration-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_configuration.cpp
@@ -416,7 +425,7 @@ if(BUILD_TESTING)
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_rpc_client.cpp)
         target_compile_features(hako-ackermann-rpc-integration-client PRIVATE cxx_std_20)
         target_include_directories(hako-ackermann-rpc-integration-client PRIVATE
-            ${HAKO_PDU_TYPES_INCLUDE})
+            ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-ackermann-rpc-integration-client PRIVATE
             hakoniwa-core::shakoc)
 
@@ -553,7 +562,8 @@ if(BUILD_TESTING)
             target_compile_definitions(hako-ackermann-step-service-server PRIVATE
                 HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
             target_include_directories(hako-ackermann-step-service-server PRIVATE
-                ${RUNTIME_INCLUDE} ${RUNTIME_SRC} ${HAKO_PDU_TYPES_INCLUDE})
+                ${RUNTIME_INCLUDE} ${RUNTIME_SRC}
+                ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
             target_link_libraries(hako-ackermann-step-service-server PRIVATE hakoniwa-core::assets)
             add_test(NAME hako-ackermann-step-service-integration
                 COMMAND bash
@@ -577,6 +587,8 @@ if(BUILD_TESTING)
             add_executable(hako-ackermann-step-urban-client
                 ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_urban_client.cpp)
             target_compile_features(hako-ackermann-step-urban-client PRIVATE cxx_std_20)
+            target_include_directories(hako-ackermann-step-urban-client PRIVATE
+                ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types)
             target_link_libraries(hako-ackermann-step-urban-client PRIVATE hakoniwa-core::shakoc)
             add_test(NAME urban-ackermann-step-service-repeatability
                 COMMAND bash
@@ -600,7 +612,8 @@ if(BUILD_TESTING)
                 ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_startup_client.cpp
                 ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
             target_compile_features(hako-ackermann-step-startup-client PRIVATE cxx_std_20)
-            target_include_directories(hako-ackermann-step-startup-client PRIVATE ${RUNTIME_SRC})
+            target_include_directories(hako-ackermann-step-startup-client PRIVATE
+                ${RUNTIME_SRC} ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types)
             target_link_libraries(hako-ackermann-step-startup-client PRIVATE hakoniwa-core::assets)
             add_test(NAME urban-ackermann-step-service-startup
                 COMMAND bash
