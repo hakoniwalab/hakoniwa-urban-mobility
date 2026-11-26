@@ -623,6 +623,20 @@ if(BUILD_TESTING)
     add_test(NAME hako-async-service-zero-step-contract
         COMMAND hako-async-service-zero-step-test)
 
+    # Stage 2b (robot-runtime notes 2026-11-27): one robot owns several services.
+    add_executable(hako-robot-services-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_robot_services.cpp
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
+    target_compile_features(hako-robot-services-test PRIVATE cxx_std_20)
+    target_include_directories(hako-robot-services-test PRIVATE
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests)
+    add_test(NAME hako-robot-services-contract
+        COMMAND hako-robot-services-test)
+
     add_executable(hako-async-service-lockstep-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_lockstep.cpp
         ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
