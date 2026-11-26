@@ -28,7 +28,7 @@ option(HAKO_URBAN_ENABLE_VIEWER "Build the native MuJoCo viewer" ON)
 option(HAKO_URBAN_ENABLE_MIRROR
     "Build the opt-in Robot Runtime Plant Directive extension (Mirror, geom friction)" OFF)
 foreach(required_path IN ITEMS
-    "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src/runtime/actuator_runtime.cpp"
+    "${HAKONIWA_ROBOT_RUNTIME_ROOT}/cmake/HakoniwaRobotRuntimeSources.cmake"
     "${HAKONIWA_MUJOCO_ROBOTS_ROOT}/src/CMakeLists.txt"
     "${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types/ackermann_msgs/pdu_cpptype_AckermannDrive.hpp"
     "${HAKONIWA_FOUNDATION_PREFIX}/include")
@@ -76,72 +76,43 @@ find_library(HAKO_PDU_ENDPOINT_LIBRARY
     PATHS "${HAKONIWA_FOUNDATION_PREFIX}/lib"
     REQUIRED NO_DEFAULT_PATH)
 
-set(RUNTIME_SRC "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src")
-set(LOCKSTEP_GATE_SOURCE ${RUNTIME_SRC}/runner/lockstep_gate.cpp)
-set(RUNTIME_INCLUDE "${HAKONIWA_ROBOT_RUNTIME_ROOT}/include")
+include("${HAKONIWA_ROBOT_RUNTIME_ROOT}/cmake/HakoniwaRobotRuntimeSources.cmake")
 
 add_executable(urban-car-hakoniwa-asset
     apps/car/urban-car-hakoniwa-asset.cpp
-    ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory.cpp
-    ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp
-    ${RUNTIME_SRC}/runtime/source/joint_trajectory_command_source.cpp
-    ${RUNTIME_SRC}/runtime/source/joy_command_source.cpp
-    ${RUNTIME_SRC}/runtime/source/ackermann_drive_command_source.cpp
-    ${RUNTIME_SRC}/runtime/controller/scalar_pdu_command_controller.cpp
-    ${RUNTIME_SRC}/runtime/controller/joint_trajectory_controller.cpp
-    ${RUNTIME_SRC}/runtime/controller/manual_controller.cpp
-    ${RUNTIME_SRC}/runtime/controller/hold_controller.cpp
-    ${RUNTIME_SRC}/runtime/controller/ackermann_controller.cpp
-    ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-    ${RUNTIME_SRC}/runtime/publisher/joint_state_publisher.cpp
-    ${RUNTIME_SRC}/runtime/publisher/multi_dof_joint_state_publisher.cpp
-    ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/float64_pdu_event_reader.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/joint_state_pdu_writer.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/joint_trajectory_pdu_event_reader.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/joy_pdu_event_reader.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_pdu_event_reader.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/multi_dof_joint_state_pdu_writer.cpp
-    ${LOCKSTEP_GATE_SOURCE}
-    ${RUNTIME_SRC}/runner/runner_factory.cpp
-    ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
-    ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_runner.cpp
-    ${RUNTIME_SRC}/factory/manifest_factory.cpp
-    ${RUNTIME_SRC}/factory/manifest_factory_manifest.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_manifest.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_actuator.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_ackermann.cpp
-    ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
+    ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+    ${HAKO_RUNTIME_ACTUATOR_COMPONENTS_SOURCES}
+    ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES}
+    ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
+    ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
+    ${HAKO_RUNTIME_MOBILE_BASE_STATE_SOURCES}
+    ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES}
+    ${HAKO_RUNTIME_ACTUATOR_PDU_SOURCES}
+    ${HAKO_RUNTIME_MOBILE_BASE_PDU_SOURCES}
+    ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
+    ${HAKO_RUNTIME_RUNNER_FACTORY_SOURCES}
+    ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES}
+    ${HAKO_RUNTIME_HAKONIWA_RUNNER_SOURCES}
+    ${HAKO_RUNTIME_MANIFEST_FACTORY_SOURCES}
+    ${HAKO_RUNTIME_ACTUATOR_MANIFEST_SOURCES}
+    ${HAKO_RUNTIME_MOBILE_BASE_MANIFEST_SOURCES}
     ${HAKO_MUJOCO_ROOT}/src/config/asset_manifest.cpp
 )
 
-set(ASYNC_SERVICE_SOURCES
-    ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-    ${RUNTIME_SRC}/runner/hakoniwa/core_async_service_server.cpp)
-set(ACKERMANN_STEP_SERVICE_SOURCE
-    ${RUNTIME_SRC}/adapters/endpoint/ackermann_step_service.cpp)
-set(PERSON_STEP_SERVICE_SOURCE
-    ${RUNTIME_SRC}/adapters/endpoint/person_step_service.cpp)
 target_sources(urban-car-hakoniwa-asset PRIVATE
-    ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-    ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
-    ${ASYNC_SERVICE_SOURCES}
-    ${ACKERMANN_STEP_SERVICE_SOURCE}
-    ${PERSON_STEP_SERVICE_SOURCE})
+    ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+    ${HAKO_RUNTIME_PERSON_STEP_READER_SOURCES}
+    ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+    ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
+    ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES}
+    ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES})
 
 if(HAKO_URBAN_ENABLE_MIRROR)
     target_sources(urban-car-hakoniwa-asset PRIVATE
-        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
-        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
-        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/mirror_body_twist_pdu_reader.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/impulse_collision_pdu_writer.cpp)
+        ${HAKO_RUNTIME_MIRROR_RUNTIME_SOURCES}
+        ${HAKO_RUNTIME_GEOM_FRICTION_SOURCES}
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_MANIFEST_SOURCES}
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_PDU_SOURCES})
 endif()
 
 set_target_properties(urban-car-hakoniwa-asset PROPERTIES
@@ -164,18 +135,18 @@ file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/bin/urban-car-hakoniwa-asset.features
     @ONLY)
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
-    HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1
+    ${HAKO_RUNTIME_MOBILE_BASE_DEFINE}=1
     # --lockstep-input (repeatable P0 runs; off unless the option is given)
-    HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1
-    HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
+    ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1
+    ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
-    ${RUNTIME_INCLUDE}
-    ${RUNTIME_SRC}
+    ${HAKO_RUNTIME_INCLUDE_DIR}
+    ${HAKO_RUNTIME_SRC_DIR}
     ${HAKO_MUJOCO_ROOT}/src
     ${HAKO_MUJOCO_ROOT}/include
-    ${HAKONIWA_FOUNDATION_PREFIX}/include
-    ${HAKONIWA_FOUNDATION_PREFIX}/include/hakoniwa
+    ${HAKO_RUNTIME_FOUNDATION_INCLUDE_DIR}
+    ${HAKO_RUNTIME_FOUNDATION_HAKONIWA_INCLUDE_DIR}
     ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types
     ${HAKO_PDU_TYPES_INCLUDE})
 target_include_directories(urban-car-hakoniwa-asset SYSTEM PRIVATE
@@ -218,13 +189,13 @@ endif()
 if(BUILD_TESTING)
     add_executable(hako-mirror-mujoco-plant-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_mujoco_plant.cpp
-        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
+        ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES})
     target_compile_features(hako-mirror-mujoco-plant-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-mujoco-plant-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-mirror-mujoco-plant-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
         ${HAKO_MUJOCO_ROOT}/include)
     target_include_directories(hako-mirror-mujoco-plant-test SYSTEM PRIVATE
@@ -239,44 +210,36 @@ if(BUILD_TESTING)
 
     add_executable(hako-mirror-configuration-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_configuration.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_manifest.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_actuator.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_MANIFEST_SOURCES}
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_MANIFEST_SOURCES})
     target_compile_features(hako-mirror-configuration-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-configuration-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-mirror-configuration-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
 
     add_executable(hako-mirror-runtime-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mirror_runtime.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
-        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_MIRROR_RUNTIME_SOURCES})
     target_compile_features(hako-mirror-runtime-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mirror-runtime-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-mirror-runtime-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
 
     add_executable(hako-geom-friction-mujoco-plant-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_mujoco_plant.cpp
-        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
+        ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES})
     target_compile_features(hako-geom-friction-mujoco-plant-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-geom-friction-mujoco-plant-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-geom-friction-mujoco-plant-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
         ${HAKO_MUJOCO_ROOT}/include)
     target_include_directories(hako-geom-friction-mujoco-plant-test SYSTEM PRIVATE
@@ -289,85 +252,63 @@ if(BUILD_TESTING)
         mujoco-common
         ${HAKO_MUJOCO_LIBRARY})
     target_sources(hako-geom-friction-mujoco-plant-test PRIVATE
-        ${ACKERMANN_STEP_SERVICE_SOURCE}
-        ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
-        ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp)
+        ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES}
+        ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_GEOM_FRICTION_SOURCES}
+        ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES})
     target_include_directories(hako-geom-friction-mujoco-plant-test BEFORE PRIVATE
         ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
 
     add_executable(hako-geom-friction-configuration-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_configuration.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_manifest.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_actuator.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_trajectory.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_manual.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_state_output.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_mirror.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory_geom_friction.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_MANIFEST_SOURCES}
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_MANIFEST_SOURCES})
     target_compile_features(hako-geom-friction-configuration-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-geom-friction-configuration-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-geom-friction-configuration-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
 
     add_executable(hako-geom-friction-runtime-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_runtime.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory.cpp
-        ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/joint_trajectory_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/joy_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/mirror_body_state_source.cpp
-        ${RUNTIME_SRC}/runtime/controller/scalar_pdu_command_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/joint_trajectory_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/manual_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/hold_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/mirror_body_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/geom_friction_controller.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/publisher/joint_state_publisher.cpp
-        ${RUNTIME_SRC}/runtime/publisher/impulse_collision_publisher.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_ACTUATOR_COMPONENTS_SOURCES}
+        ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES}
+        ${HAKO_RUNTIME_MIRROR_RUNTIME_SOURCES}
+        ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
+        ${HAKO_RUNTIME_GEOM_FRICTION_SOURCES})
     target_compile_features(hako-geom-friction-runtime-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-geom-friction-runtime-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_PLANT_DIRECTIVE=1)
+        ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=1)
     target_include_directories(hako-geom-friction-runtime-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
 
     add_executable(hako-mobile-base-runtime-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_mobile_base_runtime.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/source/scalar_pdu_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/joint_trajectory_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/joy_command_source.cpp
-        ${RUNTIME_SRC}/runtime/source/ackermann_drive_command_source.cpp
-        ${RUNTIME_SRC}/runtime/controller/scalar_pdu_command_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/joint_trajectory_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/manual_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/hold_controller.cpp
-        ${RUNTIME_SRC}/runtime/controller/ackermann_controller.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/publisher/joint_state_publisher.cpp
-        ${RUNTIME_SRC}/runtime/publisher/multi_dof_joint_state_publisher.cpp
-        ${RUNTIME_SRC}/runtime/runtime_factory.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES}
+        ${HAKO_RUNTIME_ACTUATOR_COMPONENTS_SOURCES}
+        ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
+        ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
+        ${HAKO_RUNTIME_MOBILE_BASE_STATE_SOURCES})
     target_compile_features(hako-mobile-base-runtime-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mobile-base-runtime-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_MOBILE_BASE=1)
+        ${HAKO_RUNTIME_MOBILE_BASE_DEFINE}=1)
     target_include_directories(hako-mobile-base-runtime-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-mobile-base-runtime-contract
         COMMAND hako-mobile-base-runtime-test)
     add_executable(hako-lockstep-driver-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_hakoniwa_asset_driver_lockstep.cpp
-        ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES})
     target_compile_features(hako-lockstep-driver-test PRIVATE cxx_std_20)
     target_include_directories(hako-lockstep-driver-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
     target_link_libraries(hako-lockstep-driver-test PRIVATE hakoniwa-core::assets)
     add_test(NAME hako-lockstep-driver-contract
         COMMAND hako-lockstep-driver-test)
@@ -382,13 +323,13 @@ if(BUILD_TESTING)
 
     add_executable(hako-person-step-plant-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_person_step.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp)
+        ${HAKO_RUNTIME_PERSON_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES})
     target_compile_features(hako-person-step-plant-test PRIVATE cxx_std_20)
     target_include_directories(hako-person-step-plant-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
         ${HAKO_MUJOCO_ROOT}/include
         ${HAKO_PDU_TYPES_INCLUDE})
@@ -404,7 +345,7 @@ if(BUILD_TESTING)
         hakoniwa-core::assets)
     add_test(NAME hako-person-step-plant-contract
         COMMAND hako-person-step-plant-test)
-    target_sources(hako-person-step-plant-test PRIVATE ${PERSON_STEP_SERVICE_SOURCE})
+    target_sources(hako-person-step-plant-test PRIVATE ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES})
     add_test(NAME hako-person-step-service-contract
         COMMAND hako-person-step-plant-test --service)
     add_executable(hako-ackermann-rpc-integration-client
@@ -417,13 +358,13 @@ if(BUILD_TESTING)
 
     add_executable(hako-person-rpc-integration-server
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_rpc_server.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/person_step_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+        ${HAKO_RUNTIME_PERSON_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES})
     target_compile_features(hako-person-rpc-integration-server PRIVATE cxx_std_20)
     target_include_directories(hako-person-rpc-integration-server PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_PDU_TYPES_INCLUDE})
     target_link_libraries(hako-person-rpc-integration-server PRIVATE
         hakoniwa-core::assets)
@@ -437,18 +378,18 @@ if(BUILD_TESTING)
         hakoniwa-core::shakoc)
 
     target_compile_definitions(hako-person-rpc-integration-server PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+        ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_sources(hako-person-rpc-integration-server PRIVATE
-        ${PERSON_STEP_SERVICE_SOURCE}
-        ${ASYNC_SERVICE_SOURCES}
-        ${LOCKSTEP_GATE_SOURCE}
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp)
+        ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+        ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
+        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES})
     add_executable(hako-async-rpc-integration-conductor
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
     target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
     target_include_directories(hako-async-rpc-integration-conductor PRIVATE
-        ${HAKONIWA_FOUNDATION_PREFIX}/include/hakoniwa)
+        ${HAKO_RUNTIME_FOUNDATION_HAKONIWA_INCLUDE_DIR})
     target_link_libraries(hako-async-rpc-integration-conductor PRIVATE
         hakoniwa-core::conductor)
 
@@ -463,14 +404,14 @@ if(BUILD_TESTING)
             TIMEOUT 60 LABELS integration)
         add_executable(hako-async-service-reply-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_service_reply_server.cpp
-            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
-            ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-            ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-            ${ASYNC_SERVICE_SOURCES})
+            ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES}
+            ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+            ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+            ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES})
         target_compile_features(hako-async-service-reply-server PRIVATE cxx_std_20)
         target_include_directories(hako-async-service-reply-server PRIVATE
-            ${RUNTIME_INCLUDE}
-            ${RUNTIME_SRC}
+            ${HAKO_RUNTIME_INCLUDE_DIR}
+            ${HAKO_RUNTIME_SRC_DIR}
             ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-async-service-reply-server PRIVATE hakoniwa-core::assets)
 
@@ -505,16 +446,16 @@ if(BUILD_TESTING)
 
         add_executable(hako-async-service-lockstep-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_service_lockstep_server.cpp
-            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
-            ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-            ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-            ${ASYNC_SERVICE_SOURCES}
-            ${LOCKSTEP_GATE_SOURCE})
+            ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES}
+            ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+            ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+            ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
+            ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES})
         target_compile_features(hako-async-service-lockstep-server PRIVATE cxx_std_20)
         target_compile_definitions(hako-async-service-lockstep-server PRIVATE
-            HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+            ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
         target_include_directories(hako-async-service-lockstep-server PRIVATE
-            ${RUNTIME_INCLUDE} ${RUNTIME_SRC} ${HAKO_PDU_TYPES_INCLUDE})
+            ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR} ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-async-service-lockstep-server PRIVATE hakoniwa-core::assets)
 
         add_executable(hako-async-service-lockstep-client
@@ -537,18 +478,18 @@ if(BUILD_TESTING)
 
         add_executable(hako-ackermann-step-service-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_service_server.cpp
-            ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
-            ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-            ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-            ${ASYNC_SERVICE_SOURCES}
-            ${LOCKSTEP_GATE_SOURCE}
-            ${ACKERMANN_STEP_SERVICE_SOURCE})
+            ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+            ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES}
+            ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+            ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+            ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
+            ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
+            ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES})
         target_compile_features(hako-ackermann-step-service-server PRIVATE cxx_std_20)
         target_compile_definitions(hako-ackermann-step-service-server PRIVATE
-            HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+            ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
         target_include_directories(hako-ackermann-step-service-server PRIVATE
-            ${RUNTIME_INCLUDE} ${RUNTIME_SRC}
+            ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR}
             ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
         target_link_libraries(hako-ackermann-step-service-server PRIVATE hakoniwa-core::assets)
         add_test(NAME hako-ackermann-step-service-integration
@@ -596,10 +537,10 @@ if(BUILD_TESTING)
             TIMEOUT 60 LABELS integration)
         add_executable(hako-ackermann-step-startup-client
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_startup_client.cpp
-            ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+            ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES})
         target_compile_features(hako-ackermann-step-startup-client PRIVATE cxx_std_20)
         target_include_directories(hako-ackermann-step-startup-client PRIVATE
-            ${RUNTIME_SRC} ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types)
+            ${HAKO_RUNTIME_SRC_DIR} ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types)
         target_link_libraries(hako-ackermann-step-startup-client PRIVATE hakoniwa-core::assets)
         add_test(NAME urban-ackermann-step-service-startup
             COMMAND bash
@@ -662,70 +603,66 @@ if(BUILD_TESTING)
     # Stage B0 of robot-runtime docs/design-async-rpc.md: two rates.
     add_executable(hako-runtime-two-rates-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_runtime_two_rates.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES})
     target_compile_features(hako-runtime-two-rates-test PRIVATE cxx_std_20)
     target_include_directories(hako-runtime-two-rates-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-runtime-two-rates-contract
         COMMAND hako-runtime-two-rates-test)
 
     add_executable(hako-async-service-zero-step-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_zero_step.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/controller/hold_controller.cpp
-        ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp)
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
     target_compile_features(hako-async-service-zero-step-test PRIVATE cxx_std_20)
     target_include_directories(hako-async-service-zero-step-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-zero-step-contract
         COMMAND hako-async-service-zero-step-test)
 
     add_executable(hako-async-service-lockstep-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_lockstep.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-        ${LOCKSTEP_GATE_SOURCE})
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES})
     target_compile_features(hako-async-service-lockstep-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-async-service-lockstep-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+        ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-async-service-lockstep-test PRIVATE
-        ${RUNTIME_INCLUDE} ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-lockstep-contract
         COMMAND hako-async-service-lockstep-test)
 
     add_executable(hako-async-service-lockstep-disabled-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_lockstep.cpp
-        ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp)
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
     target_compile_features(hako-async-service-lockstep-disabled-test PRIVATE cxx_std_20)
     target_include_directories(hako-async-service-lockstep-disabled-test PRIVATE
-        ${RUNTIME_INCLUDE} ${RUNTIME_SRC})
+        ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR})
     add_test(NAME hako-async-service-lockstep-disabled-contract
         COMMAND hako-async-service-lockstep-disabled-test)
 
     add_executable(hako-async-service-lockstep-runner-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_hakoniwa_runner_async_service_lockstep.cpp
-        ${RUNTIME_SRC}/adapters/physics/mujoco/mujoco_actuator_plant.cpp
-        ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
-        ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_runner.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-        ${LOCKSTEP_GATE_SOURCE})
+        ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES}
+        ${HAKO_RUNTIME_HAKONIWA_ASSET_DRIVER_SOURCES}
+        ${HAKO_RUNTIME_HAKONIWA_RUNNER_SOURCES}
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES})
     target_compile_features(hako-async-service-lockstep-runner-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-async-service-lockstep-runner-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+        ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-async-service-lockstep-runner-test PRIVATE
-        ${RUNTIME_INCLUDE}
-        ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR}
         ${HAKO_MUJOCO_ROOT}/src
         ${HAKO_MUJOCO_ROOT}/include
-        ${HAKONIWA_FOUNDATION_PREFIX}/include
-        ${HAKONIWA_FOUNDATION_PREFIX}/include/hakoniwa)
+        ${HAKO_RUNTIME_FOUNDATION_INCLUDE_DIR}
+        ${HAKO_RUNTIME_FOUNDATION_HAKONIWA_INCLUDE_DIR})
     target_include_directories(hako-async-service-lockstep-runner-test SYSTEM PRIVATE
         ${HAKO_MUJOCO_INCLUDE}
         ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
@@ -745,19 +682,17 @@ if(BUILD_TESTING)
 
     add_executable(hako-ackermann-step-service-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_ackermann_step_service.cpp
-        ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_rpc_event_reader.cpp
-        ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
-        ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
-        ${RUNTIME_SRC}/runtime/controller/ackermann_controller.cpp
-        ${RUNTIME_SRC}/runtime/source/ackermann_drive_command_source.cpp
-        ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-        ${LOCKSTEP_GATE_SOURCE}
-        ${ACKERMANN_STEP_SERVICE_SOURCE})
+        ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
+        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
+        ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES})
     target_compile_features(hako-ackermann-step-service-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-ackermann-step-service-test PRIVATE
-        HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+        ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_include_directories(hako-ackermann-step-service-test PRIVATE
-        ${RUNTIME_INCLUDE} ${RUNTIME_SRC}
+        ${HAKO_RUNTIME_INCLUDE_DIR} ${HAKO_RUNTIME_SRC_DIR}
         ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
     target_link_libraries(hako-ackermann-step-service-test PRIVATE hakoniwa-core::assets)
     add_test(NAME hako-ackermann-step-service-contract
