@@ -1795,23 +1795,25 @@ def configure_step_services(
     people: tuple[str, ...] | list[str] = (),
     lockstep: bool = False,
 ) -> None:
-    """Write the complete Step service list into an existing car asset manifest."""
+    """Write the robots with Step services into an existing car asset manifest."""
     manifest = load_json(manifest_path, "Car asset manifest")
-    services = [
-        {"name": f"{prefix}/{robot}", "type": service_type, "pdu_robot": robot}
-        for robots, prefix, service_type in (
+    service_options = {"lockstep": True} if lockstep else {}
+    robots = [
+        {
+            "name": robot,
+            "builtin": builtin,
+            "services": [{"name": f"{prefix}/{robot}", **service_options}],
+        }
+        for names, prefix, builtin in (
             (vehicles, "CarService/AckermannStep", "ackermann_step"),
             (people, "PersonService/PersonStep", "person_step"),
         )
-        for robot in robots
+        for robot in names
     ]
-    if lockstep:
-        for service in services:
-            service["lockstep"] = True
-    if services:
-        manifest["services"] = services
+    if robots:
+        manifest["robots"] = robots
     else:
-        manifest.pop("services", None)
+        manifest.pop("robots", None)
     write_json(manifest_path, manifest)
 
 

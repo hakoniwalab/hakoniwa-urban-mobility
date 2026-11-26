@@ -450,7 +450,7 @@ every step. Town04 P0: 10 runs under a heavy CPU load were identical, about 25 %
 slower than without lockstep.
 
 The other lockstep route is Robot Runtime's car and person services (lockstep
-services in the asset manifest's `services`; hakoniwa-robot-runtime
+services in the asset manifest's `robots[].services[]`; hakoniwa-robot-runtime
 `docs/configuration.md` section 2.4). The program calls
 `CarService/AckermannStep/<car>` (and `PersonService/PersonStep/<person>`) and
 gets the state after physics in the reply; the request drives the step, so the
