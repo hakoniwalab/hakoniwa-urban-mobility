@@ -375,6 +375,10 @@ if(BUILD_TESTING)
         COMMAND
             "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
             "${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_gen_rpc_service_config.py")
+    add_test(NAME hako-rpc-step-golden-comparison-contract
+        COMMAND
+            "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
+            "${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_check_step_goldens.py")
 
     add_executable(hako-person-step-plant-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_person_step.cpp
@@ -645,6 +649,15 @@ if(BUILD_TESTING)
                 "${HAKO_MUJOCO_LIBRARY_FILE}" --contract)
         set_tests_properties(urban-service-manifest-contract PROPERTIES
             TIMEOUT 90 LABELS integration)
+        set_tests_properties(
+            hako-person-step-service-integration
+            hako-ackermann-step-service-integration
+            hako-ackermann-step-service-two-integration
+            urban-ackermann-step-service-repeatability
+            urban-ackermann-step-service-two-repeatability
+            urban-person-step-service-mixed-repeatability
+            PROPERTIES ENVIRONMENT
+                "HAKO_GOLDEN_COMPILER=${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
     # Stage B0 of robot-runtime docs/design-async-rpc.md: two rates.
     add_executable(hako-runtime-two-rates-test
