@@ -696,6 +696,17 @@ if(BUILD_TESTING)
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration)
             set_tests_properties(hako-ackermann-step-service-integration PROPERTIES
                 TIMEOUT 60 LABELS integration)
+            foreach(scenario IN ITEMS two timeout)
+                add_test(NAME hako-ackermann-step-service-${scenario}-integration
+                    COMMAND bash
+                        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_ackermann_step_service.bash
+                        ${CMAKE_CURRENT_BINARY_DIR}
+                        ${HAKONIWA_FOUNDATION_PREFIX}
+                        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration
+                        "" ${scenario})
+                set_tests_properties(hako-ackermann-step-service-${scenario}-integration PROPERTIES
+                    TIMEOUT 60 LABELS integration)
+            endforeach()
             add_executable(hako-ackermann-step-urban-client
                 ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_urban_client.cpp)
             target_compile_features(hako-ackermann-step-urban-client PRIVATE cxx_std_20)
@@ -708,6 +719,31 @@ if(BUILD_TESTING)
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration
                     ${CMAKE_CURRENT_SOURCE_DIR})
             set_tests_properties(urban-ackermann-step-service-repeatability PROPERTIES
+                TIMEOUT 60 LABELS integration)
+            add_test(NAME urban-ackermann-step-service-two-repeatability
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_ackermann_step_service.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration
+                    ${CMAKE_CURRENT_SOURCE_DIR} two)
+            set_tests_properties(urban-ackermann-step-service-two-repeatability PROPERTIES
+                TIMEOUT 60 LABELS integration)
+            add_executable(hako-ackermann-step-startup-client
+                ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/ackermann_step_startup_client.cpp
+                ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp)
+            target_compile_features(hako-ackermann-step-startup-client PRIVATE cxx_std_20)
+            target_compile_definitions(hako-ackermann-step-startup-client PRIVATE HAKO_ENABLE_ASYNC_RPC_INPUT=1)
+            target_include_directories(hako-ackermann-step-startup-client PRIVATE ${RUNTIME_SRC})
+            target_link_libraries(hako-ackermann-step-startup-client PRIVATE hakoniwa-core::assets)
+            add_test(NAME urban-ackermann-step-service-startup
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_ackermann_step_service.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration
+                    ${CMAKE_CURRENT_SOURCE_DIR} startup)
+            set_tests_properties(urban-ackermann-step-service-startup PROPERTIES
                 TIMEOUT 60 LABELS integration)
             endif()
         endif()
