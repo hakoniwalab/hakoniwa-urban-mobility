@@ -175,16 +175,19 @@ if(CMAKE_CONFIGURATION_TYPES)
             "RUNTIME_OUTPUT_DIRECTORY_${config_upper}" "${CMAKE_BINARY_DIR}/bin")
     endforeach()
 endif()
-# What this plant is built with, next to it: tools/multi_car.py reads it
-# (built_with_plant_directive) instead of CMakeCache.txt, so a packaged plant
-# (tools/urban_portable.py collect) still tells whether road friction works.
+# What this plant is built with, next to it, including for packaged plants.
 if(HAKO_URBAN_ENABLE_MIRROR)
     set(_urban_plant_directive true)
 else()
     set(_urban_plant_directive false)
 endif()
+if(HAKO_ENABLE_ASYNC_SERVICE)
+    set(_urban_async_service true)
+else()
+    set(_urban_async_service false)
+endif()
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/bin/urban-car-hakoniwa-asset.features.json"
-    CONTENT "{\n  \"schema_version\": 1,\n  \"plant_directive\": @_urban_plant_directive@\n}\n"
+    CONTENT "{\n  \"schema_version\": 1,\n  \"plant_directive\": @_urban_plant_directive@,\n  \"async_service\": @_urban_async_service@\n}\n"
     @ONLY)
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
@@ -778,6 +781,15 @@ if(BUILD_TESTING)
                     ${HAKO_MUJOCO_LIBRARY})
             set_tests_properties(urban-person-step-service-mixed-repeatability PROPERTIES
                 TIMEOUT 120 LABELS integration)
+            add_test(NAME urban-service-manifest-contract
+                COMMAND ${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_step_urban.py
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${CMAKE_CURRENT_SOURCE_DIR}
+                    ${HAKO_MUJOCO_LIBRARY} --contract)
+            set_tests_properties(urban-service-manifest-contract PROPERTIES
+                TIMEOUT 90 LABELS integration)
             endif()
         endif()
     endif()

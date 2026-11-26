@@ -41,10 +41,6 @@ struct Options {
     std::string rpc_service_config;
     /** Physics steps per Hakoniwa step (inputs once, state once per Hakoniwa step). */
     std::uint32_t physics_substeps {1};
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
-    bool ackermann_rpc_use_service {false};
-    bool person_rpc_use_service {false};
-#endif
 };
 
 void usage(const char* program)
@@ -67,20 +63,12 @@ void usage(const char* program)
 #if HAKO_ENABLE_ASYNC_RPC_INPUT
         << "  --ackermann-rpc-input VEHICLE\n"
         << "                          use CarService/AckermannStep/<VEHICLE> (repeatable)\n"
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
-        << "  --ackermann-rpc-use-service\n"
-        << "                          use the lockstep service pipeline (default: legacy RPC)\n"
-#endif
         << "  --person-rpc-input PERSON\n"
         << "                          use PersonService/PersonStep/<PERSON> (repeatable)\n"
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
-        << "  --person-rpc-use-service\n"
-        << "                          use the lockstep service pipeline (default: legacy RPC)\n"
-#endif
         << "  --person-contact-log PATH\n"
         << "                          append person contact events as JSONL\n"
         << "  --rpc-service-config PATH\n"
-        << "                          Core service definition JSON for RPC inputs\n"
+        << "                          Core service definition JSON for RPC inputs and manifest services\n"
 #endif
         << "  --view-model            inspect the model without Hakoniwa\n"
         << "  --validate-model        load the XML/MJB and exit\n";
@@ -134,12 +122,6 @@ bool parse_options(int argc, char** argv, Options& options)
 #if HAKO_ENABLE_ASYNC_RPC_INPUT
         } else if (argument == "--ackermann-rpc-input" && index + 1 < argc) {
             options.ackermann_rpc_inputs.emplace_back(argv[++index]);
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
-        } else if (argument == "--ackermann-rpc-use-service") {
-            options.ackermann_rpc_use_service = true;
-        } else if (argument == "--person-rpc-use-service") {
-            options.person_rpc_use_service = true;
-#endif
         } else if (argument == "--person-rpc-input" && index + 1 < argc) {
             options.person_rpc_inputs.emplace_back(argv[++index]);
         } else if (argument == "--person-contact-log" && index + 1 < argc) {
@@ -164,19 +146,6 @@ bool parse_options(int argc, char** argv, Options& options)
         usage(argv[0]);
         return false;
     }
-#if HAKO_ENABLE_ASYNC_RPC_INPUT
-    if ((options.ackermann_rpc_inputs.empty()
-            && options.person_rpc_inputs.empty())
-        != options.rpc_service_config.empty()) {
-        std::cerr << "RPC inputs and --rpc-service-config must be used together\n";
-        return false;
-    }
-    if (!options.person_contact_log.empty()
-        && options.person_rpc_inputs.empty()) {
-        std::cerr << "--person-contact-log requires --person-rpc-input\n";
-        return false;
-    }
-#endif
     return true;
 }
 
@@ -231,10 +200,6 @@ int run_asset(const Options& options)
         "UrbanPeople",
         options.rpc_service_config,
         options.person_contact_log,
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
-        options.ackermann_rpc_use_service,
-        options.person_rpc_use_service,
-#endif
     };
     auto runner = hakoniwa::robot_runtime::factory::ManifestFactory::create(
         options.manifest, std::move(config));

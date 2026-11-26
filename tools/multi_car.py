@@ -1773,6 +1773,33 @@ def materialize_runtime(
     }
 
 
+def configure_step_services(
+    manifest_path: Path,
+    *,
+    vehicles: tuple[str, ...] | list[str] = (),
+    people: tuple[str, ...] | list[str] = (),
+    lockstep: bool = False,
+) -> None:
+    """Write the complete Step service list into an existing car asset manifest."""
+    manifest = load_json(manifest_path, "Car asset manifest")
+    services = [
+        {"name": f"{prefix}/{robot}", "type": service_type, "pdu_robot": robot}
+        for robots, prefix, service_type in (
+            (vehicles, "CarService/AckermannStep", "ackermann_step"),
+            (people, "PersonService/PersonStep", "person_step"),
+        )
+        for robot in robots
+    ]
+    if lockstep:
+        for service in services:
+            service["lockstep"] = True
+    if services:
+        manifest["services"] = services
+    else:
+        manifest.pop("services", None)
+    write_json(manifest_path, manifest)
+
+
 def materialize_browser_visualization(
     runtime_files: dict[str, Path],
     work: Path,
