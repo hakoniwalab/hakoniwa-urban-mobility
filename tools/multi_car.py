@@ -153,7 +153,10 @@ def sha256(path: Path) -> str:
 
 
 def foundation_install() -> Path:
-    """Resolve the active Foundation prefix through the Business Pack contract."""
+    """Use an explicit install prefix or the Business Pack work directory."""
+    prefix = os.environ.get("HAKONIWA_FOUNDATION_PREFIX")
+    if prefix:
+        return Path(prefix).expanduser().absolute()
     return resolve_foundation_install(BUSINESS_PACK)
 
 
@@ -617,10 +620,10 @@ def resolve_config(config_path: Path) -> dict:
             height_value = float(spawn[height_key])
             yaw_deg = float(spawn["yaw_deg"])
             tire_grip = float(vehicle_input.get("tire_grip", 1.0))
-            # A program sets the tires' friction (tire_friction PDU), not a route.
+            # Programs can set tire friction via the PDU or the AckermannStep request.
             tire_friction_input = vehicle_input.get("tire_friction", False)
-            if not isinstance(tire_friction_input, bool):
-                raise TypeError("tire_friction must be a boolean")
+            if not isinstance(tire_friction_input, bool) and tire_friction_input != "ackermann_step":
+                raise TypeError("tire_friction must be a boolean or ackermann_step")
         except (KeyError, TypeError, ValueError) as error:
             raise RecipeError(f"invalid vehicle entry at index {index - 1}") from error
         if not name or name in names:
@@ -647,7 +650,7 @@ def resolve_config(config_path: Path) -> dict:
             "control_mode": control_mode,
             # Multiplies a route's road_friction (apps/car/scenario_executor.py).
             "tire_grip": tire_grip,
-            **({"tire_friction": True} if tire_friction_input else {}),
+            **({"tire_friction": tire_friction_input} if tire_friction_input else {}),
             "spawn_enu": {
                 "frame": "city_origin_local_enu",
                 "east_m": east,
@@ -1436,14 +1439,16 @@ def _materialize_vehicle_configs(work: Path, vehicle: dict) -> tuple[list[dict],
         "pdu_robot": name,
     })
     if vehicle.get("tire_friction"):
-        # Its route sets road friction: the four tires take the tire_friction
-        # PDU (and win over the World's friction by the geom priority the
-        # fleet MJCF gives them, materialize_vehicle_fleet_model).
+        # The fleet MJCF gives these four tires priority over the World's friction.
         friction_path = work / f"{key}-tire-friction.json"
+        friction_input = (
+            {"source": "ackermann_step"} if vehicle["tire_friction"] == "ackermann_step"
+            else {"pdu_name": TIRE_FRICTION_PDU, "message_type": "std_msgs/Float64"}
+        )
         write_json(friction_path, {
             "schema_version": 1,
             "spec": {"geoms": [prefix + geom for geom in TIRE_GEOMS]},
-            "input": {"pdu_name": TIRE_FRICTION_PDU, "message_type": "std_msgs/Float64"},
+            "input": friction_input,
         })
         components.append({
             "id": prefix + "tire_friction",
@@ -1561,12 +1566,20 @@ def materialize_runtime(
     command_types_path.write_text(
         json.dumps(command_pdu_types, indent=2) + "\n", encoding="utf-8"
     )
+    step_friction_vehicles = {
+        vehicle["name"] for vehicle in vehicles if vehicle.get("tire_friction") == "ackermann_step"
+    }
+    step_types_path = work / "urban-car-step-command-pdutypes.json"
+    if step_friction_vehicles:
+        write_json(step_types_path, [item for item in command_pdu_types if item["name"] != TIRE_FRICTION_PDU])
     state_types_path.write_text(
         json.dumps(state_pdu_types, indent=2) + "\n", encoding="utf-8"
     )
     pdu_def = {
         "paths": [
             {"id": "urban-car-command", "path": str(command_types_path)},
+            *([{"id": "urban-car-step-command", "path": str(step_types_path)}]
+              if step_friction_vehicles else []),
             {"id": plant["state_types_id"], "path": str(state_types_path)},
             *[
                 {"id": f"urban-drone-mirror-{index}", "path": str(mirror["pdu_types"])}
@@ -1575,7 +1588,8 @@ def materialize_runtime(
         ],
         "robots": [
             *[
-                {"name": vehicle["name"], "pdutypes_id": "urban-car-command"}
+                {"name": vehicle["name"], "pdutypes_id": "urban-car-step-command"
+                 if vehicle["name"] in step_friction_vehicles else "urban-car-command"}
                 for vehicle in vehicles
             ],
             {"name": plant["state_robot"], "pdutypes_id": plant["state_types_id"]},
@@ -1597,6 +1611,7 @@ def materialize_runtime(
                 # The runtime takes these on receive events.
                 {"name": item["name"], "notify_on_recv": item["name"] in (COMMAND_PDU, TIRE_FRICTION_PDU)}
                 for item in command_pdu_types
+                if vehicle["name"] not in step_friction_vehicles or item["name"] != TIRE_FRICTION_PDU
             ],
         } for vehicle in vehicles],
         {
@@ -1771,6 +1786,33 @@ def materialize_runtime(
         "joint_state": joint_state_path,
         "multi_dof_state": multi_dof_path,
     }
+
+
+def configure_step_services(
+    manifest_path: Path,
+    *,
+    vehicles: tuple[str, ...] | list[str] = (),
+    people: tuple[str, ...] | list[str] = (),
+    lockstep: bool = False,
+) -> None:
+    """Write the complete Step service list into an existing car asset manifest."""
+    manifest = load_json(manifest_path, "Car asset manifest")
+    services = [
+        {"name": f"{prefix}/{robot}", "type": service_type, "pdu_robot": robot}
+        for robots, prefix, service_type in (
+            (vehicles, "CarService/AckermannStep", "ackermann_step"),
+            (people, "PersonService/PersonStep", "person_step"),
+        )
+        for robot in robots
+    ]
+    if lockstep:
+        for service in services:
+            service["lockstep"] = True
+    if services:
+        manifest["services"] = services
+    else:
+        manifest.pop("services", None)
+    write_json(manifest_path, manifest)
 
 
 def materialize_browser_visualization(

@@ -64,6 +64,7 @@ class ControlModeTest(unittest.TestCase):
                 os.environ,
                 {"HAKONIWA_WORK_DIR": str(selected_workdir)},
             ):
+                os.environ.pop("HAKONIWA_FOUNDATION_PREFIX", None)
                 self.assertEqual(
                     multi_car.foundation_install(),
                     selected_workdir.resolve() / "foundation/install",
@@ -486,6 +487,33 @@ class ControlModeTest(unittest.TestCase):
         self.assertEqual(multi_car.vehicle_camera({"type_definition": {"front_camera": own}}, {"front_camera": shared}), own)
         self.assertEqual(multi_car.vehicle_camera({"type_definition": {"front_camera": None}}, {"front_camera": shared}), shared)
         self.assertIsNone(multi_car.vehicle_camera({"type_definition": {}}, {}))
+
+    def test_rpc_tire_friction_omits_only_that_cars_friction_channel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            vehicles = multi_car.resolve_config(ROOT / "recipes/multi-car-viewer.yaml")["vehicles"][:2]
+            vehicles[0]["tire_friction"] = "ackermann_step"
+            vehicles[1]["tire_friction"] = True
+            files = multi_car.materialize_runtime(work / "fleet.mjb", work, vehicles)
+            manifest = json.loads(files["manifest"].read_text(encoding="utf-8"))
+            friction = {item["pdu_robot"]: json.loads(Path(item["config"]).read_text(encoding="utf-8"))
+                        for item in manifest["components"] if item["type"] == "geom_friction"}
+            self.assertEqual(friction["Car-1"]["input"], {"source": "ackermann_step"})
+            self.assertEqual(len(friction["Car-1"]["spec"]["geoms"]), 4)
+            self.assertEqual(friction["Car-2"]["input"], {
+                "pdu_name": "tire_friction", "message_type": "std_msgs/Float64"})
+
+            definition = json.loads(files["pdu_def"].read_text(encoding="utf-8"))
+            types = {item["id"]: json.loads(Path(item["path"]).read_text(encoding="utf-8"))
+                     for item in definition["paths"]}
+            robots = {item["name"]: item["pdutypes_id"] for item in definition["robots"]}
+            comm = json.loads(files["comm"].read_text(encoding="utf-8"))
+            for vehicle, has_friction in (("Car-1", False), ("Car-2", True)):
+                channels = {item["name"] for item in types[robots[vehicle]]}
+                self.assertEqual("tire_friction" in channels, has_friction)
+                [robot] = [item for item in comm["io"]["robots"] if item["name"] == vehicle]
+                receives = {item["name"] for item in robot["pdu"]}
+                self.assertEqual("tire_friction" in receives, has_friction)
 
     def test_runtime_materializes_independent_commands_and_fleet_state(self):
         with tempfile.TemporaryDirectory() as directory:

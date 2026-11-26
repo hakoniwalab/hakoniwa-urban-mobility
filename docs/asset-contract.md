@@ -354,6 +354,15 @@ extension, section 5.8) sets `tire_friction_input: true` in the Composition
 and that program writes the Car's `tire_friction` PDU itself (for example dry
 0.9, wet 0.5). Until it writes one the tires keep the model's friction.
 
+A Car driven through Robot Runtime's car service (`CarService/AckermannStep/<car>`,
+for example a hakoniwa-scenario-pro link with `vehicle_input: rpc`) sets
+`tire_friction_input: ackermann_step` instead. The friction then travels in
+the `tire_friction` field of the AckermannStep request: a positive value sets
+the Car's four tires from the first physics substep of that step, and 0 or
+less keeps the current value. No `tire_friction` PDU channel is built for that
+Car. (The PDU path above applies its value from the next physics step; the
+request path applies it in the same step.)
+
 ### 4.5 Wind and rotor faults (Drone schedules)
 
 A waypoint of a Drone schedule (`apps/drone/drone_schedule.py`, the
@@ -406,7 +415,7 @@ vehicles:
     params: { <param>: <value> }          # optional, section 4.1
     spawn: { east_m, north_m, yaw_deg }   # section 5.4; optional up_m selects a level
     tire_grip: <number>                   # optional, Cars only, default 1.0 (section 4.4)
-    tire_friction_input: true             # optional, Cars only: a program writes tire_friction (4.4)
+    tire_friction_input: true | ackermann_step   # optional, Cars only: a program writes the tire_friction PDU, or sends it in the AckermannStep request (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
 simulation: { realtime, lockstep, step_msec, plant_processes, lockstep_pipeline }  # optional; realtime default true, lockstep default false, step_msec 10, plant_processes 1, lockstep_pipeline false
@@ -439,6 +448,15 @@ It publishes the car state every step, and the program waits for that state in
 turn. The program must write those inputs once at its initialization and then
 every step. Town04 P0: 10 runs under a heavy CPU load were identical, about 25 %
 slower than without lockstep.
+
+The other lockstep route is Robot Runtime's car and person services (lockstep
+services in the asset manifest's `services`; hakoniwa-robot-runtime
+`docs/configuration.md` section 2.4). The program calls
+`CarService/AckermannStep/<car>` (and `PersonService/PersonStep/<person>`) and
+gets the state after physics in the reply; the request drives the step, so the
+program sends the next request only after the reply. The PDU lockstep inputs and
+the services wait at the same step gate. hakoniwa-scenario-pro uses this route
+for `vehicle_input: rpc`.
 
 `simulation.plant_processes: K` (with `realtime: false` and `viewer.enabled: false`,
 Cars only) splits the Cars over K plant processes, each with its own MuJoCo model and state

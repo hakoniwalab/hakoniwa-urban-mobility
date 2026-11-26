@@ -16,7 +16,7 @@ import json
 import math
 from pathlib import Path
 import sys
-from typing import Callable
+from typing import Callable, Literal
 
 import yaml
 
@@ -93,7 +93,7 @@ class Vehicle:
     tire_grip: float | None = None
     # Cars only: a program (e.g. a scenario extension) sets the tires' friction
     # through the tire_friction PDU (section 4.4).
-    tire_friction_input: bool = False
+    tire_friction_input: bool | Literal["ackermann_step"] = False
 
 
 @dataclass(frozen=True)
@@ -217,8 +217,8 @@ def _vehicle(entry: object, index: int, assets: dict[str, Asset]) -> Vehicle:
         if tire_grip <= 0.0:
             raise CompositionError(f"vehicle {name} tire_grip must be positive")
     tire_friction_input = entry.get("tire_friction_input", False)
-    if not isinstance(tire_friction_input, bool):
-        raise CompositionError(f"vehicle {name} tire_friction_input must be true or false")
+    if not isinstance(tire_friction_input, bool) and tire_friction_input != "ackermann_step":
+        raise CompositionError(f"vehicle {name} tire_friction_input must be true or false, or ackermann_step")
     if tire_friction_input and asset.category != "car":
         raise CompositionError(f"vehicle {name}: tire_friction_input is only for Cars")
     return Vehicle(
@@ -738,7 +738,7 @@ def _car_inputs(
                     "up_m": _spawn_up(car, ground),
                 },
                 **({"tire_grip": car.tire_grip} if car.tire_grip is not None else {}),
-                **({"tire_friction": True} if car.tire_friction_input else {}),
+                **({"tire_friction": car.tire_friction_input} if car.tire_friction_input else {}),
             }
             for car in cars
         ],

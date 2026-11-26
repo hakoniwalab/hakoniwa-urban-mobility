@@ -32,10 +32,6 @@ struct Options {
     std::uint64_t conductor_max_delay_msec {100};
     /** Lockstep inputs ("robot/pdu"): each step waits for a new command. */
     std::vector<std::string> lockstep_inputs;
-    /** Vehicles driven by CarService/AckermannStep/<vehicle> instead of PDU. */
-    std::vector<std::string> ackermann_rpc_inputs;
-    /** People driven by PersonService/PersonStep/<person> instead of PDU. */
-    std::vector<std::string> person_rpc_inputs;
     /** Optional JSONL record of person contact edges. */
     std::string person_contact_log;
     std::string rpc_service_config;
@@ -60,16 +56,10 @@ void usage(const char* program)
         << "  --lockstep-input ROBOT/PDU\n"
         << "                          step only when a new command has arrived on this\n"
         << "                          Ackermann input (repeatable; repeatable runs)\n"
-#if HAKO_ENABLE_ASYNC_RPC_INPUT
-        << "  --ackermann-rpc-input VEHICLE\n"
-        << "                          use CarService/AckermannStep/<VEHICLE> (repeatable)\n"
-        << "  --person-rpc-input PERSON\n"
-        << "                          use PersonService/PersonStep/<PERSON> (repeatable)\n"
         << "  --person-contact-log PATH\n"
         << "                          append person contact events as JSONL\n"
         << "  --rpc-service-config PATH\n"
-        << "                          Core service definition JSON for RPC inputs\n"
-#endif
+        << "                          Core service definition JSON for manifest services\n"
         << "  --view-model            inspect the model without Hakoniwa\n"
         << "  --validate-model        load the XML/MJB and exit\n";
 }
@@ -119,16 +109,10 @@ bool parse_options(int argc, char** argv, Options& options)
             }
         } else if (argument == "--lockstep-input" && index + 1 < argc) {
             options.lockstep_inputs.emplace_back(argv[++index]);
-#if HAKO_ENABLE_ASYNC_RPC_INPUT
-        } else if (argument == "--ackermann-rpc-input" && index + 1 < argc) {
-            options.ackermann_rpc_inputs.emplace_back(argv[++index]);
-        } else if (argument == "--person-rpc-input" && index + 1 < argc) {
-            options.person_rpc_inputs.emplace_back(argv[++index]);
         } else if (argument == "--person-contact-log" && index + 1 < argc) {
             options.person_contact_log = argv[++index];
         } else if (argument == "--rpc-service-config" && index + 1 < argc) {
             options.rpc_service_config = argv[++index];
-#endif
         } else if (argument == "--view-model") {
             options.view_model_only = true;
         } else if (argument == "--validate-model") {
@@ -146,19 +130,6 @@ bool parse_options(int argc, char** argv, Options& options)
         usage(argv[0]);
         return false;
     }
-#if HAKO_ENABLE_ASYNC_RPC_INPUT
-    if ((options.ackermann_rpc_inputs.empty()
-            && options.person_rpc_inputs.empty())
-        != options.rpc_service_config.empty()) {
-        std::cerr << "RPC inputs and --rpc-service-config must be used together\n";
-        return false;
-    }
-    if (!options.person_contact_log.empty()
-        && options.person_rpc_inputs.empty()) {
-        std::cerr << "--person-contact-log requires --person-rpc-input\n";
-        return false;
-    }
-#endif
     return true;
 }
 
@@ -201,18 +172,15 @@ int view_model(const std::string& manifest_path)
 int run_asset(const Options& options)
 {
     auto config = hakoniwa::robot_runtime::factory::ManifestFactoryConfig {
-        options.asset_name,
-        options.endpoint_name,
-        options.realtime_sync_cycle_msec,
-        options.owns_conductor,
-        options.conductor_max_delay_msec * 1000,
-        options.lockstep_inputs,
-        options.physics_substeps,
-        options.ackermann_rpc_inputs,
-        options.person_rpc_inputs,
-        "UrbanPeople",
-        options.rpc_service_config,
-        options.person_contact_log,
+        .asset_name = options.asset_name,
+        .endpoint_name = options.endpoint_name,
+        .realtime_sync_cycle_msec = options.realtime_sync_cycle_msec,
+        .owns_conductor = options.owns_conductor,
+        .conductor_max_delay_usec = options.conductor_max_delay_msec * 1000,
+        .lockstep_inputs = options.lockstep_inputs,
+        .physics_substeps = options.physics_substeps,
+        .async_rpc_service_definition_path = options.rpc_service_config,
+        .person_contact_log_path = options.person_contact_log,
     };
     auto runner = hakoniwa::robot_runtime::factory::ManifestFactory::create(
         options.manifest, std::move(config));

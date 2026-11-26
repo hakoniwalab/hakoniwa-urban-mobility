@@ -140,6 +140,9 @@ class CompositionTest(Fixture):
         path = self.composition(vehicle={"tire_friction_input": True})
         [vehicle] = urban_composition.to_car_config(self.load(path), "wet")["inputs"]["ackermann_vehicles"]["vehicles"]
         self.assertIs(vehicle["tire_friction"], True)
+        rpc = self.load(self.composition(vehicle={"tire_friction_input": "ackermann_step"}))
+        [rpc_vehicle] = urban_composition.to_car_config(rpc, "wet")["inputs"]["ackermann_vehicles"]["vehicles"]
+        self.assertEqual(rpc_vehicle["tire_friction"], "ackermann_step")
         [plain] = urban_composition.to_car_config(self.load(self.composition()), "wet")["inputs"]["ackermann_vehicles"]["vehicles"]
         self.assertNotIn("tire_friction", plain)
         with self.assertRaisesRegex(urban_composition.CompositionError, "true or false"):
