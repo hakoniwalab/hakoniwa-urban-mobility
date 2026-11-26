@@ -78,12 +78,20 @@ find_library(HAKO_PDU_ENDPOINT_LIBRARY
 
 include("${HAKONIWA_ROBOT_RUNTIME_ROOT}/cmake/HakoniwaRobotRuntimeSources.cmake")
 
+function(hako_add_robot_plugins target)
+    target_sources(${target} PRIVATE ${HAKO_RUNTIME_ROBOT_PLUGIN_SOURCES})
+    target_include_directories(${target} SYSTEM BEFORE PRIVATE
+        ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types
+        ${HAKO_PDU_TYPES_INCLUDE}
+        ${HAKO_MUJOCO_ROOT}/thirdparty/nolman/single_include)
+    target_link_libraries(${target} PRIVATE ${CMAKE_DL_LIBS})
+endfunction()
+
 add_executable(urban-car-hakoniwa-asset
     apps/car/urban-car-hakoniwa-asset.cpp
     ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
     ${HAKO_RUNTIME_ACTUATOR_COMPONENTS_SOURCES}
     ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES}
-    ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
     ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
     ${HAKO_RUNTIME_MOBILE_BASE_STATE_SOURCES}
     ${HAKO_RUNTIME_MUJOCO_PLANT_SOURCES}
@@ -103,9 +111,8 @@ target_sources(urban-car-hakoniwa-asset PRIVATE
     ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
     ${HAKO_RUNTIME_PERSON_STEP_READER_SOURCES}
     ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
-    ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
-    ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES}
-    ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES})
+    ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES})
+hako_add_robot_plugins(urban-car-hakoniwa-asset)
 
 if(HAKO_URBAN_ENABLE_MIRROR)
     target_sources(urban-car-hakoniwa-asset PRIVATE
@@ -251,13 +258,7 @@ if(BUILD_TESTING)
     target_link_libraries(hako-geom-friction-mujoco-plant-test PRIVATE
         mujoco-common
         ${HAKO_MUJOCO_LIBRARY})
-    target_sources(hako-geom-friction-mujoco-plant-test PRIVATE
-        ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES}
-        ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
-        ${HAKO_RUNTIME_GEOM_FRICTION_SOURCES}
-        ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES})
-    target_include_directories(hako-geom-friction-mujoco-plant-test BEFORE PRIVATE
-        ${HAKONIWA_PDU_REGISTRY_ROOT}/pdu/types ${HAKO_PDU_TYPES_INCLUDE})
+    hako_add_robot_plugins(hako-geom-friction-mujoco-plant-test)
 
     add_executable(hako-geom-friction-configuration-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_geom_friction_configuration.cpp
@@ -291,9 +292,10 @@ if(BUILD_TESTING)
         ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
         ${HAKO_RUNTIME_SCALAR_PDU_COMMAND_SOURCES}
         ${HAKO_RUNTIME_ACTUATOR_COMPONENTS_SOURCES}
-        ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
         ${HAKO_RUNTIME_HOLD_CONTROLLER_SOURCES}
-        ${HAKO_RUNTIME_MOBILE_BASE_STATE_SOURCES})
+        ${HAKO_RUNTIME_MOBILE_BASE_STATE_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
+    hako_add_robot_plugins(hako-mobile-base-runtime-test)
     target_compile_features(hako-mobile-base-runtime-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-mobile-base-runtime-test PRIVATE
         ${HAKO_RUNTIME_MOBILE_BASE_DEFINE}=1)
@@ -346,7 +348,7 @@ if(BUILD_TESTING)
         hakoniwa-core::assets)
     add_test(NAME hako-person-step-plant-contract
         COMMAND hako-person-step-plant-test)
-    target_sources(hako-person-step-plant-test PRIVATE ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES})
+    hako_add_robot_plugins(hako-person-step-plant-test)
     add_test(NAME hako-person-step-service-contract
         COMMAND hako-person-step-plant-test --service)
     add_executable(hako-ackermann-rpc-integration-client
@@ -381,11 +383,11 @@ if(BUILD_TESTING)
     target_compile_definitions(hako-person-rpc-integration-server PRIVATE
         ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
     target_sources(hako-person-rpc-integration-server PRIVATE
-        ${HAKO_RUNTIME_PERSON_STEP_SERVICE_SOURCES}
         ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
         ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
         ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
         ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES})
+    hako_add_robot_plugins(hako-person-rpc-integration-server)
     add_executable(hako-async-rpc-integration-conductor
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_conductor.cpp)
     target_compile_features(hako-async-rpc-integration-conductor PRIVATE cxx_std_20)
@@ -486,8 +488,8 @@ if(BUILD_TESTING)
             ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
             ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
             ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
-            ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
-            ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES})
+            ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES})
+        hako_add_robot_plugins(hako-ackermann-step-service-server)
         target_compile_features(hako-ackermann-step-service-server PRIVATE cxx_std_20)
         target_compile_definitions(hako-ackermann-step-service-server PRIVATE
             ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
@@ -717,10 +719,9 @@ if(BUILD_TESTING)
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_ackermann_step_service.cpp
         ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
         ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
-        ${HAKO_RUNTIME_MOBILE_BASE_COMMAND_SOURCES}
         ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
-        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES}
-        ${HAKO_RUNTIME_ACKERMANN_STEP_SERVICE_SOURCES})
+        ${HAKO_RUNTIME_LOCKSTEP_GATE_SOURCES})
+    hako_add_robot_plugins(hako-ackermann-step-service-test)
     target_compile_features(hako-ackermann-step-service-test PRIVATE cxx_std_20)
     target_compile_definitions(hako-ackermann-step-service-test PRIVATE
         ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1)
