@@ -90,6 +90,7 @@ find_library(HAKO_PDU_ENDPOINT_LIBRARY
     REQUIRED NO_DEFAULT_PATH)
 
 set(RUNTIME_SRC "${HAKONIWA_ROBOT_RUNTIME_ROOT}/src")
+set(LOCKSTEP_GATE_SOURCE ${RUNTIME_SRC}/runner/lockstep_gate.cpp)
 set(RUNTIME_INCLUDE "${HAKONIWA_ROBOT_RUNTIME_ROOT}/include")
 
 add_executable(urban-car-hakoniwa-asset
@@ -115,6 +116,7 @@ add_executable(urban-car-hakoniwa-asset
     ${RUNTIME_SRC}/adapters/endpoint/joy_pdu_event_reader.cpp
     ${RUNTIME_SRC}/adapters/endpoint/ackermann_drive_pdu_event_reader.cpp
     ${RUNTIME_SRC}/adapters/endpoint/multi_dof_joint_state_pdu_writer.cpp
+    ${LOCKSTEP_GATE_SOURCE}
     ${RUNTIME_SRC}/runner/runner_factory.cpp
     ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_asset_driver.cpp
     ${RUNTIME_SRC}/runner/hakoniwa/hakoniwa_runner.cpp
@@ -145,11 +147,8 @@ if(HAKO_ENABLE_ASYNC_SERVICE)
         ${RUNTIME_SRC}/adapters/endpoint/ackermann_step_service.cpp)
     set(PERSON_STEP_SERVICE_SOURCE
         ${RUNTIME_SRC}/adapters/endpoint/person_step_service.cpp)
-    set(ASYNC_SERVICE_LOCKSTEP_SOURCE
-        ${RUNTIME_SRC}/runtime/service/async_service_lockstep_gate.cpp)
     target_sources(urban-car-hakoniwa-asset PRIVATE
         ${ASYNC_SERVICE_SOURCES}
-        ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
         ${ACKERMANN_STEP_SERVICE_SOURCE}
         ${PERSON_STEP_SERVICE_SOURCE})
 endif()
@@ -539,7 +538,7 @@ if(BUILD_TESTING)
         target_sources(hako-person-rpc-integration-server PRIVATE
             ${PERSON_STEP_SERVICE_SOURCE}
             ${ASYNC_SERVICE_SOURCES}
-            ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
+            ${LOCKSTEP_GATE_SOURCE}
             ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
             ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp)
         # Stage A of hakoniwa-robot-runtime docs/design-async-rpc.md: cancel as an event.
@@ -671,7 +670,7 @@ if(BUILD_TESTING)
                 ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
                 ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
                 ${ASYNC_SERVICE_SOURCES}
-                ${ASYNC_SERVICE_LOCKSTEP_SOURCE})
+                ${LOCKSTEP_GATE_SOURCE})
             target_compile_features(hako-async-service-lockstep-server PRIVATE cxx_std_20)
             target_compile_definitions(hako-async-service-lockstep-server PRIVATE
                 HAKO_ENABLE_ASYNC_RPC_INPUT=1
@@ -706,7 +705,7 @@ if(BUILD_TESTING)
                 ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
                 ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
                 ${ASYNC_SERVICE_SOURCES}
-                ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
+                ${LOCKSTEP_GATE_SOURCE}
                 ${ACKERMANN_STEP_SERVICE_SOURCE})
             target_compile_features(hako-ackermann-step-service-server PRIVATE cxx_std_20)
             target_compile_definitions(hako-ackermann-step-service-server PRIVATE
@@ -836,7 +835,7 @@ if(BUILD_TESTING)
             ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
             ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
             ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-            ${ASYNC_SERVICE_LOCKSTEP_SOURCE})
+            ${LOCKSTEP_GATE_SOURCE})
         target_compile_features(hako-async-service-lockstep-test PRIVATE cxx_std_20)
         target_compile_definitions(hako-async-service-lockstep-test PRIVATE
             HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
@@ -863,7 +862,7 @@ if(BUILD_TESTING)
             ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
             ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp
             ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-            ${ASYNC_SERVICE_LOCKSTEP_SOURCE})
+            ${LOCKSTEP_GATE_SOURCE})
         target_compile_features(hako-async-service-lockstep-runner-test PRIVATE cxx_std_20)
         target_compile_definitions(hako-async-service-lockstep-runner-test PRIVATE
             HAKO_ENABLE_ASYNC_RPC_INPUT=1
@@ -901,7 +900,7 @@ if(BUILD_TESTING)
             ${RUNTIME_SRC}/runtime/controller/ackermann_controller.cpp
             ${RUNTIME_SRC}/runtime/source/ackermann_drive_command_source.cpp
             ${RUNTIME_SRC}/runtime/service/async_service_pipeline.cpp
-            ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
+            ${LOCKSTEP_GATE_SOURCE}
             ${ACKERMANN_STEP_SERVICE_SOURCE})
         target_compile_features(hako-ackermann-step-service-test PRIVATE cxx_std_20)
         target_compile_definitions(hako-ackermann-step-service-test PRIVATE
