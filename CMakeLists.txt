@@ -641,6 +641,18 @@ if(BUILD_TESTING)
     add_test(NAME hako-robot-services-contract
         COMMAND hako-robot-services-test)
 
+    # Stage 2c-0 (robot-runtime notes 2026-11-27): Plant operations beside the commands.
+    add_executable(hako-plant-operations-test
+        ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_plant_operations.cpp
+        ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
+        ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES})
+    target_compile_features(hako-plant-operations-test PRIVATE cxx_std_20)
+    target_include_directories(hako-plant-operations-test PRIVATE
+        ${HAKO_RUNTIME_INCLUDE_DIR}
+        ${HAKO_RUNTIME_SRC_DIR})
+    add_test(NAME hako-plant-operations-contract
+        COMMAND hako-plant-operations-test)
+
     add_executable(hako-async-service-lockstep-test
         ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/test_async_service_lockstep.cpp
         ${HAKO_RUNTIME_ACTUATOR_LOOP_SOURCES}
