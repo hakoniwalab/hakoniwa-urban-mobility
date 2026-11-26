@@ -43,6 +43,7 @@ struct Options {
     std::uint32_t physics_substeps {1};
 #if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
     bool ackermann_rpc_use_service {false};
+    bool person_rpc_use_service {false};
 #endif
 };
 
@@ -72,6 +73,10 @@ void usage(const char* program)
 #endif
         << "  --person-rpc-input PERSON\n"
         << "                          use PersonService/PersonStep/<PERSON> (repeatable)\n"
+#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
+        << "  --person-rpc-use-service\n"
+        << "                          use the lockstep service pipeline (default: legacy RPC)\n"
+#endif
         << "  --person-contact-log PATH\n"
         << "                          append person contact events as JSONL\n"
         << "  --rpc-service-config PATH\n"
@@ -132,6 +137,8 @@ bool parse_options(int argc, char** argv, Options& options)
 #if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
         } else if (argument == "--ackermann-rpc-use-service") {
             options.ackermann_rpc_use_service = true;
+        } else if (argument == "--person-rpc-use-service") {
+            options.person_rpc_use_service = true;
 #endif
         } else if (argument == "--person-rpc-input" && index + 1 < argc) {
             options.person_rpc_inputs.emplace_back(argv[++index]);
@@ -226,6 +233,7 @@ int run_asset(const Options& options)
         options.person_contact_log,
 #if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
         options.ackermann_rpc_use_service,
+        options.person_rpc_use_service,
 #endif
     };
     auto runner = hakoniwa::robot_runtime::factory::ManifestFactory::create(

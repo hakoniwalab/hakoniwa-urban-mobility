@@ -143,12 +143,15 @@ if(HAKO_ENABLE_ASYNC_SERVICE)
         ${RUNTIME_SRC}/runner/hakoniwa/core_async_service_server.cpp)
     set(ACKERMANN_STEP_SERVICE_SOURCE
         ${RUNTIME_SRC}/adapters/endpoint/ackermann_step_service.cpp)
+    set(PERSON_STEP_SERVICE_SOURCE
+        ${RUNTIME_SRC}/adapters/endpoint/person_step_service.cpp)
     set(ASYNC_SERVICE_LOCKSTEP_SOURCE
         ${RUNTIME_SRC}/runtime/service/async_service_lockstep_gate.cpp)
     target_sources(urban-car-hakoniwa-asset PRIVATE
         ${ASYNC_SERVICE_SOURCES}
         ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
-        ${ACKERMANN_STEP_SERVICE_SOURCE})
+        ${ACKERMANN_STEP_SERVICE_SOURCE}
+        ${PERSON_STEP_SERVICE_SOURCE})
 endif()
 
 if(HAKO_URBAN_ENABLE_MIRROR)
@@ -445,6 +448,11 @@ if(BUILD_TESTING)
             hakoniwa-core::assets)
         add_test(NAME hako-person-rpc-input-contract
             COMMAND hako-person-rpc-input-test)
+        if(HAKO_ENABLE_ASYNC_SERVICE)
+            target_sources(hako-person-rpc-input-test PRIVATE ${PERSON_STEP_SERVICE_SOURCE})
+            add_test(NAME hako-person-step-service-contract
+                COMMAND hako-person-rpc-input-test --service)
+        endif()
         add_test(NAME hako-rpc-service-config-generator-contract
             COMMAND
                 "${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3"
@@ -523,6 +531,14 @@ if(BUILD_TESTING)
             hakoniwa-core::shakoc)
 
         if(HAKO_ENABLE_ASYNC_SERVICE)
+        target_compile_definitions(hako-person-rpc-integration-server PRIVATE
+            HAKONIWA_ROBOT_RUNTIME_ENABLE_LOCKSTEP=1)
+        target_sources(hako-person-rpc-integration-server PRIVATE
+            ${PERSON_STEP_SERVICE_SOURCE}
+            ${ASYNC_SERVICE_SOURCES}
+            ${ASYNC_SERVICE_LOCKSTEP_SOURCE}
+            ${RUNTIME_SRC}/runtime/actuator_runtime.cpp
+            ${RUNTIME_SRC}/runtime/arbiter/priority_command_arbiter.cpp)
         # Stage A of hakoniwa-robot-runtime docs/design-async-rpc.md: cancel as an event.
         add_executable(hako-async-rpc-cancel-server
             ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/async_rpc_cancel_server.cpp
@@ -584,6 +600,14 @@ if(BUILD_TESTING)
                 TIMEOUT 60
                 LABELS integration)
             if(HAKO_ENABLE_ASYNC_SERVICE)
+            add_test(NAME hako-person-step-service-integration
+                COMMAND bash
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_person_rpc_input.bash
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration compare)
+            set_tests_properties(hako-person-step-service-integration PROPERTIES
+                TIMEOUT 60 LABELS integration)
             add_test(NAME hako-async-rpc-cancel-integration
                 COMMAND bash
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/test_async_rpc_cancel.bash
@@ -745,6 +769,15 @@ if(BUILD_TESTING)
                     ${CMAKE_CURRENT_SOURCE_DIR} startup)
             set_tests_properties(urban-ackermann-step-service-startup PROPERTIES
                 TIMEOUT 60 LABELS integration)
+            add_test(NAME urban-person-step-service-mixed-repeatability
+                COMMAND ${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3
+                    ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_step_urban.py
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    ${HAKONIWA_FOUNDATION_PREFIX}
+                    ${CMAKE_CURRENT_SOURCE_DIR}
+                    ${HAKO_MUJOCO_LIBRARY})
+            set_tests_properties(urban-person-step-service-mixed-repeatability PROPERTIES
+                TIMEOUT 120 LABELS integration)
             endif()
         endif()
     endif()
