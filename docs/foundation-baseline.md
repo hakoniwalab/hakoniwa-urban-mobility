@@ -13,7 +13,8 @@ does not claim that both recipes can run concurrently.
 
 ## 2. Source revisions
 
-All listed repositories used branch `main` at collection time.
+All listed repositories used branch `main` at collection time. The
+`hakoniwa-mbody-registry` row records the pin for the current RPC tests.
 
 | Repository | Revision | Working tree note |
 | --- | --- | --- |
@@ -23,7 +24,7 @@ All listed repositories used branch `main` at collection time.
 | `hakoniwa-drone-show` | `99a10ac3a3375bda92de34169ad9fa151d0fad61` | Clean |
 | `hakoniwa-robot-runtime` | `1706f7c7da6c6b475e5f02767172cf7db10e7799` | Clean |
 | `hakoniwa-mujoco-robots` | `8c25a6d9ed02ea9bfb5c6d63b0782793c014a7c5` | Clean |
-| `hakoniwa-mbody-registry` | `8717c1a7d1ce074fe3e1526234a6e3f780eff0fc` | Untracked `test.xml` preserved |
+| `hakoniwa-mbody-registry` | `ebf8d1da23b6e8c09ab94aef886d44edbae4ef71` | Includes the staff person model used by the mixed RPC test |
 | `hakoniwa-threejs-drone` | `eb0c2be7691d4c4583d5bad107c3414c328afcb7` | Clean |
 | `hakoniwa-map-viewer` | `6e30097a4f4934cfe71400c45ee15b5717a2d790` | Clean |
 | `hakoniwa-envsim` | `50ed4223b5527898769a86c920f703a788b248fe` | Clean |

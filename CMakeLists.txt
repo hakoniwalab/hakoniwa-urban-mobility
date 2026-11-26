@@ -772,13 +772,25 @@ if(BUILD_TESTING)
                     ${CMAKE_CURRENT_SOURCE_DIR} startup)
             set_tests_properties(urban-ackermann-step-service-startup PROPERTIES
                 TIMEOUT 60 LABELS integration)
+
+            # Linking accepts either form, but the Python model compiler needs a file.
+            if(TARGET "${HAKO_MUJOCO_LIBRARY}")
+                set(HAKO_MUJOCO_LIBRARY_FILE "$<TARGET_FILE:${HAKO_MUJOCO_LIBRARY}>")
+            elseif(IS_ABSOLUTE "${HAKO_MUJOCO_LIBRARY}")
+                set(HAKO_MUJOCO_LIBRARY_FILE "${HAKO_MUJOCO_LIBRARY}")
+            else()
+                find_library(HAKO_MUJOCO_LIBRARY_FILE
+                    NAMES "${HAKO_MUJOCO_LIBRARY}"
+                    PATHS "${HAKO_MUJOCO_LIB_DIR}"
+                    NO_DEFAULT_PATH NO_CACHE REQUIRED)
+            endif()
             add_test(NAME urban-person-step-service-mixed-repeatability
                 COMMAND ${HAKONIWA_FOUNDATION_PREFIX}/python/bin/python3
                     ${HAKONIWA_ROBOT_RUNTIME_ROOT}/tests/integration/person_step_urban.py
                     ${CMAKE_CURRENT_BINARY_DIR}
                     ${HAKONIWA_FOUNDATION_PREFIX}
                     ${CMAKE_CURRENT_SOURCE_DIR}
-                    ${HAKO_MUJOCO_LIBRARY})
+                    "${HAKO_MUJOCO_LIBRARY_FILE}")
             set_tests_properties(urban-person-step-service-mixed-repeatability PROPERTIES
                 TIMEOUT 120 LABELS integration)
             add_test(NAME urban-service-manifest-contract
@@ -787,7 +799,7 @@ if(BUILD_TESTING)
                     ${CMAKE_CURRENT_BINARY_DIR}
                     ${HAKONIWA_FOUNDATION_PREFIX}
                     ${CMAKE_CURRENT_SOURCE_DIR}
-                    ${HAKO_MUJOCO_LIBRARY} --contract)
+                    "${HAKO_MUJOCO_LIBRARY_FILE}" --contract)
             set_tests_properties(urban-service-manifest-contract PROPERTIES
                 TIMEOUT 90 LABELS integration)
             endif()

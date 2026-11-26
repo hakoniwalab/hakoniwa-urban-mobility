@@ -153,7 +153,10 @@ def sha256(path: Path) -> str:
 
 
 def foundation_install() -> Path:
-    """Resolve the active Foundation prefix through the Business Pack contract."""
+    """Use an explicit install prefix or the Business Pack work directory."""
+    prefix = os.environ.get("HAKONIWA_FOUNDATION_PREFIX")
+    if prefix:
+        return Path(prefix).expanduser().absolute()
     return resolve_foundation_install(BUSINESS_PACK)
 
 
