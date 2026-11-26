@@ -56,12 +56,10 @@ void usage(const char* program)
         << "  --lockstep-input ROBOT/PDU\n"
         << "                          step only when a new command has arrived on this\n"
         << "                          Ackermann input (repeatable; repeatable runs)\n"
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
         << "  --person-contact-log PATH\n"
         << "                          append person contact events as JSONL\n"
         << "  --rpc-service-config PATH\n"
         << "                          Core service definition JSON for manifest services\n"
-#endif
         << "  --view-model            inspect the model without Hakoniwa\n"
         << "  --validate-model        load the XML/MJB and exit\n";
 }
@@ -111,12 +109,10 @@ bool parse_options(int argc, char** argv, Options& options)
             }
         } else if (argument == "--lockstep-input" && index + 1 < argc) {
             options.lockstep_inputs.emplace_back(argv[++index]);
-#if HAKONIWA_ROBOT_RUNTIME_ENABLE_ASYNC_SERVICE
         } else if (argument == "--person-contact-log" && index + 1 < argc) {
             options.person_contact_log = argv[++index];
         } else if (argument == "--rpc-service-config" && index + 1 < argc) {
             options.rpc_service_config = argv[++index];
-#endif
         } else if (argument == "--view-model") {
             options.view_model_only = true;
         } else if (argument == "--validate-model") {
