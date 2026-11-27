@@ -1810,6 +1810,8 @@ def configure_step_services(
         )
         for robot in names
     ]
+    # The robots list replaced the services list (robot-runtime stage 2c-5).
+    manifest.pop("services", None)
     if robots:
         manifest["robots"] = robots
     else:
