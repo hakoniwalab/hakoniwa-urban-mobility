@@ -161,10 +161,12 @@ class UrbanMobilityToolTest(unittest.TestCase):
             "urban-car-hakoniwa-asset",
         )
 
-    def test_road_friction_needs_the_plant_directive_build(self):
+    def test_friction_or_an_explicit_request_needs_the_plant_directive_build(self):
         multi_car = urban_composer.multi_car
         self.assertTrue(multi_car.needs_plant_directive(
             {"vehicles": [{"name": "Cart-1", "tire_friction": True}, {"name": "Car-1"}]}))
+        self.assertTrue(multi_car.needs_plant_directive(
+            {"plant_directive": True, "vehicles": [{"name": "Car-1"}]}))
         self.assertFalse(multi_car.needs_plant_directive({"vehicles": [{"name": "Car-1"}]}))
         with mock.patch.object(multi_car.subprocess, "run") as runner:
             multi_car.build_car_asset(enable_mirror=True)

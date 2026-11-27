@@ -174,6 +174,51 @@ class CompositionTest(Fixture):
                     urban_composition.CompositionError, "without Drones"):
                 self.load(self.composition(**{**drone, **override}))
 
+    def test_plant_directive_is_an_optional_boolean(self):
+        plain = self.load(self.composition())
+        self.assertFalse(plain.plant_directive)
+        self.assertNotIn("plant_directive",
+                         urban_composition.to_car_config(plain, "plain")["inputs"]["ackermann_runtime"])
+        with self.assertRaisesRegex(urban_composition.CompositionError,
+                                    "simulation.plant_directive must be true or false"):
+            self.load(self.composition(simulation={"plant_directive": "true"}))
+
+    def test_car_composition_builds_or_checks_the_requested_plant_directive(self):
+        composition = self.composition(world="test-city", simulation={"plant_directive": True},
+                                       viewer={"enabled": False})
+        context = urban_mobility.RecipeContext(
+            path=ROOT / "recipes/usecases/urban-car-rc.yaml", data={},
+            recipe_id="urban-car-rc", use_case="car-rc",
+        )
+        args = urban_mobility.parser().parse_args(["configure", "--composition", str(composition)])
+        plant = self.work / multi_car.PLANT_NAME
+        plant.touch()
+        features = plant.with_name(multi_car.PLANT_FEATURES)
+        features.write_text('{"plant_directive": false}', encoding="utf-8")
+        with self.catalog(), \
+                mock.patch.object(urban_mobility, "root", return_value=self.work), \
+                mock.patch.object(urban_mobility.urban_manifest, "portable", return_value=False), \
+                mock.patch.object(multi_car, "plant_executable", return_value=plant), \
+                mock.patch.object(multi_car, "build_car_asset") as build, \
+                mock.patch.object(multi_car, "configure", return_value=0) as configure, \
+                mock.patch.object(urban_simulation, "apply_managed_runtime"):
+            self.assertEqual(urban_mobility.configure_car_rc(context, args), 0)
+            build.assert_called_once_with(enable_mirror=True)
+            resolved = configure.call_args.args[0]
+            self.assertFalse(any(vehicle.get("tire_friction") for vehicle in resolved["vehicles"]))
+            self.assertIs(resolved["plant_directive"], True)
+            build.reset_mock()
+            configure.reset_mock()
+
+            args.reuse_built_asset = True
+            with self.assertRaisesRegex(urban_mobility.UrbanMobilityError, "HAKO_URBAN_ENABLE_MIRROR=ON"):
+                urban_mobility.configure_car_rc(context, args)
+            configure.assert_not_called()
+            features.write_text('{"plant_directive": true}', encoding="utf-8")
+            self.assertEqual(urban_mobility.configure_car_rc(context, args), 0)
+            configure.assert_called_once()
+            build.assert_not_called()
+
     def test_register_city_derives_the_id_from_the_city_world_job(self):
         receipt = self.work / "jobs" / CITY_ID / "build/world/city-world-receipt.json"
         receipt.parent.mkdir(parents=True)
@@ -1357,6 +1402,22 @@ class PlanTest(IntegratedFixture):
             "configure", "--recipe", str(ROOT / "recipes/experiments/urban-mobility-rc.yaml"),
             "--composition", str(composition.resolve()),
         ])
+
+    def test_composition_only_cli_forwards_reuse_to_the_managed_recipe(self):
+        for make_composition, recipe in (
+            (self.composition, "recipes/usecases/urban-car-rc.yaml"),
+            (self.integrated, "recipes/experiments/urban-mobility-rc.yaml"),
+        ):
+            composition = make_composition()
+            with self.subTest(recipe=recipe), self.catalog(), \
+                    mock.patch.object(sys, "argv", ["urban_mobility.py", "configure",
+                                      "--composition", str(composition), "--reuse-built-asset"]), \
+                    mock.patch.object(urban_simulation.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+                self.assertEqual(urban_mobility.main(), 0)
+            self.assertEqual(run.call_args.args[0][2:], [
+                "configure", "--recipe", str(ROOT / recipe),
+                "--composition", str(composition), "--reuse-built-asset",
+            ])
 
 
 class PlainWorldTest(IntegratedFixture):

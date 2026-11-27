@@ -336,7 +336,6 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
     else:
         config_path = materialize_template(context, args)
     resolved = multi_car.resolve_config(config_path)
-    # Road friction reaches the tires only through the Plant Directive path.
     plant_directive = multi_car.needs_plant_directive(resolved)
     # A portable package has no CMake: it reuses the plant it carries.
     if not (getattr(args, "reuse_built_asset", False) or urban_manifest.portable()):
@@ -379,17 +378,25 @@ def configure_car_rc(context: RecipeContext, args: argparse.Namespace) -> int:
 
 
 def configure_integrated(context: RecipeContext, args: argparse.Namespace | None = None) -> int:
+    import multi_car
     import urban_composer
     import urban_simulation
 
     selected = getattr(args, "composition", None)
-    if selected is None:
-        return urban_composer.configure(composition_path(context))
-    target = managed_target(context)
-    if urban_composer.configure(urban_simulation.materialize(target, selected)) != 0:
-        return 1
-    urban_simulation.apply_managed_runtime(target, selected)
-    return 0
+    target = managed_target(context) if selected is not None else None
+    config_path = (urban_simulation.materialize(target, selected) if target is not None
+                   else composition_path(context))
+    try:
+        result = urban_composer.configure(
+            config_path, reuse_built_asset=getattr(args, "reuse_built_asset", False)
+        )
+    except multi_car.RecipeError as exc:
+        raise UrbanMobilityError(str(exc)) from exc
+    if target is not None:
+        if result != 0:
+            return 1
+        urban_simulation.apply_managed_runtime(target, selected)
+    return result
 
 
 def configure(context: RecipeContext, args: argparse.Namespace) -> int:
@@ -617,8 +624,8 @@ def parser() -> argparse.ArgumentParser:
         "--reuse-built-asset",
         action="store_true",
         help=(
-            "reuse the packaged Urban Car executable during configure; intended "
-            "for a portable workspace without a C++ build toolchain"
+            "reuse an existing Urban Car executable during configure if it has "
+            "the required Plant Directive support"
         ),
     )
     result.add_argument(
@@ -662,7 +669,9 @@ def main() -> int:
         if args.composition is None:
             raise UrbanMobilityError("--recipe or --composition is required")
         # A Composition picks its route and managed Recipe (tools/urban_simulation.py).
-        return urban_simulation.run(args.command, args.composition)
+        return urban_simulation.run(
+            args.command, args.composition, reuse_built_asset=args.reuse_built_asset
+        )
     context = load_context(args.recipe)
     if args.command == "prepare-native":
         return prepare_native(context)

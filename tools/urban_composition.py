@@ -140,6 +140,8 @@ class Composition:
     # simulation.lockstep_pipeline (section 5.1): under lockstep the program works out the next
     # step's commands while the plants step (the Conductor's max_delay is two steps).
     lockstep_pipeline: bool = False
+    # simulation.plant_directive (section 5.1): an extension can require Mirror support.
+    plant_directive: bool = False
 
     @property
     def viewer_enabled(self) -> bool:
@@ -340,7 +342,9 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     simulation = data.get("simulation", {})
     if not isinstance(simulation, dict):
         raise CompositionError("Composition simulation must be a mapping")
-    unknown = set(simulation) - {"realtime", "lockstep", "step_msec", "plant_processes", "lockstep_pipeline"}
+    unknown = set(simulation) - {
+        "realtime", "lockstep", "step_msec", "plant_processes", "lockstep_pipeline", "plant_directive",
+    }
     if unknown:
         raise CompositionError(f"Composition simulation has unknown fields: {sorted(unknown)}")
     realtime = simulation.get("realtime", True)
@@ -363,6 +367,9 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
     plant_processes = simulation.get("plant_processes", 1)
     if isinstance(plant_processes, bool) or not isinstance(plant_processes, int) or plant_processes < 1:
         raise CompositionError("Composition simulation.plant_processes must be a positive integer")
+    plant_directive = simulation.get("plant_directive", False)
+    if not isinstance(plant_directive, bool):
+        raise CompositionError("Composition simulation.plant_directive must be true or false")
     extension_entries = data.get("extensions", [])
     if not isinstance(extension_entries, list):
         raise CompositionError("Composition extensions must be a list")
@@ -374,6 +381,7 @@ def load(path: Path, assets: dict[str, Asset] | None = None) -> Composition:
         realtime=realtime, lockstep=lockstep,
         step_msec=None if step_msec is None else float(step_msec),
         plant_processes=plant_processes, lockstep_pipeline=lockstep_pipeline,
+        plant_directive=plant_directive,
     )
     if lockstep and realtime:
         # The plant waits for a command every 2 ms step: the external program must step at
@@ -766,7 +774,8 @@ def _car_inputs(
         # the plant does not sleep on its own.
         "ackermann_runtime": {"realtime_sync_cycle_msec": 0, "native_mujoco_viewer": False,
                               **({"plant_processes": composition.plant_processes}
-                                 if composition.plant_processes > 1 else {})},
+                                 if composition.plant_processes > 1 else {}),
+                              **({"plant_directive": True} if composition.plant_directive else {})},
         "browser_visualization": visualization,
     }
 

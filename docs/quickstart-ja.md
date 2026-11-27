@@ -116,6 +116,10 @@ Workspace を抜ける前に、動いているものを止めます（`exit` し
 | Composition を configure / 起動 / 停止 | `python ../hakoniwa-urban-mobility/tools/urban_simulation.py configure --composition <path>`（`start` / `stop` / `status`） |
 | 登録済みの City などを一覧 | `python ../hakoniwa-urban-mobility/tools/urban_assets.py list` |
 
+拡張から Mirror を使う車の Composition では、`simulation: {plant_directive: true}` を指定すると、タイヤ摩擦の入力がなくても Plant Directive を有効にしてビルドします。既定値は `false` です。タイヤ摩擦の入力がある場合は、これまでどおり Plant Directive が必要です。
+
+ビルド済みの車の Plant を使うには、`python ../hakoniwa-urban-mobility/tools/urban_mobility.py configure --composition <path> --reuse-built-asset` を実行します。Plant Directive が必要な Composition では、対応する Plant がなければ configure が止まります。
+
 ## 困ったとき
 
 | 症状 | 対処 |

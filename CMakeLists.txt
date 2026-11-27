@@ -111,7 +111,9 @@ target_sources(urban-car-hakoniwa-asset PRIVATE
     ${HAKO_RUNTIME_ACKERMANN_STEP_READER_SOURCES}
     ${HAKO_RUNTIME_PERSON_STEP_READER_SOURCES}
     ${HAKO_RUNTIME_ASYNC_PIPELINE_SOURCES}
-    ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES})
+    ${HAKO_RUNTIME_CORE_ASYNC_SERVER_SOURCES}
+    ${HAKO_RUNTIME_CONTROLLER_PLUGIN_SOURCES}
+    ${HAKO_RUNTIME_CONTROLLER_PLUGIN_MANIFEST_SOURCES})
 hako_add_robot_plugins(urban-car-hakoniwa-asset)
 
 if(HAKO_URBAN_ENABLE_MIRROR)
@@ -138,13 +140,14 @@ else()
     set(_urban_plant_directive false)
 endif()
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/bin/urban-car-hakoniwa-asset.features.json"
-    CONTENT "{\n  \"schema_version\": 1,\n  \"plant_directive\": @_urban_plant_directive@\n}\n"
+    CONTENT "{\n  \"schema_version\": 1,\n  \"plant_directive\": @_urban_plant_directive@,\n  \"service_plugins\": true\n}\n"
     @ONLY)
 target_compile_features(urban-car-hakoniwa-asset PRIVATE cxx_std_20)
 target_compile_definitions(urban-car-hakoniwa-asset PRIVATE
     ${HAKO_RUNTIME_MOBILE_BASE_DEFINE}=1
     # --lockstep-input (repeatable P0 runs; off unless the option is given)
     ${HAKO_RUNTIME_LOCKSTEP_DEFINE}=1
+    ${HAKO_RUNTIME_CONTROLLER_PLUGIN_DEFINE}=1
     ${HAKO_RUNTIME_PLANT_DIRECTIVE_DEFINE}=$<BOOL:${HAKO_URBAN_ENABLE_MIRROR}>
     HAKO_URBAN_ENABLE_VIEWER=$<BOOL:${HAKO_URBAN_ENABLE_VIEWER}>)
 target_include_directories(urban-car-hakoniwa-asset PRIVATE
