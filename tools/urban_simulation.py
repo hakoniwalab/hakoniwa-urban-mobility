@@ -255,7 +255,7 @@ def pacer_log(selected: Plan) -> Path:
     return selected.workspace / "logs" / f"{urban_realtime.PACER_ASSET}.out"
 
 
-def run(command: str, composition_path: Path) -> int:
+def run(command: str, composition_path: Path, *, reuse_built_asset: bool = False) -> int:
     """Run a lifecycle command for a Composition."""
     selected = plan(composition_path)
     if command == "plan":
@@ -272,11 +272,11 @@ def run(command: str, composition_path: Path) -> int:
     if selected.route == "fleet":
         return fleet_command(command, composition_path, selected.workspace)
     # The managed Recipe lifecycle lives in tools/urban_mobility.py.
-    return subprocess.run(
-        [sys.executable, str(URBAN_MOBILITY), command,
-         "--recipe", str(selected.managed_recipe), "--composition", str(Path(composition_path).resolve())],
-        cwd=ROOT, check=False,
-    ).returncode
+    arguments = [sys.executable, str(URBAN_MOBILITY), command,
+                 "--recipe", str(selected.managed_recipe), "--composition", str(Path(composition_path).resolve())]
+    if command == "configure" and reuse_built_asset:
+        arguments.append("--reuse-built-asset")
+    return subprocess.run(arguments, cwd=ROOT, check=False).returncode
 
 
 # --- Control runtimes -------------------------------------------------------------

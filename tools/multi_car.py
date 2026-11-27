@@ -179,10 +179,10 @@ def native_executable(path: Path) -> Path:
 
 
 def needs_plant_directive(resolved: dict) -> bool:
-    """Whether a resolved Car configuration needs the Robot Runtime Plant Directive
-    path in the plant: a route with road_friction sets the tires' friction through
-    it (geom_friction). Built without it, the plant ignores the friction."""
-    return any(vehicle.get("tire_friction") for vehicle in resolved["vehicles"])
+    """Whether the Composition or a vehicle's tire friction needs Plant Directive support."""
+    return resolved.get("plant_directive", False) or any(
+        vehicle.get("tire_friction") for vehicle in resolved["vehicles"]
+    )
 
 
 PLANT_NAME = "urban-car-hakoniwa-asset"
@@ -233,16 +233,15 @@ def built_with_plant_directive(plant: Path | None = None) -> bool | None:
 
 def require_built_car_asset(*, enable_mirror: bool = False) -> Path:
     """The built Urban Car plant, checked instead of built (a portable
-    package, or configure --reuse-built-asset): it must exist and, for road
-    friction, have the Plant Directive path."""
+    package, or configure --reuse-built-asset): it must exist and have the
+    Plant Directive path when required."""
     plant = plant_executable()
     if not plant.is_file():
         raise RecipeError(f"the built Urban Car plant is not there: {plant}")
     if enable_mirror and not built_with_plant_directive(plant):
         raise RecipeError(
-            "a route sets road_friction (or the integrated route needs the Mirror), but the built Urban Car "
-            f"plant {plant} has no Plant Directive path (HAKO_URBAN_ENABLE_MIRROR=OFF) and would ignore it; "
-            "build it with HAKO_URBAN_ENABLE_MIRROR=ON"
+            f"this configuration requires Plant Directive support. The built Urban Car plant {plant} "
+            "has no Plant Directive path. Build it with HAKO_URBAN_ENABLE_MIRROR=ON"
         )
     return plant
 
@@ -267,8 +266,8 @@ def ensure_car_asset(*, enable_mirror: bool = False) -> Path:
 def build_car_asset(*, enable_mirror: bool = False) -> None:
     """Build the host-native Urban Car plant from the selected sibling sources.
 
-    enable_mirror builds the Plant Directive path (Mirror, geom friction); a
-    configuration with road friction needs it (needs_plant_directive)."""
+    enable_mirror builds the Plant Directive path (Mirror, geom friction)
+    when the configuration needs it (needs_plant_directive)."""
     subprocess.run(
         [
             "cmake",
@@ -490,6 +489,7 @@ def resolve_config(config_path: Path) -> dict:
         ))
         native_mujoco_viewer = runtime_input.get("native_mujoco_viewer", True)
         plant_processes = runtime_input.get("plant_processes", 1)
+        plant_directive = runtime_input.get("plant_directive", False)
         visualization = config["inputs"].get("browser_visualization", {})
         visualization_enabled = bool(visualization.get("enabled", False))
         front_camera = visualization.get("front_camera")
@@ -520,6 +520,8 @@ def resolve_config(config_path: Path) -> dict:
         raise RecipeError("native_mujoco_viewer must be boolean")
     if isinstance(plant_processes, bool) or not isinstance(plant_processes, int) or plant_processes < 1:
         raise RecipeError("ackermann_runtime.plant_processes must be a positive integer")
+    if not isinstance(plant_directive, bool):
+        raise RecipeError("ackermann_runtime.plant_directive must be boolean")
     if not (1 <= web_bridge_port <= 65535 and 1 <= http_port <= 65535):
         raise RecipeError("browser visualization ports must be within 1..65535")
     if front_camera is not None and not isinstance(front_camera, dict):
@@ -780,6 +782,7 @@ def resolve_config(config_path: Path) -> dict:
         "realtime_sync_cycle_msec": realtime_sync_cycle_msec,
         "native_mujoco_viewer": native_mujoco_viewer,
         "plant_processes": plant_processes,
+        "plant_directive": plant_directive,
         "visualization": {
             "enabled": visualization_enabled,
             "web_bridge_port": web_bridge_port,

@@ -383,9 +383,14 @@ def _merge_launchers(
 def configure(
     config_path: Path = DEFAULT_CONFIG,
     drone_root: Path = DEFAULT_DRONE_ROOT,
+    *,
+    reuse_built_asset: bool = False,
 ) -> int:
     config, resolved, drone_scenario = load_composition(config_path)
-    drone_car_rc.build_car_asset()
+    if reuse_built_asset:
+        multi_car.require_built_car_asset(enable_mirror=True)
+    else:
+        drone_car_rc.build_car_asset()
     paths = _drone_paths(resolved["recipe_id"])
     base_recipe = drone_scenario["recipe"]
     # The Drone scenario selects its control (the tracked rooftop scenario

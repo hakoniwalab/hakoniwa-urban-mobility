@@ -25,12 +25,14 @@ ZIP は Business Pack の `tools/package_portable_workspace.py` が作ります�
 `.bat` は `HAKONIWA_PORTABLE_WORKSPACE=1` を設定します（`urban_manifest.portable()`）。このとき：
 
 - `urban_simulation.prepare_route`（ドローン・群・FPV の経路）と `urban_mobility.py configure`（車・統合の経路）は、Business Pack の `recipe.py configure` / `doctor`（Git と pip を使う）を飛ばす。
-- 車の経路と統合の経路は CMake を使わず、同梱の Plant を使う（`multi_car.ensure_car_asset` / `require_built_car_asset`）。摩擦（`road_friction`）のある経路と統合の経路は、Plant Directive（`HAKO_URBAN_ENABLE_MIRROR=ON`）の Plant が必要。
+- 車の経路と統合の経路は CMake を使わず、同梱の Plant を使う（`multi_car.ensure_car_asset` / `require_built_car_asset`）。タイヤ摩擦の入力がある経路、`simulation.plant_directive: true` を指定した Composition、統合の経路には、Plant Directive（`HAKO_URBAN_ENABLE_MIRROR=ON`）の Plant が必要。
 - Environment Studio の起動（`urban_city_authoring.py start`）は configure を飛ばす（`--no-configure` と同じ）。
 
 ### Plant Directive の判定
 
 `multi_car.built_with_plant_directive()` は、Plant の隣の `urban-car-hakoniwa-asset.features.json`（`CMakeLists.txt` が configure 時に書く）を読みます。ない場合（この変更より前に configure した build）は、これまでどおり `build\CMakeCache.txt` を読みます。`collect` は features ファイルがなければ CMakeCache から作り、MIRROR=OFF の Plant は断ります。Plant は `build\bin\`、なければ `build\portable-runtime\bin\` から探します（`multi_car.plant_executable()`）。
+
+車の Plant は標準で Robot Runtime のサービスプラグインに対応し、マニフェストの `robots[].plugin` に指定されたライブラリを読み込みます。対応するビルドの features ファイルには `"service_plugins": true` が入ります。
 
 ### デモデータ
 

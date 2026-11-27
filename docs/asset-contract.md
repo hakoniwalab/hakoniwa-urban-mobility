@@ -418,7 +418,7 @@ vehicles:
     tire_friction_input: true | ackermann_step   # optional, Cars only: a program writes the tire_friction PDU, or sends it in the AckermannStep request (4.4)
 interactions: []                          # optional, section 5.3
 viewer: { http_port, web_bridge_port, enabled }   # optional; enabled default true
-simulation: { realtime, lockstep, step_msec, plant_processes, lockstep_pipeline }  # optional; realtime default true, lockstep default false, step_msec 10, plant_processes 1, lockstep_pipeline false
+simulation: { realtime, lockstep, step_msec, plant_processes, lockstep_pipeline, plant_directive }  # optional; realtime default true, step_msec 10, plant_processes 1, other fields default false
 extensions:                               # optional, section 5.8
   - program: <path>
     args: [ <arg>, ... ]
